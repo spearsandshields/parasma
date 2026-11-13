@@ -1,0 +1,7 @@
+y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y1 b0 i0 pt11.00 fam"" ea"" cs"" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+== page 0 num1 sect0
+L0 p0 f1 l1 segs1
+  S0 n2
+    i0 y0 w20.78 cw20.78 c0+2 "m=" sh2g adv20.78 r0 s1
+    i1 y1 w23.97 cw23.97 c- "" math w23.97 a20.90 d13.57 n4 disp0 "𝑎𝑏𝑐𝑑"

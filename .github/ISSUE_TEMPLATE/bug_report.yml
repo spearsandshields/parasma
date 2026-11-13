@@ -1,0 +1,65 @@
+name: Bug report
+description: Something renders wrongly, crashes, hangs, or behaves unexpectedly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not attach a confidential or third-party document.** Issues are
+        public and attachments cannot be fully recalled. If a real document
+        shows the bug, reduce it to a file you created yourself, or describe
+        the structure that triggers it (for example "a table nested four deep
+        inside a text box"). A security problem goes through private
+        reporting instead; see SECURITY.md.
+  - type: checkboxes
+    id: document-rights
+    attributes:
+      label: Documents
+      options:
+        - label: Any document attached to or quoted in this issue is one I created and have the right to publish.
+          required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: Format
+      options: [".docx", ".xlsx", ".csv", ".pptx", "Not format-specific"]
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected
+      description: For a rendering difference, say what Word, Excel or PowerPoint shows instead. Screenshots of both help.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The steps, and the smallest document that shows the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Parasma version or commit
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Chrome 140 on Windows 11
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Rendering mode
+      options: ["Worker (the default)", "In-process", "Not sure"]
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Any error or panic message from the browser console.
+      render: text

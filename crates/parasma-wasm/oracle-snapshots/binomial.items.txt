@@ -1,0 +1,5 @@
+y0 b0 i0 pt11.00 fam"" ea"" cs"" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+== page 0 num1 sect0
+L0 p0 f1 l1 segs1
+  S0 n1
+    i0 y0 w29.95 cw29.95 c- "" math w29.95 a21.71 d14.37 n4 disp0 "(𝑛𝑘)"

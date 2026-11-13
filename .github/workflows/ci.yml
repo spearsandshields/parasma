@@ -1,0 +1,111 @@
+name: CI
+
+# The same gate as `bun run ci`, run on a clean machine. scripts/ci-local.sh is
+# the single definition of what passes; this workflow adds only what a
+# developer's machine cannot: a checkout with no fonts, no wasm, no
+# node_modules and no fixtures. That is the failure class a local gate
+# cannot see (a fresh clone that could not build because a bundler fell
+# through to an optional peer that bun's own loader had been masking).
+#
+# Actions are pinned to commits, not tags. The version is in the comment.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # gzip-transfer ceiling for the shipped (sml, pml, emf) wasm. Measured
+  # 1,738,363 bytes on 2026-11-09; the budget leaves about 9% headroom and
+  # catches an accidental bloat regression, not a deliberate feature.
+  WASM_GZIP_BUDGET: 1900000
+
+jobs:
+  gate:
+    name: bun run ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # rust-toolchain.toml pins the same version; the action makes the
+      # install explicit so the cache key is stable.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+        with:
+          toolchain: 1.95.0
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Cache cargo registry, git index, binaries and target
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.15.0 --locked
+
+      # Fonts are fetched at runtime in the browser, so layout pins depend on
+      # exact metrics. The script sha256-pins them into the gitignored
+      # crates/parasma-wasm/test-fonts/ directory; no font binaries in git.
+      - name: Fetch pinned test fonts
+        run: ./scripts/fetch-test-fonts.sh
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      # Seven native tests read documents under the gitignored fixtures/
+      # directory: the parser fork's fixtures plus the ones
+      # scripts/generate-test-fixtures.ts writes. The script fetches the
+      # former from the public fork and generates the latter.
+      - name: Fetch and generate fixtures
+        run: bun run scripts/fetch-fixtures.ts
+
+      # The TypeScript type-checks read the wasm-pack output, so the shipped
+      # feature set has to be built before the gate runs.
+      - name: Build wasm (sml, pml, emf)
+        run: bun run build:wasm:full
+
+      - name: Gate
+        run: bun run ci
+
+      # Called directly, not through `bun run`: a nested `bun pm pack`
+      # deadlocks on bun's process lock. Packs the publishable packages and
+      # installs the tarballs into a throwaway consumer.
+      - name: Pack smoke test
+        run: ./scripts/pack-smoke.sh
+
+      # cargo-about refuses to render when a crate's licence is not in
+      # about.toml's accepted list, and the diff fails when a dependency
+      # change was not followed by ./scripts/gen-wasm-licenses.sh. The JS side
+      # (scripts/check-licenses.mjs) already ran inside the gate.
+      - name: Rust licence inventory
+        run: |
+          cargo install cargo-about --version 0.9.3 --locked --features cli
+          ./scripts/gen-wasm-licenses.sh
+          git diff --exit-code packages/parasma-core/THIRD-PARTY-LICENSES.md
+
+      - name: Check wasm gzip size budget
+        run: |
+          set -euo pipefail
+          WASM="packages/parasma-core/src/wasm/parasma_wasm_bg.wasm"
+          raw=$(wc -c < "$WASM")
+          gz=$(gzip -9 -c "$WASM" | wc -c)
+          echo "wasm raw size:  ${raw} bytes"
+          echo "wasm gzip size: ${gz} bytes (budget: ${WASM_GZIP_BUDGET} bytes)"
+          if [ "$gz" -gt "$WASM_GZIP_BUDGET" ]; then
+            echo "::error::gzip size ${gz} exceeds budget ${WASM_GZIP_BUDGET}"
+            exit 1
+          fi

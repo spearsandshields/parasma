@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@parasma/snippet — demo</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        background: #0e0f12;
+      }
+      .demo-bar {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        background: #18191d;
+        border-bottom: 1px solid #2a2c33;
+        color: #cfd1d6;
+        font-size: 13px;
+      }
+      .demo-bar strong { letter-spacing: 0.12em; color: #e6e4df; }
+      .demo-bar button {
+        appearance: none;
+        background: #22242a;
+        border: 1px solid #34373f;
+        color: #d6d4cf;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .demo-bar button:hover { border-color: #4a4e58; }
+      .demo-bar .sep { flex: 1; }
+      .demo-host { flex: 1 1 auto; min-height: 0; }
+      #host { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <div class="demo-bar">
+      <strong>SNIPPET DEMO</strong>
+      <button id="open">Open file…</button>
+      <input id="file" type="file" accept=".docx,.xlsx,.pptx,.csv" hidden />
+      <button id="font" title="Render a document family with your own font file (substitution testing — the file never leaves this browser)">Load font…</button>
+      <input id="fontfile" type="file" accept=".ttf,.otf" hidden />
+      <span class="sep"></span>
+      <button id="explorer" aria-pressed="false">Focus</button>
+      <button id="theme">Toggle theme</button>
+      <button id="dev">Toggle dev</button>
+      <button id="localfonts" aria-pressed="false" title="Use the OS-installed fonts Word substitutes (DejaVu→Verdana). Remounts.">Local fonts: OFF</button>
+    </div>
+    <div class="demo-host">
+      <div id="host"></div>
+    </div>
+    <script type="module" src="./demo.ts"></script>
+  </body>
+</html>

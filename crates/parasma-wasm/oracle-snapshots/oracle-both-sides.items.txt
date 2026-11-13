@@ -1,0 +1,132 @@
+y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+== page 0 num1 sect0
+L0 p0 f1 l0 segs2
+  S0 n8
+    i0 y0 w32.62 cw28.55 c0+5 "both " sh5g adv32.62 r0 s1
+    i1 y0 w38.31 cw34.24 c5+6 "sides " sh6g adv38.31 r0 s1
+    i2 y0 w16.31 cw12.23 c11+3 "of " sh3g adv16.31 r0 s1
+    i3 y0 w24.46 cw20.39 c14+4 "the " sh4g adv24.46 r0 s1
+    i4 y0 w27.72 cw23.65 c18+4 "box " sh4g adv27.72 r0 s1
+    i5 y0 w36.67 cw32.59 c22+6 "carry " sh6g adv36.67 r0 s1
+    i6 y0 w27.71 cw23.64 c28+5 "text " sh5g adv27.71 r0 s1
+    i7 y0 w28.55 cw24.47 c33+4 "and " sh4g adv28.55 r0 s1
+  S1 n7
+    i0 y0 w39.94 cw35.86 c37+6 "every " sh6g adv39.94 r0 s1
+    i1 y0 w59.53 cw55.45 c43+9 "adjacent " sh9g adv59.53 r0 s1
+    i2 y0 w26.91 cw22.83 c52+5 "line " sh5g adv26.91 r0 s1
+    i3 y0 w35.86 cw31.78 c57+5 "must " sh5g adv35.86 r0 s1
+    i4 y0 w30.16 cw26.08 c62+6 "split " sh6g adv30.16 r0 s1
+    i5 y0 w27.72 cw23.65 c68+5 "into " sh5g adv27.72 r0 s1
+    i6 y0 w26.90 cw22.82 c73+4 "two " sh4g adv26.90 r0 s1
+L1 p0 f0 l0 segs2
+  S0 n5
+    i0 y0 w67.66 cw63.59 c77+9 "segments " sh9g adv67.66 r0 s1
+    i1 y0 w49.74 cw45.67 c86+7 "around " sh7g adv49.74 r0 s1
+    i2 y0 w15.48 cw11.41 c93+4 "it, " sh4g adv15.48 r0 s1
+    i3 y0 w70.10 cw66.03 c97+11 "exercising " sh11g adv70.10 r0 s1
+    i4 y0 w24.46 cw20.39 c108+4 "the " sh4g adv24.46 r0 s1
+  S1 n7
+    i0 y0 w51.37 cw47.29 c112+7 "second " sh7g adv51.37 r0 s1
+    i1 y0 w60.33 cw56.25 c119+8 "segment " sh8g adv60.33 r0 s1
+    i2 y0 w29.33 cw25.26 c127+4 "arm " sh4g adv29.33 r0 s1
+    i3 y0 w28.55 cw24.47 c131+4 "end " sh4g adv28.55 r0 s1
+    i4 y0 w16.31 cw12.23 c135+3 "to " sh3g adv16.31 r0 s1
+    i5 y0 w32.62 cw28.55 c138+5 "end. " sh5g adv32.62 r0 s1
+    i6 y0 w32.62 cw28.55 c143+5 "both " sh5g adv32.62 r0 s1
+L2 p0 f0 l0 segs2
+  S0 n8
+    i0 y0 w38.31 cw34.24 c148+6 "sides " sh6g adv38.31 r0 s1
+    i1 y0 w16.31 cw12.23 c154+3 "of " sh3g adv16.31 r0 s1
+    i2 y0 w24.46 cw20.39 c157+4 "the " sh4g adv24.46 r0 s1
+    i3 y0 w27.72 cw23.65 c161+4 "box " sh4g adv27.72 r0 s1
+    i4 y0 w36.67 cw32.59 c165+6 "carry " sh6g adv36.67 r0 s1
+    i5 y0 w27.71 cw23.64 c171+5 "text " sh5g adv27.71 r0 s1
+    i6 y0 w28.55 cw24.47 c176+4 "and " sh4g adv28.55 r0 s1
+    i7 y0 w39.94 cw35.86 c180+6 "every " sh6g adv39.94 r0 s1
+  S1 n7
+    i0 y0 w59.53 cw55.45 c186+9 "adjacent " sh9g adv59.53 r0 s1
+    i1 y0 w26.91 cw22.83 c195+5 "line " sh5g adv26.91 r0 s1
+    i2 y0 w35.86 cw31.78 c200+5 "must " sh5g adv35.86 r0 s1
+    i3 y0 w30.16 cw26.08 c205+6 "split " sh6g adv30.16 r0 s1
+    i4 y0 w27.72 cw23.65 c211+5 "into " sh5g adv27.72 r0 s1
+    i5 y0 w26.90 cw22.82 c216+4 "two " sh4g adv26.90 r0 s1
+    i6 y0 w67.66 cw63.59 c220+9 "segments " sh9g adv67.66 r0 s1
+L3 p0 f0 l0 segs2
+  S0 n5
+    i0 y0 w49.74 cw45.67 c229+7 "around " sh7g adv49.74 r0 s1
+    i1 y0 w15.48 cw11.41 c236+4 "it, " sh4g adv15.48 r0 s1
+    i2 y0 w70.10 cw66.03 c240+11 "exercising " sh11g adv70.10 r0 s1
+    i3 y0 w24.46 cw20.39 c251+4 "the " sh4g adv24.46 r0 s1
+    i4 y0 w51.37 cw47.29 c255+7 "second " sh7g adv51.37 r0 s1
+  S1 n8
+    i0 y0 w60.33 cw56.25 c262+8 "segment " sh8g adv60.33 r0 s1
+    i1 y0 w29.33 cw25.26 c270+4 "arm " sh4g adv29.33 r0 s1
+    i2 y0 w28.55 cw24.47 c274+4 "end " sh4g adv28.55 r0 s1
+    i3 y0 w16.31 cw12.23 c278+3 "to " sh3g adv16.31 r0 s1
+    i4 y0 w32.62 cw28.55 c281+5 "end. " sh5g adv32.62 r0 s1
+    i5 y0 w32.62 cw28.55 c286+5 "both " sh5g adv32.62 r0 s1
+    i6 y0 w38.31 cw34.24 c291+6 "sides " sh6g adv38.31 r0 s1
+    i7 y0 w16.31 cw12.23 c297+3 "of " sh3g adv16.31 r0 s1
+L4 p0 f0 l0 segs2
+  S0 n7
+    i0 y0 w24.46 cw20.39 c300+4 "the " sh4g adv24.46 r0 s1
+    i1 y0 w27.72 cw23.65 c304+4 "box " sh4g adv27.72 r0 s1
+    i2 y0 w36.67 cw32.59 c308+6 "carry " sh6g adv36.67 r0 s1
+    i3 y0 w27.71 cw23.64 c314+5 "text " sh5g adv27.71 r0 s1
+    i4 y0 w28.55 cw24.47 c319+4 "and " sh4g adv28.55 r0 s1
+    i5 y0 w39.94 cw35.86 c323+6 "every " sh6g adv39.94 r0 s1
+    i6 y0 w59.53 cw55.45 c329+9 "adjacent " sh9g adv59.53 r0 s1
+  S1 n7
+    i0 y0 w26.91 cw22.83 c338+5 "line " sh5g adv26.91 r0 s1
+    i1 y0 w35.86 cw31.78 c343+5 "must " sh5g adv35.86 r0 s1
+    i2 y0 w30.16 cw26.08 c348+6 "split " sh6g adv30.16 r0 s1
+    i3 y0 w27.72 cw23.65 c354+5 "into " sh5g adv27.72 r0 s1
+    i4 y0 w26.90 cw22.82 c359+4 "two " sh4g adv26.90 r0 s1
+    i5 y0 w67.66 cw63.59 c363+9 "segments " sh9g adv67.66 r0 s1
+    i6 y0 w49.74 cw45.67 c372+7 "around " sh7g adv49.74 r0 s1
+L5 p0 f0 l0 segs2
+  S0 n6
+    i0 y0 w15.48 cw11.41 c379+4 "it, " sh4g adv15.48 r0 s1
+    i1 y0 w70.10 cw66.03 c383+11 "exercising " sh11g adv70.10 r0 s1
+    i2 y0 w24.46 cw20.39 c394+4 "the " sh4g adv24.46 r0 s1
+    i3 y0 w51.37 cw47.29 c398+7 "second " sh7g adv51.37 r0 s1
+    i4 y0 w60.33 cw56.25 c405+8 "segment " sh8g adv60.33 r0 s1
+    i5 y0 w29.33 cw25.26 c413+4 "arm " sh4g adv29.33 r0 s1
+  S1 n9
+    i0 y0 w28.55 cw24.47 c417+4 "end " sh4g adv28.55 r0 s1
+    i1 y0 w16.31 cw12.23 c421+3 "to " sh3g adv16.31 r0 s1
+    i2 y0 w32.62 cw28.55 c424+5 "end. " sh5g adv32.62 r0 s1
+    i3 y0 w32.62 cw28.55 c429+5 "both " sh5g adv32.62 r0 s1
+    i4 y0 w38.31 cw34.24 c434+6 "sides " sh6g adv38.31 r0 s1
+    i5 y0 w16.31 cw12.23 c440+3 "of " sh3g adv16.31 r0 s1
+    i6 y0 w24.46 cw20.39 c443+4 "the " sh4g adv24.46 r0 s1
+    i7 y0 w27.72 cw23.65 c447+4 "box " sh4g adv27.72 r0 s1
+    i8 y0 w36.67 cw32.59 c451+6 "carry " sh6g adv36.67 r0 s1
+L6 p0 f0 l0 segs1
+  S0 n15
+    i0 y0 w27.71 cw23.64 c457+5 "text " sh5g adv27.71 r0 s1
+    i1 y0 w28.55 cw24.47 c462+4 "and " sh4g adv28.55 r0 s1
+    i2 y0 w39.94 cw35.86 c466+6 "every " sh6g adv39.94 r0 s1
+    i3 y0 w59.53 cw55.45 c472+9 "adjacent " sh9g adv59.53 r0 s1
+    i4 y0 w26.91 cw22.83 c481+5 "line " sh5g adv26.91 r0 s1
+    i5 y0 w35.86 cw31.78 c486+5 "must " sh5g adv35.86 r0 s1
+    i6 y0 w30.16 cw26.08 c491+6 "split " sh6g adv30.16 r0 s1
+    i7 y0 w27.72 cw23.65 c497+5 "into " sh5g adv27.72 r0 s1
+    i8 y0 w26.90 cw22.82 c502+4 "two " sh4g adv26.90 r0 s1
+    i9 y0 w67.66 cw63.59 c506+9 "segments " sh9g adv67.66 r0 s1
+    i10 y0 w49.74 cw45.67 c515+7 "around " sh7g adv49.74 r0 s1
+    i11 y0 w15.48 cw11.41 c522+4 "it, " sh4g adv15.48 r0 s1
+    i12 y0 w70.10 cw66.03 c526+11 "exercising " sh11g adv70.10 r0 s1
+    i13 y0 w24.46 cw20.39 c537+4 "the " sh4g adv24.46 r0 s1
+    i14 y0 w51.37 cw47.29 c541+7 "second " sh7g adv51.37 r0 s1
+L7 p0 f0 l1 segs1
+  S0 n5
+    i0 y0 w60.33 cw56.25 c548+8 "segment " sh8g adv60.33 r0 s1
+    i1 y0 w29.33 cw25.26 c556+4 "arm " sh4g adv29.33 r0 s1
+    i2 y0 w28.55 cw24.47 c560+4 "end " sh4g adv28.55 r0 s1
+    i3 y0 w16.31 cw12.23 c564+3 "to " sh3g adv16.31 r0 s1
+    i4 y0 w32.62 cw28.55 c567+5 "end. " sh5g adv32.62 r0 s1
+B0 96.00x96.00 behind0 fill- border-/0.00 lines1
+  BL0 p4294967295 f0 l0 segs1
+    S0 n1
+      i0 y0 w13.86 cw13.86 c0+2 "B." sh2g adv13.86 r0 s1

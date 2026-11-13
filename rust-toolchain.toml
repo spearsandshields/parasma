@@ -1,0 +1,8 @@
+# One toolchain for every machine, including CI. The regression suite pins
+# layout byte-for-byte and the wasm identity check compares binaries, so a
+# compiler bump is a deliberate change that re-records baselines, not
+# something a contributor's rustup default decides.
+[toolchain]
+channel = "1.95.0"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]

@@ -1,0 +1,1682 @@
+/*
+ * @parasma/snippet — "PRECISION INSTRUMENT" refined-minimalism chrome.
+ *
+ * The document is the hero on a calm warm-neutral stage; the chrome is a quiet,
+ * crafted technical frame — precise 1px hairlines, ONE signal-amber accent that
+ * appears only on live/active/focus state, and a tabular-nums mono data layer.
+ *
+ * PAPER POLICY (load-bearing): the .page paper area stays clean engine-driven
+ * white in BOTH themes so document colours are never disturbed — only chrome and
+ * the stage carry theme + accent.
+ */
+
+/* ── Type system ─────────────────────────────────────────────────────────── */
+:where(.parasma-snippet) {
+  --ps-font-ui: "Hanken Grotesk Variable", ui-sans-serif, sans-serif;
+  --ps-font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+/* ── Palette (warm-neutral canvas + ONE accent) ──────────────────────────── */
+:where(.parasma-snippet[data-theme="dark"]) {
+  --ps-canvas: #16171b;
+  --ps-stage: #1b1d22;
+  --ps-panel: #212329;
+  --ps-inset: #131418;
+  --ps-hairline: #2c2f37;
+  --ps-hairline-strong: #3a3e48;
+  --ps-text: #e8e6e1;
+  --ps-text-muted: #8b8d96;
+  --ps-text-faint: #5e616b;
+  --ps-paper: #ffffff;
+  --ps-shadow: 0 8px 28px rgba(0, 0, 0, 0.36);
+  --ps-ring: 0 0 0 1px var(--ps-hairline);
+}
+
+:where(.parasma-snippet[data-theme="light"]) {
+  --ps-canvas: #f4f3ef;
+  --ps-stage: #ecebe6;
+  --ps-panel: #ffffff;
+  --ps-inset: #f8f7f3;
+  --ps-hairline: #d9d7cf;
+  --ps-hairline-strong: #c7c4ba;
+  --ps-text: #1c1d21;
+  --ps-text-muted: #6c6e76;
+  /* 4.5:1-ish on --ps-panel; the old #9a9ca3 sat at 2.7:1 (illegible page-nums). */
+  --ps-text-faint: #82848d;
+  --ps-paper: #ffffff;
+  --ps-shadow: 0 6px 22px rgba(40, 38, 32, 0.12);
+  --ps-ring: 0 0 0 1px var(--ps-hairline);
+}
+
+/* Accent (shared, ONE — signal-amber, instrument-dial energy). Rare: focus
+ * rings, active sheet-tab underline, live zoom glyph, selected-cell ref, dev
+ * live status-dot. NEVER ambient fill. */
+:where(.parasma-snippet) {
+  --ps-accent: #e0a33e;
+  --ps-accent-press: #c98e2e;
+  --ps-accent-soft: rgba(224, 163, 62, 0.14);
+  --ps-ok: #5bd08a;
+  --ps-err: #e5705f;
+
+  /* Spacing scale: 4 / 8 / 12 / 16 / 24 */
+  --ps-s1: 4px;
+  --ps-s2: 8px;
+  --ps-s3: 12px;
+  --ps-s4: 16px;
+  --ps-s5: 24px;
+  --ps-toolbar-h: 46px;
+  --ps-explorer-w: 248px;
+
+  /* Format hues — quiet instrument indicators (deliberately desaturated
+   * hues), defined on .parasma-snippet so they exist in both
+   * themes. Used only as small 7px squares on the explorer format rows. */
+  --ps-fmt-docx: #5b8bbf;
+  --ps-fmt-xlsx: #5aa86a;
+  --ps-fmt-pptx: #c4824a;
+  --ps-fmt-csv: #9b86c2;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────────── */
+/* :where() = zero specificity, deliberately: this sheet is ADOPTED, which
+ * outranks document styles at equal specificity — without :where(), a
+ * consumer's `.their-class { height: 75vh }` on the root element they own
+ * silently loses to our height:100% (measured: the spreadsheet grid then
+ * grew its wrapper to the 15-million-px scroll spacer and blanked the
+ * canvas past browser limits). Same treatment for the token defaults:
+ * docs/theming.md promises overrides "on the wrapper" work. */
+:where(.parasma-snippet) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--ps-font-ui);
+  color: var(--ps-text);
+  background: var(--ps-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+.parasma-snippet *,
+.parasma-snippet *::before,
+.parasma-snippet *::after {
+  box-sizing: border-box;
+}
+
+/* Chromeless: just the stage, edge to edge. */
+.parasma-snippet[data-controls="0"] .ps-toolbar,
+.parasma-snippet[data-controls="0"] .ps-formula,
+.parasma-snippet[data-controls="0"] .ps-tabs,
+.parasma-snippet[data-controls="0"] .ps-search {
+  display: none;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.ps-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--ps-s2);
+  height: var(--ps-toolbar-h);
+  padding: 0 var(--ps-s4);
+  background: var(--ps-panel);
+  border-bottom: 1px solid var(--ps-hairline);
+  user-select: none;
+  position: relative;
+  z-index: 5;
+  /* Narrow hosts (≤420px embed): scroll the strip instead of hard-clipping
+   * half the controls. The scrollbar itself stays hidden (chrome, not content). */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ps-toolbar::-webkit-scrollbar {
+  display: none;
+}
+.ps-toolbar > * {
+  flex: 0 0 auto;
+}
+/* The Fit▾ dropdown must escape the scroll clip while open (overflow-x:auto
+ * forces overflow-y to clip too). */
+.ps-toolbar:has(.ps-menu[data-open="1"]) {
+  overflow: visible;
+}
+
+.ps-group {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-s2);
+}
+.ps-group + .ps-group::before {
+  content: "";
+  width: 1px;
+  align-self: stretch;
+  margin: 10px 0;
+  background: var(--ps-hairline);
+}
+.ps-spacer {
+  flex: 1 1 auto;
+}
+
+/* Wordmark — the single typographic flourish. */
+.ps-wordmark {
+  font-family: var(--ps-font-ui);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ps-text);
+  padding-right: 2px;
+  line-height: 1;
+}
+
+/* Format tag — a single mono tag in --ps-text-muted, no saturated lozenge. */
+.ps-fmt {
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ps-text-muted);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-fmt::before,
+.ps-fmt::after {
+  content: "·";
+  color: var(--ps-text-faint);
+  margin: 0 2px;
+}
+
+/* ── Buttons / controls ──────────────────────────────────────────────────── */
+.ps-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 9px;
+  font-family: var(--ps-font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ps-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease,
+    transform 0.12s ease, color 0.12s ease;
+}
+.ps-btn:hover {
+  background: var(--ps-inset);
+  border-color: var(--ps-hairline-strong);
+  transform: translateY(-0.5px);
+}
+.ps-btn:active {
+  transform: translateY(0);
+  background: var(--ps-accent-soft);
+}
+.ps-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ps-accent-soft);
+  border-color: var(--ps-accent);
+}
+.ps-btn[aria-pressed="true"] {
+  background: var(--ps-accent-soft);
+  border-color: var(--ps-accent);
+  color: var(--ps-text);
+}
+.ps-btn .ps-ico {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Icon-only buttons read as glyphs, not labels. */
+.ps-btn--ps-icon {
+  padding: 0;
+  font-size: 15px;
+  color: var(--ps-text-muted);
+}
+.ps-btn--ps-icon:hover {
+  color: var(--ps-text);
+}
+
+/* Segmented pill (zoom cluster, grid/pages). */
+.ps-seg {
+  display: inline-flex;
+  align-items: stretch;
+  height: 30px;
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  overflow: hidden;
+  background: var(--ps-inset);
+}
+.ps-seg > * {
+  border: none;
+  border-radius: 0;
+  height: 100%;
+}
+.ps-seg > * + * {
+  border-left: 1px solid var(--ps-hairline);
+}
+.ps-seg .ps-btn {
+  border-radius: 0;
+}
+.ps-seg .ps-btn:hover {
+  transform: none;
+  border-color: transparent;
+}
+/* Active segment (Grid│Pages): the generic [aria-pressed] accent border is
+ * lost to the seg's border:none flattening — restore the cue as an inset ring. */
+.ps-seg .ps-btn[aria-pressed="true"] {
+  background: var(--ps-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--ps-accent);
+  color: var(--ps-text);
+}
+
+/* Inline SVG icons (Lucide line style) inherit the button color via
+ * stroke=currentColor; block layout drops the inline-baseline gap and lets
+ * clicks land on the button, not a path. */
+.ps-btn svg {
+  display: block;
+  pointer-events: none;
+}
+/* Tool toggle (pointer | hand): a snug two-icon pill. */
+.ps-tool-seg .ps-btn {
+  min-width: 32px;
+}
+
+/* Zoom value: editable mono number, tabular so it never jitters. */
+.ps-zoomval {
+  width: 56px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--ps-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ps-text);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  padding: 0;
+}
+.ps-zoomval:focus {
+  color: var(--ps-accent);
+}
+/* 90ms accent flash when a live value changes (registers the change). */
+.ps-flash {
+  animation: ps-flash 0.42s ease;
+}
+@keyframes ps-flash {
+  0% {
+    color: var(--ps-accent);
+  }
+  100% {
+    color: inherit;
+  }
+}
+
+/* Fit menu. */
+.ps-fit {
+  position: relative;
+}
+.ps-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 132px;
+  padding: var(--ps-s1);
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  box-shadow: var(--ps-shadow);
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 30;
+}
+.ps-menu[data-open="1"] {
+  display: flex;
+}
+.ps-menu .ps-btn {
+  justify-content: flex-start;
+  width: 100%;
+  height: 28px;
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-muted);
+}
+.ps-menu .ps-btn:hover {
+  color: var(--ps-text);
+}
+
+/* Canvas-native right-click context menu. Positioned at the
+   opaque host clientX/clientY by the DomContextMenuAdapter (position:fixed set
+   inline); this rule owns only appearance. */
+.ps-context-menu {
+  min-width: 132px;
+  padding: var(--ps-s1);
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  box-shadow: var(--ps-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 40;
+}
+.ps-context-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--ps-s2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-muted);
+  cursor: pointer;
+}
+.ps-context-menu__item:hover:not([disabled]) {
+  color: var(--ps-text);
+  background: var(--ps-accent-soft);
+}
+.ps-context-menu__item[disabled] {
+  color: var(--ps-text-faint);
+  cursor: default;
+}
+
+/* Nav cluster — mono tabular-nums hairline pill. */
+.ps-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ps-nav .ps-readout {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 0 8px;
+  height: 30px;
+  align-items: center;
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  background: var(--ps-inset);
+  font-family: var(--ps-font-mono);
+  font-size: 12px;
+  color: var(--ps-text);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-nav .ps-readout .ps-noun {
+  font-size: 11px;
+  color: var(--ps-text-muted);
+  letter-spacing: 0.02em;
+}
+.ps-nav .ps-readout input {
+  width: 2.4ch;
+  text-align: right;
+  background: transparent;
+  border: none;
+  outline: none;
+  font: inherit;
+  color: var(--ps-text);
+  padding: 0;
+}
+.ps-nav .ps-readout input:focus {
+  color: var(--ps-accent);
+}
+.ps-nav .ps-readout .ps-sep {
+  color: var(--ps-text-faint);
+}
+.ps-nav .ps-readout .ps-total {
+  color: var(--ps-text-muted);
+}
+
+/* Status token (clean tier). */
+.ps-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-muted);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  padding-left: 2px;
+}
+.ps-status .ps-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ps-text-faint);
+  transition: background 0.2s ease;
+  flex: 0 0 auto;
+}
+.ps-status[data-state="loading"] .ps-dot {
+  background: var(--ps-accent);
+  animation: ps-pulse 1s ease-in-out infinite;
+}
+.ps-status[data-state="ready"] .ps-dot {
+  background: var(--ps-ok);
+}
+.ps-status[data-state="error"] .ps-dot {
+  background: var(--ps-err);
+}
+@keyframes ps-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Font-loading spinner — a hairline ring with a brighter accent arc, sized to
+   match the status dot so the token doesn't reflow. Hidden until fonts load. */
+.ps-status .ps-spinner {
+  display: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--ps-accent) 28%, transparent);
+  border-top-color: var(--ps-accent);
+  animation: ps-spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+/* While fonts load: reveal the spinner, hide the dot, accent the text. */
+.ps-status[data-fonts="loading"] .ps-spinner {
+  display: inline-block;
+}
+.ps-status[data-fonts="loading"] .ps-dot {
+  display: none;
+}
+.ps-status[data-fonts="loading"] .ps-status-text {
+  color: var(--ps-accent);
+}
+@keyframes ps-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Reduced-motion: drop the rotation, keep a gentle accessible pulse so the
+   indicator still reads as "working". */
+@media (prefers-reduced-motion: reduce) {
+  .ps-status .ps-spinner {
+    animation: ps-pulse 1.1s ease-in-out infinite;
+  }
+}
+
+/* Comments badge count. */
+.ps-badge {
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ps-accent);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* ── Tier-B slots ────────────────────────────────────────────────────────── */
+/* The viewportOverlay layer: spans the stage, passes pointer events through to
+ * the document EXCEPT on the consumer's own nodes (direct children re-enable).
+ * z-index 6: above the scroll surface, below the explorer (7) / comments (8) /
+ * menus — floating consumer chrome never occludes the panels. */
+.ps-slot-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+.ps-slot-overlay > * {
+  pointer-events: auto;
+}
+
+/* ── Stage + paper ───────────────────────────────────────────────────────── */
+.ps-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  /* `clip`, NOT `hidden`: the stage is a fixed frame, never a scroll surface
+   * (the .ps-viewer child owns scrolling). The closed .ps-comments drawer parks
+   * itself one full width off the right edge (translateX(100%)), so the stage's
+   * scrollWidth exceeds its clientWidth. `overflow: hidden` clips that but leaves
+   * the box a SCROLL CONTAINER — Firefox/Zen then scrolls it horizontally on a
+   * descendant focus / scrollIntoView (the explorer's revealActivePath), shoving
+   * the whole panel to left:-52 and clipping the explorer's left edge
+   * ("DOCUMENTS" → "MENTS"). `clip` clips identically but is NOT scrollable, so
+   * scrollLeft is pinned at 0 and no absolute child can ever displace the frame. */
+  overflow: clip;
+  background: var(--ps-stage);
+}
+
+/* #viewer — the paged scroll surface. */
+.ps-viewer {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  scroll-behavior: smooth;
+  padding: var(--ps-s5) 0;
+}
+/* Hand-tool active pan: force `grabbing` over the per-page inline
+ * cursor. During a pan the pointer is captured to .ps-viewer, but the cursor
+ * hit-test still resolves against the .page child under the pointer (whose inline
+ * cursor is `grab` from the hand-hover applier) — without this the drag would show
+ * grab, not grabbing. Scoped to the panning state so select mode is untouched. */
+.parasma-snippet.is-panning,
+.parasma-snippet.is-panning * {
+  cursor: grabbing !important;
+}
+.ps-pages {
+  display: flex;
+  flex-direction: column;
+  /* SAFE center: centres a page that FITS the viewport, falls back to scrollable
+   * start-alignment when it OVERFLOWS (a plain `center` makes the start-side
+   * overflow unreachable by scrolling). This is the page's X position at EVERY
+   * scale — the single-tier zoom (setScale) only resizes the `.page` boxes and
+   * sets scrollLeft from the `off`-baked camera; centring stays CSS LAYOUT. fits →
+   * camera scroll 0 and CSS centres; overflows → camera scroll anchors the cursor
+   * against CSS start. One layout, so the page-fits crossover is seamless both
+   * ways and nothing snaps at any scale. */
+  align-items: safe center;
+  gap: var(--ps-s5);
+  min-height: min-content;
+  /* will-change is toggled in JS only during the zoom gesture (setScale); a
+   * PERMANENT one keeps pages on a composited layer that softens text at
+   * fractional DPR. */
+}
+
+/* Paper — clean engine white in BOTH themes, ONE soft shadow + 1px ring.
+ * NO overflow:hidden here: it clipped the .page-num label (top:-20px) into
+ * invisibility on every document. SQUARE corners (no border-radius): a rounded/
+ * clipped canvas layer is treated as non-opaque and forfeits Chromium's
+ * ClearType sub-pixel text path on Windows (paired with the alpha:false ctx). */
+.ps-pages .page {
+  position: relative;
+  background: var(--ps-paper);
+  box-shadow: var(--ps-shadow), var(--ps-ring);
+}
+.ps-pages .page canvas {
+  display: block;
+}
+.ps-pages .page-num {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  /* Above BOTH windowed canvases: the low-res base (z-index 0) and the crisp
+     slice (z-index 1). The label is otherwise outside the paper box (top:-20px),
+     but an explicit z-index keeps it above regardless of stacking context. */
+  z-index: 2;
+  font-family: var(--ps-font-mono);
+  font-size: 10px;
+  color: var(--ps-text-faint);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+/* Grid view (xlsx continuous). */
+.ps-gridview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  display: none;
+  position: relative;
+  background: var(--ps-paper);
+}
+.ps-grid-spacer {
+  position: relative;
+}
+.ps-grid-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+}
+
+/* ── Workspace column ────────────────────────────────────────────────────── */
+/* The document views + the spreadsheet rows fused to them (formula row above,
+ * sheet tabs below). A flex COLUMN sitting right of any leading panel in the
+ * stage row — so the xlsx chrome belongs to the sheet workspace, not the app
+ * frame (the old full-width strip sandwich). */
+.ps-workspace {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.ps-workspace > .ps-viewer,
+.ps-workspace > .ps-gridview {
+  min-height: 0;
+}
+
+/* ── Formula bar (xlsx) ──────────────────────────────────────────────────── */
+/* Kind-owned visibility (data-active) — a STABLE row of the spreadsheet
+ * workspace; cell selection only fills/empties content (data-empty), never
+ * reflows the grid (the old pop-in). Fused: tighter than the toolbar, zero gap
+ * to the grid below, sharing one hairline. */
+.ps-formula {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: var(--ps-s2);
+  height: 30px;
+  padding: 0 var(--ps-s2);
+  background: var(--ps-panel);
+  border-bottom: 1px solid var(--ps-hairline);
+}
+.ps-formula[data-active="1"] {
+  display: flex;
+}
+/* Empty state: keep the boxes (stable geometry), dim the affordance. */
+.ps-formula[data-empty="1"] .ps-namebox {
+  min-height: 20px;
+}
+.ps-formula[data-empty="1"] .ps-fx {
+  opacity: 0.4;
+}
+.ps-namebox {
+  font-family: var(--ps-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ps-accent);
+  min-width: 52px;
+  padding: 3px 8px;
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  background: var(--ps-inset);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  text-align: center;
+}
+.ps-fx {
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-faint);
+}
+.ps-fval {
+  font-family: var(--ps-font-mono);
+  font-size: 12px;
+  color: var(--ps-text);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ps-fval .ps-disp {
+  color: var(--ps-text-muted);
+  margin-left: 8px;
+}
+
+/* ── Sheet tabs (xlsx) ───────────────────────────────────────────────────── */
+/* Inside the workspace column, attached to the grid's bottom edge (Excel's
+ * placement) — tabs flush-left, no full-width padding band. Hidden entirely
+ * for single-sheet workbooks (the CSV norm). */
+.ps-tabs {
+  flex: 0 0 auto;
+  display: none;
+  align-items: stretch;
+  gap: 0;
+  height: 30px;
+  padding: 0;
+  background: var(--ps-panel);
+  border-top: 1px solid var(--ps-hairline);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ps-tabs::-webkit-scrollbar {
+  display: none;
+}
+.ps-tabs[data-show="1"] {
+  display: flex;
+}
+.ps-tab {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--ps-s3);
+  font-family: var(--ps-font-mono);
+  font-size: 12px;
+  color: var(--ps-text-muted);
+  background: transparent;
+  border: none;
+  /* The accent edge points UP — the active tab connects to the grid above it
+   * (Excel's attached-tab read), not down toward the app frame. */
+  border-top: 2px solid transparent;
+  border-right: 1px solid var(--ps-hairline);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.ps-tab:hover {
+  color: var(--ps-text);
+}
+.ps-tab[aria-selected="true"] {
+  color: var(--ps-text);
+  border-top-color: var(--ps-accent);
+  background: var(--ps-inset);
+}
+
+/* ── Comments drawer ─────────────────────────────────────────────────────── */
+.ps-comments {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(320px, 88%);
+  background: var(--ps-panel);
+  border-left: 1px solid var(--ps-hairline);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform 0.24s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.24s ease;
+  z-index: 8;
+  box-shadow: var(--ps-shadow);
+}
+.ps-comments[data-open="1"] {
+  transform: translateX(0);
+  opacity: 1;
+}
+.ps-comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--ps-toolbar-h);
+  padding: 0 var(--ps-s4);
+  border-bottom: 1px solid var(--ps-hairline);
+  font-family: var(--ps-font-mono);
+  font-size: 12px;
+  color: var(--ps-text);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-comments-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--ps-s3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-s2);
+}
+.ps-card {
+  padding: var(--ps-s3);
+  background: var(--ps-inset);
+  border: 1px solid var(--ps-hairline);
+  border-left: 3px solid var(--ps-cc, var(--ps-accent));
+  border-radius: 0;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ps-card:hover {
+  border-color: var(--ps-hairline-strong);
+}
+.ps-card[data-focused="1"] {
+  border-color: var(--ps-accent);
+  background: var(--ps-accent-soft);
+}
+.ps-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ps-s2);
+  margin-bottom: 6px;
+}
+.ps-card-author {
+  font-family: var(--ps-font-ui);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ps-text);
+}
+.ps-card-date {
+  font-family: var(--ps-font-mono);
+  font-size: 10px;
+  color: var(--ps-text-faint);
+  margin-left: auto;
+}
+.ps-card-body {
+  font-family: var(--ps-font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--ps-text-muted);
+  white-space: pre-wrap;
+}
+
+/* ── Search box (find-bar) ───────────────────────────────────────────────── */
+/* A floating find-bar pinned top-right of the stage, opened with ⌘/Ctrl+F.
+ * Same panel/hairline language as the toolbar; the ONE accent appears only on
+ * the focused input ring + pressed toggles. Hidden until [data-open]. */
+.ps-search {
+  position: absolute;
+  top: var(--ps-s3);
+  right: var(--ps-s3);
+  z-index: 9;
+  display: none;
+  align-items: center;
+  gap: var(--ps-s2);
+  height: 38px;
+  padding: 0 var(--ps-s2);
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  box-shadow: var(--ps-shadow);
+  /* Slide-down reveal to mirror the comments drawer's crafted motion. */
+  transform: translateY(-6px);
+  opacity: 0;
+  transition: transform 0.18s cubic-bezier(0.2, 0.7, 0.2, 1), opacity 0.18s ease;
+}
+.ps-search[data-open] {
+  display: flex;
+  transform: none;
+  opacity: 1;
+}
+
+.ps-search-input {
+  width: min(220px, 38vw);
+  height: 28px;
+  padding: 0 var(--ps-s2);
+  font-family: var(--ps-font-ui);
+  font-size: 12px;
+  color: var(--ps-text);
+  background: var(--ps-inset);
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ps-search-input::placeholder {
+  color: var(--ps-text-faint);
+}
+.ps-search-input:focus {
+  border-color: var(--ps-accent);
+  box-shadow: 0 0 0 2px var(--ps-accent-soft);
+}
+
+/* "n / m" counter — mono tabular so it never jitters as you step matches. */
+.ps-search-count {
+  min-width: 3.4ch;
+  text-align: right;
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-muted);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-search-count[data-state="empty"] {
+  color: var(--ps-err);
+}
+
+/* Case / whole-word toggles — small mono glyph buttons; pressed = accent. */
+.ps-search-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ps-search-toggle {
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  width: 28px;
+  height: 28px;
+  color: var(--ps-text-muted);
+}
+.ps-search-toggle[aria-pressed="true"] {
+  color: var(--ps-text);
+}
+
+/* Scope segment (Sheet│Book) — reuses the toolbar's segmented-pill language. */
+.ps-search-scope {
+  height: 28px;
+}
+.ps-search-scope .ps-btn {
+  height: 100%;
+  padding: 0 8px;
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  color: var(--ps-text-muted);
+}
+
+/* Prev/next cluster + a hairline divider before close. */
+.ps-search-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ps-search-nav .ps-btn,
+.ps-search .ps-search-close {
+  width: 26px;
+  height: 28px;
+  font-size: 16px;
+  color: var(--ps-text-muted);
+}
+.ps-search-close {
+  margin-left: 2px;
+  font-size: 17px;
+  border-left: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  padding-left: 6px;
+}
+
+/* ── Loading skeleton ────────────────────────────────────────────────────── */
+.ps-skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--ps-s5);
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 160ms ease, visibility 0s linear 160ms;
+}
+.ps-stage[data-loading="1"] .ps-skeleton {
+  opacity: 1;
+  visibility: visible;
+  /* 200ms delay: fast loads never flash the overlay; only slow (CJK) loads show it. */
+  transition: opacity 220ms ease 200ms, visibility 0s linear 200ms;
+}
+/* Centred spinner + label over the shimmer paper. */
+.ps-skel-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ps-s3);
+  color: var(--ps-text-muted);
+  font: 500 12px/1.2 var(--ps-font-ui);
+  letter-spacing: 0.01em;
+}
+.ps-skel-spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--ps-accent) 24%, transparent);
+  border-top-color: var(--ps-accent);
+  animation: ps-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ps-skel-spinner {
+    animation: ps-pulse 1.1s ease-in-out infinite;
+  }
+}
+.ps-skel-paper {
+  width: min(70%, 720px);
+  aspect-ratio: 8.5 / 11;
+  border-radius: 0;
+  background: linear-gradient(
+    100deg,
+    var(--ps-paper) 30%,
+    color-mix(in srgb, var(--ps-paper) 88%, var(--ps-hairline)) 50%,
+    var(--ps-paper) 70%
+  );
+  background-size: 220% 100%;
+  box-shadow: var(--ps-shadow), var(--ps-ring);
+  animation: ps-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes ps-shimmer {
+  from {
+    background-position: 180% 0;
+  }
+  to {
+    background-position: -80% 0;
+  }
+}
+
+/* ── In-stage error state ────────────────────────────────────────────────── */
+/* Shown via .ps-stage[data-error="1"] on loader:error; cleared on the next
+ * load-started. Without it a corrupt file leaves a blank dark stage (the 11px
+ * corner status token is invisible at dev:false). Non-modal: pointer-events
+ * none, the chrome/explorer stay usable to pick another document. */
+.ps-error {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ps-s2);
+  text-align: center;
+  padding: var(--ps-s5);
+  pointer-events: none;
+  z-index: 3;
+}
+.ps-stage[data-error="1"] .ps-error {
+  display: flex;
+}
+/* The skeleton must never sit over the error (a slow failing load). */
+.ps-stage[data-error="1"] .ps-skeleton {
+  opacity: 0;
+  visibility: hidden;
+}
+.ps-error-icon {
+  font-size: 26px;
+  line-height: 1;
+  color: var(--ps-err);
+  margin-bottom: var(--ps-s1);
+}
+.ps-error-title {
+  font-family: var(--ps-font-ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ps-text);
+}
+.ps-error-msg {
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ps-text-muted);
+  max-width: min(520px, 86%);
+  word-break: break-word;
+}
+
+/* ── One-click local fonts ───────────────────────────────────────────────── */
+/* A small floating pill over the stage, shown only when enabling installed
+ * fonts would visibly help (permission prompt-able + a substituting family
+ * whose local candidate is CSS-visible). Hidden via [hidden]. */
+.ps-localfonts-cta {
+  position: absolute;
+  top: var(--ps-s3);
+  right: var(--ps-s3);
+  z-index: 4;
+  font-family: var(--ps-font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ps-text);
+  background: var(--ps-panel);
+  border: 1px solid var(--ps-hairline-strong);
+  border-radius: 0;
+  padding: 6px 12px;
+  cursor: pointer;
+  box-shadow: var(--ps-shadow);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.ps-localfonts-cta:hover {
+  background: var(--ps-accent-soft);
+  border-color: var(--ps-accent);
+}
+.ps-localfonts-cta[hidden] {
+  display: none;
+}
+
+/* ── Dev instrument ──────────────────────────────────────────────────────── */
+.ps-dev {
+  flex: 0 0 auto;
+  display: none;
+  flex-direction: column;
+  background: var(--ps-inset);
+  border-top: 1px solid var(--ps-hairline-strong);
+  font-family: var(--ps-font-mono);
+  z-index: 6;
+}
+.parasma-snippet[data-dev="1"] .ps-dev {
+  display: flex;
+}
+.ps-dev-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-s2);
+  height: 32px;
+  padding: 0 var(--ps-s3);
+  border-bottom: 1px solid transparent;
+  font-size: 11px;
+  color: var(--ps-text-muted);
+  cursor: default;
+  /* Narrow hosts: the bar must clip, not shatter its tabs over the stage. */
+  overflow: hidden;
+}
+/* The tab strip (was missing a rule entirely — block-flow at ≤780px). It
+ * scrolls (hidden scrollbar) so IMAGES/BUS stay reachable on narrow hosts. */
+.ps-dev-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ps-dev-tabs::-webkit-scrollbar {
+  display: none;
+}
+.ps-dev-tab {
+  flex: 0 0 auto;
+}
+.ps-dev[data-open="1"] .ps-dev-bar {
+  border-bottom-color: var(--ps-hairline);
+}
+.ps-dev-title {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--ps-text);
+}
+.ps-dev-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--ps-text-muted);
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding: 4px 7px;
+  border-radius: 0;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.ps-dev-tab:hover {
+  color: var(--ps-text);
+}
+.ps-dev-tab[aria-selected="true"] {
+  color: var(--ps-text);
+  background: var(--ps-accent-soft);
+}
+.ps-dev-build {
+  font-size: 10px;
+  color: var(--ps-text-faint);
+  /* The build id is long (parserInfo string) — ellipsize, never wrap/overflow. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ps-dev-build b {
+  color: var(--ps-text-muted);
+  font-weight: 500;
+}
+.ps-dev-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ps-s2);
+}
+.ps-dev-chord {
+  color: var(--ps-text-faint);
+  font-size: 10px;
+}
+.ps-dev-disc {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--ps-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+.ps-dev-disc:hover {
+  color: var(--ps-text);
+}
+.ps-dev-body {
+  display: none;
+  height: 220px;
+  overflow: auto;
+  padding: var(--ps-s2) 0;
+}
+.ps-dev[data-open="1"] .ps-dev-body {
+  display: block;
+}
+.ps-dev-pane {
+  display: none;
+  padding: 0 var(--ps-s3);
+}
+.ps-dev-pane[data-active="1"] {
+  display: block;
+}
+
+/* Structured log / bus rows. */
+.ps-row {
+  display: grid;
+  grid-template-columns: 64px 14px 64px 1fr;
+  align-items: baseline;
+  gap: var(--ps-s2);
+  padding: 2px 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: 0;
+}
+.ps-row:hover {
+  background: var(--ps-canvas);
+}
+.ps-row .ps-t {
+  text-align: right;
+  color: var(--ps-text-faint);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-row .ps-lvl {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ps-text-faint);
+  align-self: center;
+}
+.ps-row[data-lvl="ok"] .ps-lvl {
+  background: var(--ps-ok);
+}
+.ps-row[data-lvl="err"] .ps-lvl {
+  background: var(--ps-err);
+}
+.ps-row[data-lvl="info"] .ps-lvl {
+  background: var(--ps-text-muted);
+}
+.ps-row .ps-chan {
+  color: var(--ps-text-muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ps-row .ps-msg {
+  color: var(--ps-text);
+  word-break: break-word;
+}
+.ps-row[data-lvl="err"] .ps-msg {
+  color: var(--ps-err);
+}
+
+/* INFO + IMAGES table. */
+.ps-kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px var(--ps-s4);
+  font-size: 11px;
+}
+.ps-kv dt {
+  color: var(--ps-text-muted);
+}
+.ps-kv dd {
+  margin: 0;
+  color: var(--ps-text);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.ps-table th {
+  text-align: left;
+  color: var(--ps-text-muted);
+  font-weight: 500;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--ps-hairline);
+}
+.ps-table td {
+  padding: 3px 8px;
+  color: var(--ps-text);
+  border-bottom: 1px solid var(--ps-hairline);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.ps-table td .ps-yes {
+  color: var(--ps-ok);
+}
+.ps-table td .ps-no {
+  color: var(--ps-text-faint);
+}
+/* FONTS live pane: rows whose origin/resolves-now/variants changed since the
+   last render flash briefly so a toggle's live effect is visible at a glance. */
+.ps-table tr.ps-flash td {
+  animation: ps-flash-fade 1.4s ease-out;
+}
+@keyframes ps-flash-fade {
+  from {
+    background: color-mix(in srgb, var(--ps-ok) 28%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* TIMING phase bars. */
+.ps-phase {
+  display: grid;
+  grid-template-columns: 92px 1fr 56px;
+  align-items: center;
+  gap: var(--ps-s2);
+  font-size: 11px;
+  padding: 3px 4px;
+}
+.ps-phase .ps-pn {
+  color: var(--ps-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+.ps-phase .ps-bar {
+  height: 6px;
+  border-radius: 0;
+  background: var(--ps-accent);
+  opacity: 0.85;
+  min-width: 2px;
+}
+.ps-phase .ps-ms {
+  text-align: right;
+  color: var(--ps-text);
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+.ps-dev-copy {
+  margin: var(--ps-s2) var(--ps-s3);
+  height: 26px;
+  padding: 0 var(--ps-s3);
+  font-family: var(--ps-font-mono);
+  font-size: 11px;
+}
+
+/* ── Load reveal (first mount only) ──────────────────────────────────────── */
+@keyframes ps-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ps-page-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.parasma-snippet.is-revealing .ps-toolbar > * {
+  animation: ps-rise 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--ps-d, 0ms);
+}
+.parasma-snippet.is-revealing .ps-pages {
+  animation: ps-page-in 0.26s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.parasma-snippet.is-revealing .ps-dev {
+  animation: ps-rise 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: 220ms;
+}
+
+/* ── Explorer panel (opt-in app-shell sidebar) ───────────────────────────── */
+.ps-explorer {
+  flex: 0 0 var(--ps-explorer-w);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--ps-panel);
+  border-right: 1px solid var(--ps-hairline);
+  overflow: hidden;
+  transition: flex-basis 0.22s cubic-bezier(0.2, 0.7, 0.2, 1),
+    border-color 0.22s ease;
+  z-index: 7;
+}
+.ps-explorer[data-collapsed] {
+  flex-basis: 0;
+  border-right-color: transparent;
+}
+/* Inner wrapper holds a fixed width so contents don't reflow during collapse. */
+.ps-explorer-inner {
+  width: var(--ps-explorer-w);
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ps-explorer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--ps-toolbar-h);
+  padding: 0 var(--ps-s2) 0 var(--ps-s4);
+  border-bottom: 1px solid var(--ps-hairline);
+}
+.ps-explorer-title {
+  font-family: var(--ps-font-ui);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ps-text-muted);
+}
+.ps-explorer-collapse {
+  font-size: 16px;
+}
+
+.ps-explorer-filter {
+  flex: 0 0 auto;
+  padding: var(--ps-s2) var(--ps-s3);
+  border-bottom: 1px solid var(--ps-hairline);
+}
+.ps-explorer-search {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--ps-s2);
+  font-family: var(--ps-font-ui);
+  font-size: 12px;
+  color: var(--ps-text);
+  background: var(--ps-inset);
+  border: 1px solid var(--ps-hairline);
+  border-radius: 0;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.ps-explorer-search::placeholder {
+  color: var(--ps-text-faint);
+}
+.ps-explorer-search:focus {
+  border-color: var(--ps-accent);
+  box-shadow: 0 0 0 2px var(--ps-accent-soft);
+}
+
+.ps-explorer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+.ps-explorer-tree {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--ps-s2) var(--ps-s1) var(--ps-s3);
+}
+.ps-explorer-empty {
+  display: none;
+  padding: var(--ps-s4) var(--ps-s4);
+  font-family: var(--ps-font-ui);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ps-text-faint);
+}
+
+/* Rows: disclosure / format / group headers. */
+.ps-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ps-s2);
+  height: 28px;
+  padding: 0 var(--ps-s2);
+  border-radius: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease;
+}
+.ps-tree-row:hover {
+  background: var(--ps-inset);
+}
+.ps-disc {
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ps-text-faint);
+  transition: color 0.12s ease;
+}
+.ps-disc svg {
+  display: block;
+}
+.ps-tree-row:hover .ps-disc {
+  color: var(--ps-text-muted);
+}
+.ps-fmt-dot {
+  flex: 0 0 7px;
+  width: 7px;
+  height: 7px;
+  /* A circle, not a corner-radius — format/status indicators stay round while
+   * the rest of the (all-square) chrome has sharp 90° corners. */
+  border-radius: 50%;
+  background: var(--ps-text-faint);
+}
+.ps-fmt-dot[data-fmt="docx"] { background: var(--ps-fmt-docx); }
+.ps-fmt-dot[data-fmt="xlsx"] { background: var(--ps-fmt-xlsx); }
+.ps-fmt-dot[data-fmt="pptx"] { background: var(--ps-fmt-pptx); }
+.ps-fmt-dot[data-fmt="csv"]  { background: var(--ps-fmt-csv); }
+
+.ps-tree-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ps-font-ui);
+  font-size: 12px;
+  color: var(--ps-text);
+}
+.ps-tree-row.is-format .ps-tree-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ps-text-muted);
+}
+.ps-tree-row.is-group .ps-tree-label {
+  font-size: 11.5px;
+  color: var(--ps-text-muted);
+}
+.ps-tree-badge {
+  flex: 0 0 auto;
+  font-family: var(--ps-font-mono);
+  font-size: 10px;
+  color: var(--ps-text-faint);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  padding-right: 2px;
+}
+
+/* Children box with a hairline guide-line. */
+.ps-tree-children {
+  margin-left: 12px;
+  padding-left: var(--ps-s2);
+  border-left: 1px solid var(--ps-hairline);
+}
+
+/* Leaves. */
+.ps-tree-leaf {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--ps-s2);
+  margin-left: 6px;
+  border-radius: 0;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ps-leaf-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ps-font-ui);
+  font-size: 12px;
+  color: var(--ps-text-muted);
+}
+.ps-tree-leaf:hover {
+  background: var(--ps-inset);
+}
+.ps-tree-leaf:hover .ps-leaf-label {
+  color: var(--ps-text);
+}
+.ps-tree-leaf:focus-visible {
+  /* A 1px solid accent ring + soft halo — the soft wash alone was near-invisible
+   * for keyboard navigation. */
+  box-shadow: inset 0 0 0 1px var(--ps-accent), 0 0 0 2px var(--ps-accent-soft);
+}
+/* Active leaf — the ONE amber accent moment: 2px left bar + soft wash + label. */
+.ps-tree-leaf.is-selected {
+  background: var(--ps-accent-soft);
+}
+.ps-tree-leaf.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  border-radius: 0;
+  background: var(--ps-accent);
+}
+.ps-tree-leaf.is-selected .ps-leaf-label {
+  color: var(--ps-accent);
+  font-weight: 600;
+}
+
+/* Toolbar panel-toggle reflects collapsed state. */
+.ps-panel-toggle[aria-pressed="true"] {
+  color: var(--ps-text);
+}
+
+/* ── Thin themed scrollbars on every scroll container ────────────────────── */
+/* The OS default chunky light scrollbar fights the dark chrome; theme it to
+ * the hairline tokens (Firefox scrollbar-* + WebKit pseudo-elements). */
+.ps-viewer,
+.ps-gridview,
+.ps-tabs,
+.ps-comments-list,
+.ps-explorer-tree,
+.ps-dev-body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ps-hairline-strong) transparent;
+}
+.ps-viewer::-webkit-scrollbar,
+.ps-gridview::-webkit-scrollbar,
+.ps-tabs::-webkit-scrollbar,
+.ps-comments-list::-webkit-scrollbar,
+.ps-explorer-tree::-webkit-scrollbar,
+.ps-dev-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.ps-viewer::-webkit-scrollbar-thumb,
+.ps-gridview::-webkit-scrollbar-thumb,
+.ps-tabs::-webkit-scrollbar-thumb,
+.ps-comments-list::-webkit-scrollbar-thumb,
+.ps-explorer-tree::-webkit-scrollbar-thumb,
+.ps-dev-body::-webkit-scrollbar-thumb {
+  background: var(--ps-hairline-strong);
+  border-radius: 0;
+}
+.ps-viewer::-webkit-scrollbar-track,
+.ps-gridview::-webkit-scrollbar-track,
+.ps-tabs::-webkit-scrollbar-track,
+.ps-comments-list::-webkit-scrollbar-track,
+.ps-explorer-tree::-webkit-scrollbar-track,
+.ps-dev-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parasma-snippet *,
+  .parasma-snippet *::before,
+  .parasma-snippet *::after {
+    animation-duration: 0ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0ms !important;
+  }
+}

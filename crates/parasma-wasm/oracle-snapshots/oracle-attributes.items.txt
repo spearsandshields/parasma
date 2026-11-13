@@ -1,0 +1,96 @@
+y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=wave st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y2 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st1 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y3 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds1 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y4 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps1 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y5 b0 i0 pt9.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps1 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y6 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline1 shadow0 emboss0 imprint0 bshift0.00
+y7 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow1 emboss0 imprint0 bshift0.00
+y8 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss1 imprint0 bshift0.00
+y9 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint1 bshift0.00
+y10 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl#ffff00 rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y11 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs#D9E2F3 csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y12 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp2.67 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y13 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift5.33
+y14 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y15 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sub hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y16 b0 i0 pt11.00 fam"arimo" ea"arimo" cs"Arimo" rcx0 col"#C00000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y17 b0 i0 pt11.00 fam"XITS Math" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y18 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#0563C1" u=single st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y19 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+== page 0 num1 sect0
+L0 p0 f1 l1 segs1 shade"#FFF2CC" bt=#1F4E79/1.50/4.00 bb=#C00000/1.00/2.00 bl=#00B050/0.75/3.00 br=#7030A0/3.00/1.00 bars1
+  S0 n14
+    i0 y0 w64.41 cw60.34 c0+9 "Bordered " sh9g adv64.41 r0 s1
+    i1 y0 w28.55 cw24.47 c9+4 "and " sh4g adv28.55 r0 s1
+    i2 y0 w56.27 cw52.19 c13+8 "shaded, " sh8g adv56.27 r0 s1
+    i3 y0 w30.16 cw26.08 c21+5 "with " sh5g adv30.16 r0 s1
+    i4 y0 w12.23 cw8.16 c26+2 "a " sh2g adv12.23 r0 s1
+    i5 y0 w25.27 cw21.20 c28+4 "bar " sh4g adv25.27 r0 s1
+    i6 y0 w28.53 cw28.53 c32+5 "rule." sh5g adv28.53 r0 s1
+    i7 y0 w114.52 cw114.52 c37+1 "\t" tab=Dot
+    i8 y0 w33.42 cw33.42 c38+6 "right-" sh6g adv33.42 r0 s1
+    i9 y0 w51.38 cw47.30 c44+8 "aligned " sh8g adv51.38 r0 s1
+    i10 y0 w33.42 cw29.35 c52+6 "after " sh6g adv33.42 r0 s1
+    i11 y0 w12.23 cw8.16 c58+2 "a " sh2g adv12.23 r0 s1
+    i12 y0 w44.85 cw40.78 c60+7 "dotted " sh7g adv44.85 r0 s1
+    i13 y0 w40.77 cw40.77 c67+6 "leader" sh6g adv40.77 r0 s1
+L1 p1 f1 l0 segs1
+  S0 n14
+    i0 y1 w37.49 cw33.42 c0+5 "wavy " sh5g adv37.49 r0 s1
+    i1 y2 w43.19 cw39.12 c5+7 "struck " sh7g adv43.19 r0 s1
+    i2 y3 w48.93 cw48.93 c12+7 "double-" sh7g adv48.93 r0 s1
+    i3 y3 w43.19 cw39.12 c19+7 "struck " sh7g adv43.19 r0 s1
+    i4 y4 w29.63 cw25.55 c26+4 "ALL " sh4g adv29.63 r0 s1
+    i5 y4 w44.01 cw39.94 c30+5 "CAPS " sh5g adv44.01 r0 s1
+    i6 y5 w42.24 cw38.91 c35+6 "SMALL " sh6g adv42.24 r0 s1
+    i7 y5 w36.01 cw32.68 c41+5 "CAPS " sh5g adv36.01 r0 s1
+    i8 y6 w47.29 cw43.22 c46+8 "outline " sh8g adv47.29 r0 s1
+    i9 y7 w54.63 cw50.55 c54+7 "shadow " sh7g adv54.63 r0 s1
+    i10 y8 w55.43 cw51.35 c61+7 "emboss " sh7g adv55.43 r0 s1
+    i11 y9 w48.08 cw44.01 c68+8 "imprint " sh8g adv48.08 r0 s1
+    i12 y10 w42.40 cw38.32 c76+8 "highlit " sh8g adv42.40 r0 s1
+    i13 y11 w26.08 cw26.08 c84+4 "run-" sh4g adv26.08 r0 s1
+L2 p1 f0 l1 segs1
+  S0 n1
+    i0 y11 w52.19 cw48.12 c88+7 "shaded " sh7g adv52.19 r0 s1
+L3 p2 f1 l1 segs1
+  S0 n11
+    i0 y12 w74.31 cw74.31 c0+8 "tracked-" sh8g adv74.31 r0 s0
+    i1 y12 w35.13 cw28.39 c8+4 "out " sh4g adv35.13 r0 s0
+    i2 y13 w44.02 cw39.95 c12+7 "raised " sh7g adv44.02 r0 s1
+    i3 y14 w21.39 cw21.39 c19+5 "super" sh5g adv21.39 r0 s1
+    i4 y15 w16.16 cw13.79 c24+4 "sub " sh4g adv16.16 r0 s1
+    i5 y16 w56.25 cw52.18 c28+8 "Georgia " sh8g adv56.25 r0 s1
+    i6 y16 w15.49 cw11.42 c36+3 "in " sh3g adv15.49 r0 s1
+    i7 y16 w25.27 cw21.20 c39+4 "red " sh4g adv25.27 r0 s1
+    i8 y17 w36.12 cw32.46 c43+5 "XITS " sh5g adv36.12 r0 s1
+    i9 y17 w34.75 cw31.08 c48+5 "Math " sh5g adv34.75 r0 s1
+    i10 y17 w24.04 cw24.04 c53+4 "face" sh4g adv24.04 r0 s1
+L4 p3 f1 l1 segs1
+  S0 n8
+    i0 y0 w66.86 cw62.78 c0+9 "Anchored " sh9g adv66.86 r0 s1 bm"target"
+    i1 y0 w37.50 cw33.43 c9+6 "here. " sh6g adv37.50 r0 s1
+    i2 y18 w56.25 cw52.18 c15+9 "external " sh9g adv56.25 r0 s1 link"url:https://example.invalid/spec"
+    i3 y18 w22.01 cw22.01 c24+4 "link" sh4g adv22.01 r0 s1 link"url:https://example.invalid/spec"
+    i4 y0 w4.07 cw0.00 c28+1 " " sh1g adv4.07 r0 s1
+    i5 y0 w28.55 cw24.47 c29+4 "and " sh4g adv28.55 r0 s1
+    i6 y18 w52.18 cw48.10 c33+9 "internal " sh9g adv52.18 r0 s1 link"anchor:target"
+    i7 y18 w22.01 cw22.01 c42+4 "link" sh4g adv22.01 r0 s1 link"anchor:target"
+L5 p4 f1 l1 segs1
+  S0 n8
+    i0 y0 w31.78 cw27.71 c0+5 "This " sh5g adv31.78 r0 s1 bm"\u{1}comment\u{1}0" cmt[0]
+    i1 y0 w35.88 cw31.80 c5+5 "span " sh5g adv35.88 r0 s1 cmt[0]
+    i2 y0 w48.08 cw44.01 c10+8 "carries " sh8g adv48.08 r0 s1 cmt[0]
+    i3 y0 w12.23 cw8.16 c18+2 "a " sh2g adv12.23 r0 s1 cmt[0]
+    i4 y0 w64.39 cw64.39 c20+8 "comment." sh8g adv64.39 r0 s1 cmt[0]
+    i5 y0 w4.07 cw0.00 c28+1 " " sh1g adv4.07 r0 s1
+    i6 y0 w99.45 cw95.38 c29+12 "Uncommented " sh12g adv99.45 r0 s1
+    i7 y0 w22.82 cw22.82 c41+5 "tail." sh5g adv22.82 r0 s1
+L6 p5 f1 l1 segs1
+  S0 n5
+    i0 y0 w30.98 cw26.91 c18+6 "latin " sh6g adv30.98 r0 s1
+    i1 y0 w22.82 cw18.75 c24+5 "tail " sh5g adv22.82 r0 s1
+    i2 y0 w24.47 cw24.47 c29+3 "123" sh3g adv24.47 r0 s1
+    i3 y19 w34.14 cw30.06 c9+9 "עולם " rtl sh5g adv34.14 r1 s0
+    i4 y19 w36.31 cw32.23 c0+9 "שלום " rtl sh5g adv36.31 r1 s0

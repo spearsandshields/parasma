@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@parasma/vue — mini viewer (the 70-line-ceiling integration)</title>
+    <style>
+      body { margin: 0; font: 14px/1.4 system-ui, sans-serif; }
+      .frame { max-width: 1100px; margin: 0 auto; padding: 12px 16px; }
+      .frame > p { color: #555; }
+      .mini-viewer { border: 1px solid #ddd; border-radius: 6px; overflow: hidden; }
+      .mini-toolbar { display: flex; gap: 6px; align-items: center; padding: 8px; border-bottom: 1px solid #ddd; flex-wrap: wrap; }
+      .mini-formula-bar { display: flex; gap: 8px; padding: 4px 8px; border-bottom: 1px solid #eee; font-family: monospace; }
+      .mini-notice { padding: 4px 8px; background: #fff3cd; }
+      .mini-error { padding: 4px 8px; background: #f8d7da; }
+      .mini-toolbar .active { background: #e0a33e; color: #fff; }
+      /* Sizing contract: give the element a definite height (here) or give
+         its parent one — the engine scrolls internally. Your rule wins: the
+         shipped sheet's root rule is zero-specificity by design. */
+      .mini-stage { height: 75vh; }
+      .mini-stage-wrap { position: relative; }
+      .mini-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #999; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div class="frame">
+      <h2>@parasma/vue — the 70-line-ceiling viewer</h2>
+      <p>
+        This entire integration (toolbar, sibling formula bar, search,
+        truncation notice) is the package's acceptance artifact:
+        <code>examples/mini-viewer.ts</code>, inside a test-enforced 70-line ceiling, over
+        <code>useParasma()</code>. Open a .docx / .xlsx / .pptx / .csv.
+      </p>
+      <div id="app"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

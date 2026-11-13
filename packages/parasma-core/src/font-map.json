@@ -1,0 +1,1717 @@
+{
+  "_generated": "Auto-generated from LibreOffice VCL.xcu. Run: python3 scripts/generate-font-map.py",
+  "_source": "https://github.com/LibreOffice/core/blob/master/officecfg/registry/data/org/openoffice/VCL.xcu",
+  "substitutes": {
+    "Arimo": {
+      "css_name": "Arimo",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Tinos": {
+      "css_name": "Tinos",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Cousine": {
+      "css_name": "Cousine",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Carlito": {
+      "css_name": "Carlito",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Caladea": {
+      "css_name": "Caladea",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Noto Sans": {
+      "css_name": "Noto+Sans",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Noto Serif": {
+      "css_name": "Noto+Serif",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    }
+  },
+  "mappings": {
+    "albany": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Alias for Albany AMT"
+    },
+    "albanyamt": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "LibreOffice's Arial substitute; we use Arimo instead"
+    },
+    "andalesans": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "andalesansui": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "andalewtui": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "antiqueolive": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Sans-serif; Arimo is functional substitute"
+    },
+    "aptos": {
+      "substitute": "Carlito",
+      "quality": "same-class",
+      "reason": "Aptos is Microsoft's new default (replaces Calibri in M365); Carlito is closest available"
+    },
+    "aptosnarrow": {
+      "substitute": "Carlito",
+      "quality": "same-class",
+      "reason": "Aptos Narrow → Carlito (width incompatible but functional)"
+    },
+    "arial": {
+      "substitute": "Arimo",
+      "quality": "metric-compatible",
+      "reason": "Arimo is Google's metric-compatible clone of Arial"
+    },
+    "arialnarrow": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Condensed sans; no condensed variant on Google Fonts, Arimo is width-incompatible but functional"
+    },
+    "arialunicode": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "arimo": {
+      "substitute": "Arimo",
+      "quality": "metric-compatible",
+      "reason": "Arimo is itself the substitute"
+    },
+    "avantgarde": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "ITC Avant Garde Gothic; geometric sans — Arimo is functional substitute"
+    },
+    "baskervilleoldface": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Transitional serif; Tinos is closest"
+    },
+    "bell": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Transitional serif; Tinos is closest available"
+    },
+    "bitstreamcharter": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Charter is a transitional serif; Tinos substitutes"
+    },
+    "bitstreamverasans": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Bitstream Vera Sans (DejaVu ancestor) → Arimo"
+    },
+    "bitstreamverasansmono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Bitstream Vera Sans Mono → Cousine"
+    },
+    "bitstreamveraserif": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Bitstream Vera Serif → Tinos"
+    },
+    "bookantiqua": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Palatino clone; Tinos is closest available serif"
+    },
+    "bookman": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "ITC Bookman is a wide serif; Tinos is narrower but same class"
+    },
+    "bookmanl": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "bookmanoldstyle": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Bookman Old Style = ITC Bookman; Tinos substitutes"
+    },
+    "caladea": {
+      "substitute": "Caladea",
+      "quality": "metric-compatible",
+      "reason": "Caladea is itself the substitute"
+    },
+    "calibri": {
+      "substitute": "Carlito",
+      "quality": "metric-compatible",
+      "reason": "Carlito is Google's metric-compatible clone of Calibri"
+    },
+    "calisto": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Calisto MT is a calligraphic serif; Tinos is closest"
+    },
+    "cambria": {
+      "substitute": "Caladea",
+      "quality": "metric-compatible",
+      "reason": "Caladea is the metric-compatible clone of Cambria"
+    },
+    "candara": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Candara is a humanist sans from MS ClearType collection; Arimo substitutes"
+    },
+    "carlito": {
+      "substitute": "Carlito",
+      "quality": "metric-compatible",
+      "reason": "Carlito is itself the substitute"
+    },
+    "century": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Century family serif; Tinos is closest available"
+    },
+    "centurygothic": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Geometric sans (ITC Avant Garde family); Arimo is closest sans on Google Fonts"
+    },
+    "centuryschoolbook": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Century Schoolbook variant; Tinos substitutes"
+    },
+    "centuryschoolbookl": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "cgtimes": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "charter": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Charter serif → Tinos"
+    },
+    "chicago": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Classic Mac system font; Arimo covers the role"
+    },
+    "cmusansserif": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Computer Modern Sans → Arimo"
+    },
+    "cmuserif": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Computer Modern Serif → Tinos"
+    },
+    "cmutypewritertext": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Computer Modern Typewriter → Cousine"
+    },
+    "constantia": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Constantia is a serif from MS ClearType collection; Tinos substitutes"
+    },
+    "corbel": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Corbel is a humanist sans from MS ClearType collection; Arimo substitutes"
+    },
+    "courier": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Courier is the typewriter original; Cousine matches Courier New"
+    },
+    "couriernew": {
+      "substitute": "Cousine",
+      "quality": "metric-compatible",
+      "reason": "Cousine is Google's metric-compatible clone of Courier New"
+    },
+    "cousine": {
+      "substitute": "Cousine",
+      "quality": "metric-compatible",
+      "reason": "Cousine is itself the substitute"
+    },
+    "cumberland": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Alias for Cumberland AMT"
+    },
+    "cumberlandamt": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "LibreOffice's Courier New substitute; we use Cousine instead"
+    },
+    "cursive": {
+      "substitute": "Arimo",
+      "quality": "rough-fallback",
+      "reason": "CSS cursive generic; no script font on Google Fonts matches well"
+    },
+    "dejavusans": {
+      "substitute": "DejaVuSans",
+      "quality": "exact",
+      "reason": "DejaVu Sans is libre — load the real (wide) face; Arimo's Arial metrics are too narrow and shift every line break"
+    },
+    "dejavusanscondensed": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Condensed sans → Arimo"
+    },
+    "dejavusansmono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "DejaVu Sans Mono → Cousine"
+    },
+    "dejavuserif": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "DejaVu Serif → Tinos"
+    },
+    "din": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Industrial sans-serif; Arimo is functional substitute"
+    },
+    "elite": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "elited": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "fantasy": {
+      "substitute": "Arimo",
+      "quality": "rough-fallback",
+      "reason": "CSS fantasy generic; no decorative font matches well"
+    },
+    "franklingothicmedium": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Franklin Gothic Medium is a grotesque sans; Arimo substitutes"
+    },
+    "freemono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "GNU FreeFont Mono → Cousine"
+    },
+    "freesans": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "GNU FreeFont Sans → Arimo"
+    },
+    "freeserif": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "GNU FreeFont Serif → Tinos"
+    },
+    "frutiger": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Humanist sans-serif; Arimo is closest available"
+    },
+    "garamond": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Old-style serif; Tinos is closest available. Different proportions than Garamond"
+    },
+    "geneva": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "macOS system sans-serif; Arimo substitutes adequately"
+    },
+    "georgia": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Slab-influenced serif designed for screen; Tinos is closest serif. Georgia has wider glyphs"
+    },
+    "helmet": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "helv": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "helvetica": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Helvetica and Arial share nearly identical metrics; Arimo matches Arial"
+    },
+    "helveticanarrow": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Condensed sans; Arimo is closest available sans on Google Fonts"
+    },
+    "lettergothic": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Monospace typewriter font; Cousine substitutes"
+    },
+    "liberationmono": {
+      "substitute": "Cousine",
+      "quality": "metric-compatible",
+      "reason": "Liberation Mono is also metric-compatible with Courier New, like Cousine"
+    },
+    "liberationsans": {
+      "substitute": "Arimo",
+      "quality": "metric-compatible",
+      "reason": "Liberation Sans is also metric-compatible with Arial, like Arimo"
+    },
+    "liberationserif": {
+      "substitute": "Tinos",
+      "quality": "metric-compatible",
+      "reason": "Liberation Serif is also metric-compatible with Times New Roman, like Tinos"
+    },
+    "linedraw": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "lineprinter": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "lucidabright": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Serif designed for screen; Tinos is closest"
+    },
+    "lucidaconsole": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Monospace; Cousine substitutes"
+    },
+    "lucidagrande": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "macOS system sans-serif; Arimo is reasonable substitute"
+    },
+    "lucidasans": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Humanist sans-serif; Arimo covers the role"
+    },
+    "lucidasanstyp": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "lucidasanstypewriter": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Monospace; Cousine substitutes"
+    },
+    "lucidasansunicode": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "lucidatypewriter": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "microsoftsansserif": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Microsoft Sans Serif → Arimo"
+    },
+    "monaco": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "macOS monospace; Cousine is closest mono on Google Fonts"
+    },
+    "mono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Generic mono → Cousine"
+    },
+    "monol": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "monospace": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Generic monospace family → Cousine"
+    },
+    "monospaced": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Generic monospace → Cousine"
+    },
+    "newcenturyschlbk": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "New Century Schoolbook is a legibility serif; Tinos is closest"
+    },
+    "newcenturyschoolbook": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "newyork": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Classic Mac serif; Tinos is closest"
+    },
+    "nimbusmonol": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Nimbus Mono L is Courier clone; Cousine substitutes"
+    },
+    "nimbusromanno9l": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Nimbus Roman is Times clone; Tinos substitutes"
+    },
+    "nimbusromannol": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Nimbus Roman variant; Tinos substitutes"
+    },
+    "nimbussansl": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Nimbus Sans L is Helvetica clone; Arimo substitutes"
+    },
+    "nlq": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "ocean": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Sans-serif; Arimo is functional substitute"
+    },
+    "omega": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Sans-serif; Arimo is functional substitute"
+    },
+    "palatino": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Old-style serif; wider than Times. Tinos is narrower but same class"
+    },
+    "palladio": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "palladiol": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "pica": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "picad": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "ps": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "psd": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "psnlq": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "roman": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "romanno9": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "romanno9l": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "romanps": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "sans": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Generic sans → Arimo"
+    },
+    "sansbold": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansbolditalic": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sanscondensedsemibold": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sanscondensedsemibolditalic": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansdemi": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansheavy": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansitalic": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansl": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansregular": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sanssemibold": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sanssemibolditalic": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "sansserif": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Generic sans-serif family → Arimo"
+    },
+    "schoolbook": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "segoe": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Segoe UI is Microsoft's UI font; Arimo is closest sans match"
+    },
+    "segoeui": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Segoe UI is Microsoft's UI font; Arimo is closest sans"
+    },
+    "serif": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Generic serif family → Tinos"
+    },
+    "serifbold": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "serifbolditalic": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "serifcaps": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "serifitalic": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "serifregular": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "swiss": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "tahoma": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Tahoma is narrower than Verdana but still a humanist sans; Arimo is reasonable"
+    },
+    "thorndale": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Alias for Thorndale AMT"
+    },
+    "thorndaleamt": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "LibreOffice's Times New Roman substitute; we use Tinos instead"
+    },
+    "times": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Times is the original; Times New Roman is the digitization; Tinos matches TNR"
+    },
+    "timesnewroman": {
+      "substitute": "Tinos",
+      "quality": "metric-compatible",
+      "reason": "Tinos is Google's metric-compatible clone of Times New Roman"
+    },
+    "timesroman": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "timmons": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "timos": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to Times New Roman → Tinos"
+    },
+    "tmsrmn": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "trebuchet": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Geometric sans; Arimo is closest available. Trebuchet has more distinctive letterforms"
+    },
+    "trebuchetms": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Trebuchet MS is a geometric sans; Arimo is closest"
+    },
+    "univers": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "utah": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to sans-serif bucket (Albany AMT)"
+    },
+    "utopia": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
+    },
+    "verdana": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Humanist sans-serif; Arimo is closer in weight than Noto Sans. Verdana has wider glyphs — not metric-compatible"
+    },
+    "calibrilight": {
+      "substitute": "Carlito",
+      "quality": "metric-compatible",
+      "reason": "Carlito (Calibri metric clone) shares Calibri Light advance widths; the Light weight differs only visually, so pagination/line-break match Word"
+    },
+    "arialnova": {
+      "substitute": "Arimo",
+      "quality": "metric-compatible",
+      "reason": "Arimo (Arial metric clone) matches Arial Nova advance widths for layout fidelity"
+    }
+  },
+  "no_substitute": {
+    "agdasima": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font; counterpart to Agency FB (display sans). No need to substitute — available directly on Google Fonts"
+    },
+    "agencyfb": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Microsoft display sans; Agdasima is Google's alternative but visually quite different"
+    },
+    "algerian": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Decorative shadowed font; no web equivalent"
+    },
+    "almanac": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "andy": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "angsananew": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai serif font; future: Noto Serif Thai"
+    },
+    "angsanaupc": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai serif variant; future: Noto Serif Thai"
+    },
+    "arioso": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "bacasimeantique": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font; counterpart to Baskerville Old Face. Available directly on Google Fonts"
+    },
+    "batang": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean serif; future: Noto Serif CJK KR"
+    },
+    "batangche": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean serif mono; future: Noto Serif CJK KR"
+    },
+    "belanosima": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font; counterpart to Berlin Sans FB. Available directly on Google Fonts"
+    },
+    "berlinsansfb": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Microsoft display sans; Belanosima is Google's alternative"
+    },
+    "blackadder": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "bradleyhand": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "broadway": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Art Deco display font; no web equivalent"
+    },
+    "browallianew": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai sans font; future: Noto Sans Thai"
+    },
+    "browalliaupc": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai sans variant; future: Noto Sans Thai"
+    },
+    "caprasimo": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font; counterpart to Cooper Black. Available directly on Google Fonts"
+    },
+    "castellar": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "All-caps engraved display; no web equivalent"
+    },
+    "cfangsong": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese FangSong variant; future: Noto Serif CJK SC"
+    },
+    "chancery": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "chanceryl": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "chevara": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "chevaraoutline": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "chiller": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "colonna": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Decorative outline; no web equivalent"
+    },
+    "comicsans": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Casual handwriting font; no web equivalent matches the style"
+    },
+    "comicsansms": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Comic Sans MS; no web equivalent matches the informal style"
+    },
+    "conga": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
+    },
+    "cooperblack": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Heavy decorative serif; Caprasimo is Google's alternative but visually different"
+    },
+    "copperlategothic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
+    },
+    "cordianew": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "cordiaupc": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "corsiva": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "curlz": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "dingbats": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Generic dingbat; no web equivalent"
+    },
+    "dotum": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean sans; future: Noto Sans CJK KR"
+    },
+    "dotumche": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean sans mono; future: Noto Sans CJK KR"
+    },
+    "edwardianscript": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Formal script; no web equivalent"
+    },
+    "engravers": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
+    },
+    "extra": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "falstaff": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to falstaff (no web equivalent)"
+    },
+    "fangsong": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese FangSong (imitation Song); future: Noto Serif CJK SC"
+    },
+    "felixtitling": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
+    },
+    "forte": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "frenchscript": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "fujiyama": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Condensed sans; no condensed web font available"
+    },
+    "fzhei": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Hei (sans); future: Noto Sans CJK SC"
+    },
+    "fzkai": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Kai (brush); future: Noto Sans CJK SC"
+    },
+    "fzmingti": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese/Traditional Chinese Ming style; future: Noto Serif CJK TC"
+    },
+    "fzsongti": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song style; future: Noto Serif CJK SC"
+    },
+    "gallia": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "garuda": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font (Garuda); future: Noto Sans Thai"
+    },
+    "gautami": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Telugu font; future: Noto Sans Telugu"
+    },
+    "gigi": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "gothic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Gothic (sans); future: Noto Sans CJK JP"
+    },
+    "gothicb": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Gothic variant; future: Noto Sans CJK JP"
+    },
+    "gothicl": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Gothic variant; future: Noto Sans CJK JP"
+    },
+    "gulim": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean sans; future: Noto Sans CJK KR"
+    },
+    "gulimche": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean sans mono; future: Noto Sans CJK KR"
+    },
+    "gungsuh": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean decorative serif; future: Noto Serif CJK KR"
+    },
+    "gungsuhche": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean decorative serif mono; future: Noto Serif CJK KR"
+    },
+    "haansoftbatang": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean serif (Hansoft); future: Noto Serif CJK KR"
+    },
+    "haansoftdotum": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean sans (Hansoft); future: Noto Sans CJK KR"
+    },
+    "hei": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Hei (sans); future: Noto Sans CJK SC"
+    },
+    "heiseimin": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Heisei Mincho; future: Noto Serif CJK JP"
+    },
+    "helmetcondensed": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Condensed sans; no condensed web font available"
+    },
+    "hiraginokakugothicpronw3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "macOS Japanese Gothic; future: Noto Sans CJK JP"
+    },
+    "hiraginokakugothicprow3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "macOS Japanese Gothic; future: Noto Sans CJK JP"
+    },
+    "hiraginomarugothicpronw4": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "macOS Japanese rounded Gothic; future: Noto Sans CJK JP"
+    },
+    "hiraginomarugothicprow4": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "macOS Japanese rounded Gothic; future: Noto Sans CJK JP"
+    },
+    "hiraginominchopronw3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "macOS Japanese Mincho; future: Noto Serif CJK JP"
+    },
+    "hiraginominchoprow3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "macOS Japanese Mincho; future: Noto Serif CJK JP"
+    },
+    "holidaypi": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "holidays": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "impact": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Heavy display sans; no metric-compatible web font. Arimo 700 is lighter"
+    },
+    "imprint": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "imprintmtshadow": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "imprintshadow": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "informalroman": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "kai": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Kai calligraphy style; future: Noto Sans CJK SC"
+    },
+    "kidprint": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "kristen": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "kunstlerscript": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "latinwide": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to falstaff (no web equivalent)"
+    },
+    "losangeles": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to onyx (no web equivalent)"
+    },
+    "lucidacalligraphic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "lucidacalligraphy": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "lucidadingbats": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "lucidahandwriting": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "lucidasansdingbats": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "lugrasimo": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font substitute for Lucida Calligraphy. Available on Google Fonts"
+    },
+    "lumanosimo": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font substitute for Lucida Handwriting. Available on Google Fonts"
+    },
+    "lunasima": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Google Font substitute for Lucida Grande. Available on Google Fonts"
+    },
+    "marlett": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Windows UI glyph font; no web equivalent"
+    },
+    "meiryo": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese UI font; future: Noto Sans CJK JP"
+    },
+    "mhei": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Hei variant; future: Noto Sans CJK SC"
+    },
+    "mincho": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Mincho (serif); future: Noto Serif CJK JP"
+    },
+    "minchoj": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Mincho variant; future: Noto Serif CJK JP"
+    },
+    "minchol": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Mincho variant; future: Noto Serif CJK JP"
+    },
+    "minchou": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Mincho variant; future: Noto Serif CJK JP"
+    },
+    "ming": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Ming (serif); future: Noto Serif CJK TC"
+    },
+    "mingli": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Ming variant; future: Noto Serif CJK TC"
+    },
+    "mingliu": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Traditional Chinese serif; future: Noto Serif CJK TC"
+    },
+    "mkai": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Kai variant; future: Noto Sans CJK SC"
+    },
+    "morewingbats": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "msgothic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Gothic (sans); future: Noto Sans CJK JP"
+    },
+    "msmincho": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Mincho (serif); future: Noto Serif CJK JP"
+    },
+    "msong": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song variant; future: Noto Serif CJK SC"
+    },
+    "mspgothic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Gothic proportional; future: Noto Sans CJK JP"
+    },
+    "mspmincho": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Mincho proportional; future: Noto Serif CJK JP"
+    },
+    "msuigothic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese Gothic UI; future: Noto Sans CJK JP"
+    },
+    "msunglightsc": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song (simplified); future: Noto Serif CJK SC"
+    },
+    "msunglighttc": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Ming (traditional); future: Noto Serif CJK TC"
+    },
+    "mtbroadway": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to falstaff (no web equivalent)"
+    },
+    "myeongjo": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Korean Myeongjo (serif); future: Noto Serif CJK KR"
+    },
+    "nftnorasi": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font variant; future: Noto Serif Thai"
+    },
+    "norasi": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font (Norasi); future: Noto Serif Thai"
+    },
+    "nsimsun": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song variant; future: Noto Serif CJK SC"
+    },
+    "onyx": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to losangeles (no web equivalent)"
+    },
+    "ooannop": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "oonaksit": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "ooratchada": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "oosawasdee": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "oothanakrit": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Thai font; future: Noto Sans Thai"
+    },
+    "opensymbol": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "LibreOffice's symbol font; no web equivalent"
+    },
+    "outlook": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "palacescript": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Formal script; no web equivalent"
+    },
+    "pepita": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "pgothic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese proportional Gothic; future: Noto Sans CJK JP"
+    },
+    "pmincho": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Japanese proportional Mincho; future: Noto Serif CJK JP"
+    },
+    "pmingliu": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Traditional Chinese serif proportional; future: Noto Serif CJK TC"
+    },
+    "pristina": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "sanscondensed": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Generic condensed sans; no condensed web font available"
+    },
+    "sanslcondensed": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Generic condensed sans; no condensed web font available"
+    },
+    "script": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "sheffield": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
+    },
+    "shelley": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Formal script; no web equivalent"
+    },
+    "shusong": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song variant; future: Noto Serif CJK SC"
+    },
+    "simhei": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Hei (sans); future: Noto Sans CJK SC"
+    },
+    "simkai": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Kai (brush script); future: Noto Sans CJK SC"
+    },
+    "simsong": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song variant; future: Noto Serif CJK SC"
+    },
+    "simsun": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song (serif); future: Noto Serif CJK SC"
+    },
+    "snowcap": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to imprintmtshadow (no web equivalent)"
+    },
+    "song": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song style; future: Noto Serif CJK SC"
+    },
+    "sorts": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "sorts2": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "sorts3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "spartan": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
+    },
+    "standardsymbols": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "standardsymbolsl": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "starbats": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "starmath": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "starsymbol": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "LibreOffice's symbol font; no web equivalent"
+    },
+    "swissnarrow": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Narrow serif; no narrow serif web font available"
+    },
+    "symbol": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Symbol font uses private Unicode area; glyphs mapped to Unicode equivalents in code"
+    },
+    "universcondensed": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Univers Condensed; no condensed web font available"
+    },
+    "vacation": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "vinerhand": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to andymt (no web equivalent)"
+    },
+    "vivaldi": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "vladimirscript": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
+    },
+    "webdings": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Microsoft dingbat font; no web equivalent"
+    },
+    "webdings2": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "webdings3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
+    },
+    "widelatin": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to falstaff (no web equivalent)"
+    },
+    "wingdings": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Dingbat font; no web equivalent. We map common chars (bullets) in rendering code"
+    },
+    "wingdings2": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Dingbat font variant; no web equivalent"
+    },
+    "wingdings3": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Dingbat font variant; no web equivalent"
+    },
+    "wingdings4": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Dingbat font variant; no web equivalent"
+    },
+    "zapfcalligraphic": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "zapfcalligraphy": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "VCL.xcu chain leads to zapfchancery (no web equivalent)"
+    },
+    "zapfchancery": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Calligraphic script; no web equivalent on Google Fonts"
+    },
+    "zapfdingbats": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Dingbat font; no web equivalent"
+    },
+    "zycjkhei": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Hei CJK variant; future: Noto Sans CJK SC"
+    },
+    "zycjkkai": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Kai CJK variant; future: Noto Sans CJK SC"
+    },
+    "zycjksun": {
+      "substitute": null,
+      "quality": "none",
+      "reason": "Chinese Song CJK variant; future: Noto Serif CJK SC"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# cargo-about configuration: the licence inventory of every crate compiled
+# into the shipped wasm. scripts/gen-wasm-licenses.sh renders it into
+# packages/parasma-core/THIRD-PARTY-LICENSES.md, which the @parasma/core
+# tarball carries. Hand-written attributions for the rest of the project are
+# in THIRD-PARTY-NOTICES.md at the root.
+accepted = [
+    "Apache-2.0",
+    "MIT",
+    "MPL-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "BSL-1.0",
+    "CC0-1.0",
+    "OFL-1.1",
+]
+# Only what reaches the browser.
+targets = ["wasm32-unknown-unknown"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Crates with `publish = false` are Parasma's own, not third parties.
+private = { ignore = true }

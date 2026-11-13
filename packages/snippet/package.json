@@ -1,0 +1,66 @@
+{
+  "name": "@parasma/snippet",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spearsandshields/parasma.git",
+    "directory": "packages/snippet"
+  },
+  "homepage": "https://github.com/spearsandshields/parasma#readme",
+  "bugs": {
+    "url": "https://github.com/spearsandshields/parasma/issues"
+  },
+  "version": "0.1.0",
+  "description": "Drop-in Parasma viewer for .docx, .xlsx, .pptx and CSV: DOM adapters, default controls, mountViewer and the <parasma-viewer> custom element.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./headless": "./src/headless-viewer.ts",
+    "./chrome": "./src/chrome/index.ts",
+    "./snippet.css": "./src/snippet.css"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": ["dist", "README.md", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.md"],
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./headless": {
+        "types": "./dist/headless-viewer.d.ts",
+        "default": "./dist/headless-viewer.js"
+      },
+      "./chrome": {
+        "types": "./dist/chrome/index.d.ts",
+        "default": "./dist/chrome/index.js"
+      },
+      "./snippet.css": "./dist/snippet.css"
+    }
+  },
+  "scripts": {
+    "fixtures": "bun scripts/copy-demo-fixtures.ts",
+    "predev": "bun scripts/copy-demo-fixtures.ts",
+    "prebuild:demo": "bun scripts/copy-demo-fixtures.ts",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite",
+    "build": "tsdown",
+    "build:demo": "vite build",
+    "prepack": "bun run build && bun ../../scripts/publish-manifest.ts apply",
+    "postpack": "bun ../../scripts/publish-manifest.ts restore",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@parasma/core": "workspace:*",
+    "@parasma/headless": "workspace:*",
+    "@fontsource-variable/hanken-grotesk": "^5.1.0",
+    "@fontsource-variable/jetbrains-mono": "^5.1.0"
+  },
+  "devDependencies": {
+    "vite": "^7.0.0",
+    "vitest": "^4.1.10"
+  }
+}

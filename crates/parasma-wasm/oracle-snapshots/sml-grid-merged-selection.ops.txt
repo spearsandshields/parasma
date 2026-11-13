@@ -1,0 +1,272 @@
+SetFillStyle "#ffffff"
+FillRect 0.00 0.00 500.00 400.00
+Save
+BeginPath
+Rect 16.00 13.00 484.00 387.00
+Clip
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+MoveTo 83.50 13.50
+LineTo 83.50 400.50
+Stroke
+BeginPath
+MoveTo 160.50 13.50
+LineTo 160.50 400.50
+Stroke
+BeginPath
+MoveTo 237.50 13.50
+LineTo 237.50 400.50
+Stroke
+BeginPath
+MoveTo 314.50 13.50
+LineTo 314.50 400.50
+Stroke
+BeginPath
+MoveTo 391.50 13.50
+LineTo 391.50 400.50
+Stroke
+BeginPath
+MoveTo 468.50 13.50
+LineTo 468.50 400.50
+Stroke
+BeginPath
+MoveTo 16.50 -6.50
+LineTo 500.50 -6.50
+Stroke
+BeginPath
+MoveTo 16.50 22.50
+LineTo 500.50 22.50
+Stroke
+BeginPath
+MoveTo 16.50 42.50
+LineTo 500.50 42.50
+Stroke
+BeginPath
+MoveTo 16.50 62.50
+LineTo 500.50 62.50
+Stroke
+BeginPath
+MoveTo 16.50 82.50
+LineTo 500.50 82.50
+Stroke
+BeginPath
+MoveTo 16.50 102.50
+LineTo 500.50 102.50
+Stroke
+BeginPath
+MoveTo 16.50 122.50
+LineTo 500.50 122.50
+Stroke
+BeginPath
+MoveTo 16.50 142.50
+LineTo 500.50 142.50
+Stroke
+BeginPath
+MoveTo 16.50 162.50
+LineTo 500.50 162.50
+Stroke
+BeginPath
+MoveTo 16.50 182.50
+LineTo 500.50 182.50
+Stroke
+BeginPath
+MoveTo 16.50 202.50
+LineTo 500.50 202.50
+Stroke
+BeginPath
+MoveTo 16.50 222.50
+LineTo 500.50 222.50
+Stroke
+BeginPath
+MoveTo 16.50 242.50
+LineTo 500.50 242.50
+Stroke
+BeginPath
+MoveTo 16.50 262.50
+LineTo 500.50 262.50
+Stroke
+BeginPath
+MoveTo 16.50 282.50
+LineTo 500.50 282.50
+Stroke
+BeginPath
+MoveTo 16.50 302.50
+LineTo 500.50 302.50
+Stroke
+BeginPath
+MoveTo 16.50 322.50
+LineTo 500.50 322.50
+Stroke
+BeginPath
+MoveTo 16.50 342.50
+LineTo 500.50 342.50
+Stroke
+BeginPath
+MoveTo 16.50 362.50
+LineTo 500.50 362.50
+Stroke
+BeginPath
+MoveTo 16.50 382.50
+LineTo 500.50 382.50
+Stroke
+BeginPath
+MoveTo 16.50 402.50
+LineTo 500.50 402.50
+Stroke
+SetFillStyle "#ffffff"
+FillRect 7.00 -6.00 229.00 27.33
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+Rect 6.50 -6.50 230.00 28.00
+Stroke
+SetFillStyle "#ffffff"
+FillRect 7.00 43.33 75.00 38.00
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+Rect 6.50 42.50 76.00 39.00
+Stroke
+SetFillStyle "#ffffff"
+FillRect 7.00 83.33 75.00 38.00
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+Rect 6.50 82.50 76.00 39.00
+Stroke
+SetTextBaseline "alphabetic"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 9.00 12.75 "Invoice"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 9.00 37.42 "Group"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 86.00 37.42 "Item"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 163.00 37.42 "Amount"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 9.00 67.42 "Hardware"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 86.00 57.42 "Laptop"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 201.37 57.42 "1899"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 86.00 77.42 "Monitor"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 209.53 77.42 "549"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 9.00 107.42 "Software"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 86.00 97.42 "License"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 201.37 97.42 "1200"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 86.00 117.42 "Support"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 209.53 117.42 "350"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 9.00 137.42 "Total"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 201.37 137.42 "3998"
+Save
+SetGlobalAlpha 0.15
+SetFillStyle "#217346"
+FillRect 6.00 22.33 231.00 60.00
+SetGlobalAlpha 1.00
+SetStrokeStyle "#217346"
+SetLineWidth 1.00
+BeginPath
+Rect 6.50 -6.50 230.00 88.00
+Stroke
+SetLineWidth 2.00
+BeginPath
+Rect 6.50 -6.50 230.00 28.00
+Stroke
+Restore
+Restore
+SetFillStyle "#f0f0f0"
+FillRect 0.00 0.00 500.00 13.00
+FillRect 0.00 0.00 16.00 400.00
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+MoveTo 0.50 13.50
+LineTo 500.00 13.50
+MoveTo 16.50 0.50
+LineTo 16.50 400.00
+Stroke
+SetFont "10px Calibri"
+SetFillStyle "#444444"
+SetTextBaseline "middle"
+Save
+BeginPath
+Rect 16.00 0.00 484.00 13.00
+Clip
+SetTextAlign "center"
+FillText 44.50 6.50 "A"
+FillText 121.50 6.50 "B"
+FillText 198.50 6.50 "C"
+FillText 275.50 6.50 "D"
+FillText 352.50 6.50 "E"
+FillText 429.50 6.50 "F"
+FillText 506.50 6.50 "G"
+Restore
+Save
+BeginPath
+Rect 0.00 13.00 16.00 387.00
+Clip
+SetTextAlign "right"
+FillText 12.00 7.67 "1"
+FillText 12.00 32.33 "2"
+FillText 12.00 52.33 "3"
+FillText 12.00 72.33 "4"
+FillText 12.00 92.33 "5"
+FillText 12.00 112.33 "6"
+FillText 12.00 132.33 "7"
+FillText 12.00 152.33 "8"
+FillText 12.00 172.33 "9"
+FillText 12.00 192.33 "10"
+FillText 12.00 212.33 "11"
+FillText 12.00 232.33 "12"
+FillText 12.00 252.33 "13"
+FillText 12.00 272.33 "14"
+FillText 12.00 292.33 "15"
+FillText 12.00 312.33 "16"
+FillText 12.00 332.33 "17"
+FillText 12.00 352.33 "18"
+FillText 12.00 372.33 "19"
+FillText 12.00 392.33 "20"
+Restore
+SetTextAlign "left"
+Save
+SetGlobalAlpha 0.30
+SetFillStyle "#217346"
+Save
+BeginPath
+Rect 16.00 0.00 484.00 13.00
+Clip
+FillRect 6.00 0.00 231.00 13.00
+Restore
+Save
+BeginPath
+Rect 0.00 13.00 16.00 387.00
+Clip
+FillRect 0.00 -7.00 16.00 89.33
+Restore
+Restore

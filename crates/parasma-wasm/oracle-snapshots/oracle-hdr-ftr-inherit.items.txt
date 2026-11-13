@@ -1,0 +1,33 @@
+y0 b0 i0 pt9.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+== page 0 num1 sect0
+H0 p4294967295 f0 l0 segs1
+  S0 n2
+    i0 y0 w50.03 cw46.70 c0+10 "Inherited " sh10g adv50.03 r0 s1
+    i1 y0 w39.36 cw39.36 c10+6 "Header" sh6g adv39.36 r0 s1
+L0 p0 f1 l1 segs1
+  S0 n3
+    i0 y1 w52.99 cw48.92 c0+8 "Section " sh8g adv52.99 r0 s1
+    i1 y1 w28.55 cw24.47 c8+4 "one " sh4g adv28.55 r0 s1
+    i2 y1 w36.70 cw36.70 c12+5 "page." sh5g adv36.70 r0 s1
+F0 p4294967295 f0 l0 segs1
+  S0 n2
+    i0 y0 w50.03 cw46.70 c0+10 "Inherited " sh10g adv50.03 r0 s1
+    i1 y0 w34.68 cw34.68 c10+6 "Footer" sh6g adv34.68 r0 s1
+== page 1 num2 sect1
+H0 p4294967295 f0 l0 segs1
+  S0 n2
+    i0 y0 w50.03 cw46.70 c0+10 "Inherited " sh10g adv50.03 r0 s1
+    i1 y0 w39.36 cw39.36 c10+6 "Header" sh6g adv39.36 r0 s1
+L0 p1 f1 l1 segs1
+  S0 n6
+    i0 y1 w52.99 cw48.92 c0+8 "Section " sh8g adv52.99 r0 s1
+    i1 y1 w26.90 cw22.82 c8+4 "two " sh4g adv26.90 r0 s1
+    i2 y1 w36.70 cw32.63 c12+5 "page " sh5g adv36.70 r0 s1
+    i3 y1 w18.74 cw14.67 c17+4 "— " sh2g adv18.74 r0 s1
+    i4 y1 w20.39 cw16.31 c21+3 "no " sh3g adv20.39 r0 s1
+    i5 y1 w28.52 cw28.52 c24+5 "refs." sh5g adv28.52 r0 s1
+F0 p4294967295 f0 l0 segs1
+  S0 n2
+    i0 y0 w50.03 cw46.70 c0+10 "Inherited " sh10g adv50.03 r0 s1
+    i1 y0 w34.68 cw34.68 c10+6 "Footer" sh6g adv34.68 r0 s1

@@ -1,0 +1,6 @@
+STATSCENSUS test=ground_truth::word_ground_truth ckpt=0 relaid=0 demoted=0 viol=0
+STATSCENSUS test=ground_truth::word_ground_truth ckpt=0 relaid=0 demoted=0 viol=0
+STATSCENSUS test=ground_truth::word_ground_truth ckpt=0 relaid=0 demoted=0 viol=0
+STATSCENSUS test=ground_truth::word_ground_truth ckpt=0 relaid=0 demoted=0 viol=0
+STATSCENSUS test=oracle_tests::extract_range_carries_anchored_image ckpt=0 relaid=0 demoted=0 viol=0
+STATSCENSUS test=oracle_tests::object_hit_test_survives_clear_image_bytes ckpt=0 relaid=0 demoted=0 viol=0

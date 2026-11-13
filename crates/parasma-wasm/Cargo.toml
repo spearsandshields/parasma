@@ -1,0 +1,197 @@
+[package]
+name = "parasma-wasm"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Debug-only layout-introspection probe. Compiled out of release
+# builds; enable with `wasm-pack build … -- --features debug-probe`.
+debug-probe = []
+# Excel (SpreadsheetML) renderer. Gates the parserInfo link probe
+# AND the sml/ renderer module. Arms the ooxml-sml feature set required for the
+# grid geometry: column widths/row heights/sheetFormatPr/gridlines all live
+# behind sml-styling (generated.rs), so a structure-only feature set cannot
+# render a grid. sml-styling arms a strict <col> @min/@max parse, which the
+# sml/shim.rs render-only pre-repair contains. Off by default:
+# docx-only builds must not link ooxml-sml at all (verified by
+# check-wasm-identity.sh size/symbol tracking).
+# Theme/tint/indexed colors add `dep:ooxml-opc`: the SML renderer
+# self-parses `xl/theme/theme1.xml` via a second OPC `Package` over the retained
+# workbook bytes (the exact pml/mod.rs `parse_opc_theme` precedent — the fork's
+# `Workbook` exposes no theme-part accessor). ooxml-opc is ALREADY an optional
+# dep (armed by `pml`) and already in the dependency graph via
+# ooxml-sml itself, so this changes no lockfile entry and adds no code to the
+# docx-only build (feature off → crate unlinked, byte-identity preserved).
+# The lazy grid index adds `dep:quick-xml`: the renderer self-parses
+# `xl/sharedStrings.xml` through the fork's GENERATED `SharedStrings::from_xml`
+# (ooxml_sml::parsers — public, the same FromXml machinery `parse_worksheet`
+# drives) because the lazy path never calls `resolved_sheet()` (which was the
+# only SST conduit). quick-xml is ALREADY an optional dep (armed by `pml`) at
+# the exact version the fork's ooxml-xml uses (one lockfile entry, type
+# identity holds); docx-only stays byte-identical (feature off → unlinked).
+sml = ["ooxml-sml/sml-styling", "ooxml-sml/sml-structure", "ooxml-sml/sml-layout", "dep:ooxml-opc", "dep:quick-xml"]
+# PowerPoint (PresentationML) renderer. Gates the parserInfo link
+# probe AND the pml/ renderer module. Slide CONTENT (shapes, text bodies, runs)
+# is DrawingML (ECMA-376 §20/§21); the slide envelope is §19. ALL DML text fields
+# (TextRun.t + .r_pr) are gated behind ooxml-dml/dml-text — without it every
+# slide run has no text and no rPr — so the feature MUST arm dml-text on the
+# already-present ooxml-dml dep (dml-fills/dml-colors are already on for run
+# color). MINIMAL pml feature set: shapes/txBody/runs are DML-backed and need no
+# pml-* flag; dml-tables is cheap and re-exports the table types. Keeping
+# pml-animations/pml-transitions OFF keeps the #56-style strict-required-attr
+# parsers (cTn/cBhvr/tgtEl/snd) out of the compiled build. `dep:ooxml-pml` so the
+# crate only links when armed — docx-only (--no-default-features) stays
+# byte-identical (verified by check-wasm-identity.sh).
+#
+# The feature adds ooxml-dml/dml-lines so `spPr/ln` (the shape OUTLINE — §20.1.2.2.24)
+# becomes a readable field on CTShapeProperties (the `line` field is dml-lines-
+# gated). The dml-lines parsers are all tolerant (`.parse().ok()`, no
+# MissingAttribute), so arming it does NOT re-arm a #56-style strict parse. It is
+# added ONLY here on the `pml` feature (NOT on the base ooxml-dml dep) so the
+# docx-only build's dml feature set is unchanged and stays byte-identical.
+#
+# Tables: `ooxml-pml/extra-children` is added on the dep line below
+# (NOT here — it is a pml-crate feature, not a parasma-wasm feature). It is THE
+# enabling change for tables: `Slide::tables()` is populated by
+# `extract_tables_from_slide`, which is `#[cfg(feature="extra-children")]` and
+# otherwise a no-op stub returning `Vec::new()`. The graphicFrame stores its
+# `a:graphic/a:graphicData/a:tbl` subtree in `frame.extra_children` (a field that
+# only EXISTS under extra-children); the table types (CTTable/Row/Cell/Col) are
+# already armed via `dml-tables`. extra-children only CAPTURES unknown nodes
+# (RawXmlNode) for roundtrip — it RELAXES parsing, never tightens it, so it adds
+# NO strict parser of the <col> @min/@max kind. A table missing the strict-required `gridCol@w` /
+# `tr@h` still fails the per-table `parse_as::<CTTable>().ok()` and degrades to
+# "no table on that frame" (graceful, by design). docx-only stays
+# byte-identical (extra-children is on the dep-gated ooxml-pml crate only).
+# Style-matrix shape fills arm `ooxml-pml/pml-styling` (the dep line
+# below) so `Shape.style` (`<p:style>` fillRef/lnRef — §19.3.1.49) compiles.
+# The ShapeStyle FIELDS live in ooxml-dml behind dml-shapes, and the refs'
+# strict-required `@idx` behind dml-themes, so BOTH must be armed here or the
+# style field parses to an empty struct. They are armed ONLY on the `pml`
+# feature (the dml-text/dml-lines precedent) — docx-only builds keep the dml
+# feature set unchanged and stay byte-identical.
+# ⚠️ #56-class check: the strict parsers pml-styling makes reachable
+# from our parse paths are ShapeStyle (4 required children) + the refs' @idx
+# (dml-themes). PowerPoint always writes all four refs with idx; checked
+# on test.pptx + every bundled ppt fixture (see pml/tests.rs
+# `playground_ppt_fixtures_still_parse_with_pml_styling`). The OTHER strict
+# pml-styling parsers (CTKinsoku invalStChars, embeddedFontLst font) sit in
+# presentation.xml, which the fork reads via a scan — never typed-parsed, so
+# they stay unreachable. dml-themes' strict theme parsers (clrScheme/
+# fmtScheme/themeElements) only run on typed theme parts — we self-parse
+# theme1.xml with raw scans, so also unreachable.
+pml = ["dep:ooxml-pml", "dep:ooxml-opc", "dep:quick-xml", "ooxml-dml/dml-text", "ooxml-dml/dml-lines", "ooxml-dml/dml-shapes", "ooxml-dml/dml-themes"]
+# Enhanced Metafile (EMF, MS-EMF) vector renderer for inline `image/x-emf`
+# picture parts. OFF by default and HAND-ROLLED (no new deps — the DIB decode is
+# a byte loop and the RGBA handoff reuses the existing ImageBitmap pipeline), so
+# it enters no lockfile entry and adds ZERO code to a docx-only build. The
+# `emf/` module, the Viewer's `emf_pics` cache field + its population/clear, the
+# WML render-path dispatch, and the raw-RGBA `image_refs` variant are each
+# `#[cfg(feature = "emf")]`, so a build WITHOUT this feature is byte-identical to
+# one that predates the renderer (verified by scripts/check-wasm-identity.sh).
+# It is not in the crate's default set; the shipped build (build:wasm:full, the
+# CI size-gate build and the `bun run ci` gate) arms it alongside sml and pml.
+emf = []
+
+[dev-dependencies]
+# Builds the synthetic oracle .docx files for the native layout-regression
+# harness (src/oracle_tests.rs) — stored entries only, no compression needed.
+# Already in the dependency tree via ooxml-opc, so this adds no new code.
+zip = { version = "9.0.5", default-features = false }
+
+[dependencies]
+wasm-bindgen = { workspace = true }
+
+# Two users. (1) The decompression-bomb guard (`src/package_limits.rs`) meters
+# every entry's real inflated size before any parse. (2) The parser-repair
+# stopgap (`src/repair/`): on a strict-required-attr parse failure it opens the
+# original package bytes, byte-rewrites ONLY the failing part (pgMar gutter /
+# custGeom), and re-zips every other entry UNCHANGED before re-parsing. zip 7 is
+# already in the build tree via ooxml-opc, and the workspace patch narrows it to
+# the wasm-safe `deflate` feature, so this adds no new compiled code beyond the
+# writer surface. Removing the repair module would not remove this dep.
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+
+# Stack-inline small vectors. Used for `Item.comment_ids` (the per-item comment
+# highlight carrier — allocation-free in the common 0/1-comment case, spilling
+# to the heap only for overlapping ranges). Already in the build tree via
+# rustybuzz, so this adds no new compiled code.
+smallvec = "1"
+
+# Async glue for streaming layout — used to yield to the browser event loop
+# between pages so the UI stays responsive during pagination of large docs.
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+# OOXML parsers — the pterror fork. Patched in the workspace root
+# Cargo.toml to disable zstd/bzip2/lzma/xz/deflate64 features on zip,
+# leaving only `deflate` which is the only compression OOXML actually uses.
+ooxml-sml = { version = "0.1.1-alpha.2", default-features = false }
+ooxml-wml = { version = "0.1.1-alpha.2", default-features = false, features = ["wml-styling", "wml-numbering", "wml-track-changes", "wml-layout", "wml-drawings", "wml-tables", "wml-fields", "wml-hyperlinks", "wml-comments", "extra-children", "wml-math"] }
+ooxml-xml = { version = "0.1.1-alpha.2", default-features = false }
+ooxml-dml = { version = "0.1.1-alpha.2", default-features = false, features = ["dml-charts", "dml-fills", "dml-colors"] }
+# OMML (Office Math) typed tree — consumed directly by wml/math.rs.
+# ooxml-wml re-exports only `MathZone`; the per-construct enum + structs live
+# here. Resolves via [patch.crates-io] to the same fork rev. Zero size cost when
+# no doc has equations (empty math tree -> no math Items).
+ooxml-omml = { version = "0.1.1-alpha.2", default-features = false }
+
+# PowerPoint (PresentationML) — optional (armed by the `pml`
+# feature). default-features=false + a MINIMAL set: dml-tables (cheap,
+# re-exports the DML table types), extra-children and pml-styling. Slide shapes/text are
+# DML-backed and need no pml-* flag; pml-animations/pml-transitions stay OFF to
+# keep the strict-required-attr parsers out of the build (#56-style risk).
+# `pml-styling` arms `Shape.style` (`<p:style>`, §19.3.1.49) plus the
+# typed `cSld/bg` (CTBackground — tolerant parser, no required fields) and
+# clrMapOvr. Field types come from ooxml-dml (see the `pml` feature note above
+# for the dml-shapes/dml-themes pairing + the #56-class check).
+ooxml-pml = { version = "0.1.1-alpha.2", default-features = false, features = ["dml-tables", "extra-children", "pml-styling"], optional = true }
+
+# OPC package reader — PML self-parses slide-layout parts itself (the high-level
+# `SlideLayout` struct exposes only path/name/type, NOT cSld/spTree, and
+# `Presentation::read_part` is private), so the `pml` renderer re-opens the held
+# .pptx bytes as a `Package` to read layout XML for placeholder inheritance (a
+# self-parse, so the fork needs no new accessor). Already
+# in the dependency tree transitively; armed (linked) only by the `pml` feature.
+ooxml-opc = { version = "0.1.1-alpha.2", default-features = false, optional = true }
+
+# quick-xml — only to drive the generated `SlideLayout::from_xml` entry point
+# when self-parsing layout parts (the fork's `FromXml` trait takes a
+# `quick_xml::Reader`). Pinned to the SAME 0.39 the fork uses so the `Reader<R>`
+# type unifies. Armed (linked) only by the `pml` feature.
+quick-xml = { version = "0.39", optional = true }
+
+# Unicode Line Breaking Algorithm (UAX #14). Used to find break opportunities
+# in run text for paragraph wrapping. Latin + basic CJK every-char break out
+# of the box.
+unicode-linebreak = "0.1"
+unicode-bidi = "0.3"
+
+# Font parsing + text shaping. Pure Rust, no C deps —
+# cross-compiles cleanly to wasm32-unknown-unknown.
+ttf-parser = "0.25"
+rustybuzz = "0.20"
+
+
+[dependencies.web-sys]
+workspace = true
+features = [
+  "console",
+  "Window",
+  "Document",
+  "Element",
+  "HtmlCanvasElement",
+  "CanvasRenderingContext2d",
+  "TextMetrics",
+  "ImageBitmap",
+  # The streaming-layout yield is a MessageChannel round trip rather
+  # than a nested setTimeout (see `yield_to_browser`). Bindings only; no new
+  # crate and no lockfile change.
+  "MessageChannel",
+  "MessagePort",
+]

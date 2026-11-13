@@ -1,0 +1,12 @@
+y0 b0 i0 pt11.00 fam"Noto Sans Arabic" ea"arimo" cs"Noto Sans Arabic" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Noto Sans Arabic" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y2 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+== page 0 num1 sect0
+L0 p0 f1 l1 segs1
+  S0 n6
+    i0 y0 w28.32 cw28.32 c50+12 "ش\u{64e}ي\u{652}ء\u{64e}" rtl sh8g adv28.32 r1 s0
+    i1 y0 w12.35 cw8.54 c45+5 "لا " rtl sh3g adv12.35 r1 s0
+    i2 y1 w4.07 cw0.00 c44+1 " " rtl sh1g adv4.07 r0 s1
+    i3 y2 w21.19 cw21.19 c42+2 "OK" sh2g adv21.19 r0 s1
+    i4 y0 w36.75 cw32.94 c21+21 "ع\u{64e}ل\u{64e}ي\u{652}ك\u{64f}م\u{652} " rtl sh12g adv36.75 r1 s0
+    i5 y0 w39.47 cw35.65 c0+21 "الس\u{64e}\u{651}ل\u{64e}ام\u{64f} " rtl sh11g adv39.47 r1 s0

@@ -1,0 +1,26 @@
+{
+  "name": "parasma-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:wasm": "./scripts/build-wasm.sh",
+    "build:wasm:full": "./scripts/build-wasm.sh -- --features sml,pml,emf",
+    "dev": "bun run build:wasm:dev && bun run --filter @parasma/snippet dev",
+    "build": "bun run build:wasm && bun run --filter '*' build",
+    "build:wasm:dev": "./scripts/build-wasm.sh -- --features sml,pml,emf,debug-probe",
+    "ci": "./scripts/ci-local.sh",
+    "ci:strict": "./scripts/ci-local.sh --strict",
+    "sweep:corpus": "node scripts/sweep-corpus.mjs",
+    "test": "bun run --filter '*' test"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.3",
+    "publint": "^0.3.21",
+    "tsdown": "^0.22.13",
+    "typescript": "^5.6.0",
+    "unrun": "^0.3.1"
+  }
+}

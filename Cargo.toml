@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+web-sys = "0.3"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+
+# Pin to Parasma's public fork of pterror/ooxml. The fork's
+# CHANGES-FROM-UPSTREAM.md lists every patch it carries; the ones this crate
+# cannot build without are the deflate-only zip dependency (zstd-sys does not
+# cross-compile to wasm32), DrawingExt::extent_emu, parse_numbering and
+# parse_chart_space, and the depth-tracked skip-body parser fix.
+#
+# The fork's version is upstream's with a `.parasma.N` pre-release segment and
+# is tagged `v<version>`. To bump: tag the fork, then change the `tag` here on
+# every line. Switch back to crates.io once the patches are accepted upstream.
+[patch.crates-io]
+ooxml-opc = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+ooxml-xml = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+ooxml-wml = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+ooxml-sml = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+ooxml-dml = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+# PowerPoint (PresentationML). Patched because the parasma-wasm crate has an
+# optional `pml` feature that links ooxml-pml. Same tag as the sibling crates. Slide CONTENT is DrawingML (§20/§21), so this leans
+# on the already-patched ooxml-dml (dml-text armed by the `pml` feature).
+ooxml-pml = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+ooxml-omml = { git = "https://github.com/spearsandshields/parasma-ooxml", tag = "v0.1.1-alpha.2.parasma.2" }
+# Note: ooxml-omml is pulled in by sml/wml transitively only via optional
+# features we don't enable. Its patch is unnecessary right now; add back if
+# features expand later.

@@ -1,0 +1,53 @@
+{
+  "name": "@parasma/vue",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spearsandshields/parasma.git",
+    "directory": "packages/vue"
+  },
+  "homepage": "https://github.com/spearsandshields/parasma#readme",
+  "bugs": {
+    "url": "https://github.com/spearsandshields/parasma/issues"
+  },
+  "version": "0.1.0",
+  "description": "Vue bindings for the Parasma document viewer: the useParasma composable and the <ParasmaViewer> component.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "files": ["dist", "README.md", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.md"],
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "prepack": "bun run build && bun ../../scripts/publish-manifest.ts apply",
+    "postpack": "bun ../../scripts/publish-manifest.ts restore",
+    "test": "vitest run",
+    "build:demo": "vite build"
+  },
+  "dependencies": {
+    "@parasma/core": "workspace:*",
+    "@parasma/headless": "workspace:*",
+    "@parasma/snippet": "workspace:*"
+  },
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "devDependencies": {
+    "vue": "^3.4.0",
+    "vitest": "^4.1.10",
+    "happy-dom": "^21.0.4",
+    "vite": "^7.0.0"
+  }
+}

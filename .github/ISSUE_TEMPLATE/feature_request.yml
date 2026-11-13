@@ -1,0 +1,22 @@
+name: Feature request
+description: Something Parasma does not support yet.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the "Status and limitations" section of the README first:
+        editing, saving and the legacy binary formats are out of scope for now.
+        **Do not attach a confidential or third-party document.**
+  - type: textarea
+    id: need
+    attributes:
+      label: What you need, and why
+      description: The problem you are trying to solve, not only the feature you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: Where it is specified
+      description: The ECMA-376 section, if you know it, or what Office does today.

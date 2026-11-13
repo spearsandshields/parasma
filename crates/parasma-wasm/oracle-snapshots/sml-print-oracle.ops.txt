@@ -1,0 +1,81 @@
+SetFillStyle "#ffffff"
+FillRect 0.00 0.00 816.00 1056.00
+SetFillStyle "#f0f0f0"
+FillRect 24.00 24.00 289.00 13.00
+FillRect 24.00 37.00 16.00 72.00
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+MoveTo 24.50 37.50
+LineTo 313.50 37.50
+Stroke
+BeginPath
+MoveTo 40.50 24.50
+LineTo 40.50 109.50
+Stroke
+SetFillStyle "#3c4043"
+SetFont "11px -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+SetTextBaseline "middle"
+SetTextAlign "center"
+FillText 81.50 30.50 "A"
+FillText 179.50 30.50 "B"
+FillText 274.50 30.50 "C"
+SetTextAlign "right"
+FillText 38.00 47.00 "1"
+FillText 38.00 73.00 "2"
+FillText 38.00 99.00 "3"
+SetTextAlign "left"
+SetTextBaseline "alphabetic"
+SetStrokeStyle "#d4d4d4"
+SetLineWidth 1.00
+BeginPath
+MoveTo 40.50 37.50
+LineTo 40.50 109.50
+Stroke
+BeginPath
+MoveTo 123.50 37.50
+LineTo 123.50 109.50
+Stroke
+BeginPath
+MoveTo 236.50 37.50
+LineTo 236.50 109.50
+Stroke
+BeginPath
+MoveTo 313.50 37.50
+LineTo 313.50 109.50
+Stroke
+BeginPath
+MoveTo 40.50 37.50
+LineTo 313.50 37.50
+Stroke
+BeginPath
+MoveTo 40.50 57.50
+LineTo 313.50 57.50
+Stroke
+BeginPath
+MoveTo 40.50 89.50
+LineTo 313.50 89.50
+Stroke
+BeginPath
+MoveTo 40.50 109.50
+LineTo 313.50 109.50
+Stroke
+SetTextBaseline "alphabetic"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 43.00 52.08 "Header"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 126.00 52.08 "Inline"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 269.22 52.08 "45292"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 91.45 78.08 "3.14"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 159.54 78.08 "TRUE"
+SetFont "normal normal 11pt \"Calibri\", -apple-system, BlinkMacSystemFont, sans-serif"
+SetFillStyle "#1f2328"
+FillText 239.00 104.08 "Footer"
