@@ -110,7 +110,7 @@ function makeAccordion(
   const disc = row.querySelector<HTMLElement>(".ps-disc");
   if (disc) setDisc(disc, openByDefault);
   row.addEventListener("click", () => {
-    const open = children.hidden;
+    const open = Boolean(children.hidden); // `hidden` may also be "until-found"
     children.hidden = !open;
     if (disc) setDisc(disc, open);
     group.dataset.open = open ? "1" : "0";
