@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/spearsandshields/parasma/issues"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Vue bindings for the Parasma document viewer: the useParasma composable and the <ParasmaViewer> component.",
   "type": "module",
   "exports": {

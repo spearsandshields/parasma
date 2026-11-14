@@ -8,7 +8,16 @@ are held stable regardless.
 
 ## [Unreleased]
 
-The first public release, 0.1.0.
+## [0.1.1] — 2026-11-13
+
+No change in behaviour; the WebAssembly engine is byte-for-byte the same as in
+0.1.0.
+Source comments and test descriptions were rewritten so they stand on their
+own.
+
+## [0.1.0] — 2026-11-13
+
+The first public release.
 
 ### Formats
 

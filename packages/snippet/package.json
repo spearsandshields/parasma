@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/spearsandshields/parasma/issues"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Drop-in Parasma viewer for .docx, .xlsx, .pptx and CSV: DOM adapters, default controls, mountViewer and the <parasma-viewer> custom element.",
   "type": "module",
   "exports": {

@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/spearsandshields/parasma/issues"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Framework-free kernel and plugins for the Parasma document viewer: loading, viewport, selection, clipboard, search, zoom and fonts, with no DOM.",
   "type": "module",
   "exports": {

@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/spearsandshields/parasma/issues"
   },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Parasma engine for the browser: a WebAssembly layout and paint engine for .docx, .xlsx, .pptx and CSV, with an optional worker transport.",
   "type": "module",
   "exports": {

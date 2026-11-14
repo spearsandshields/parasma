@@ -14,7 +14,7 @@
     },
     "packages/headless": {
       "name": "@parasma/headless",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@parasma/core": "workspace:*",
         "@xstate/store": "^3",
@@ -26,7 +26,7 @@
     },
     "packages/parasma-core": {
       "name": "@parasma/core",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "fflate": "^0.8.2",
       },
@@ -36,7 +36,7 @@
     },
     "packages/react": {
       "name": "@parasma/react",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@parasma/core": "workspace:*",
         "@parasma/headless": "workspace:*",
@@ -56,7 +56,7 @@
     },
     "packages/snippet": {
       "name": "@parasma/snippet",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@fontsource-variable/hanken-grotesk": "^5.1.0",
         "@fontsource-variable/jetbrains-mono": "^5.1.0",
@@ -70,7 +70,7 @@
     },
     "packages/vue": {
       "name": "@parasma/vue",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@parasma/core": "workspace:*",
         "@parasma/headless": "workspace:*",
