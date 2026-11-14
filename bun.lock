@@ -17,7 +17,7 @@
       "version": "0.1.1",
       "dependencies": {
         "@parasma/core": "workspace:*",
-        "@xstate/store": "^3",
+        "@xstate/store": "^4",
         "xstate": "^5",
       },
       "devDependencies": {
@@ -312,7 +312,7 @@
 
     "@vue/shared": ["@vue/shared@3.5.40", "", {}, "sha512-WxnBtruIqOoV3rA4jeKDWzrYI5h7Cp4+pjwDi8kWGHz+IslhiN+wguLVVhtv2l8VoU02rzDCVfDjgCl1lNpZVg=="],
 
-    "@xstate/store": ["@xstate/store@3.17.5", "", { "peerDependencies": { "react": "^18.2.0 || ^19.0.0", "solid-js": "^1.7.6" }, "optionalPeers": ["react", "solid-js"] }, "sha512-ITajQVRAMa1pgmgM0OdRFYQ6OQ8GK4ynh391p13GKtZnELXn9Hgs9pr4mqO1Z95HH9INcmczmWi5xk3O18GBWg=="],
+    "@xstate/store": ["@xstate/store@4.3.0", "", { "peerDependencies": { "xstate": "^5.0.0" }, "optionalPeers": ["xstate"] }, "sha512-Zoe4h8aqsSZLV8KRmwdpfYbfkmHrfZZunKLAB09xz5LwfPQRKyZhDBnQiTaXV3nKe0defaDg+L2N0XHcsa60AQ=="],
 
     "@yuku-codegen/binding-darwin-arm64": ["@yuku-codegen/binding-darwin-arm64@0.7.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-hbssEr7iLNCWWdUbEt8cuOjUQ9loI+U/BVmdhNQ4CV1wAFGvWDO3niK9JD2WwTC9iib7E498qgZ3L/xJnoSb3A=="],
 

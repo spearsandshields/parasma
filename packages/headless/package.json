@@ -46,7 +46,7 @@
   },
   "dependencies": {
     "xstate": "^5",
-    "@xstate/store": "^3",
+    "@xstate/store": "^4",
     "@parasma/core": "workspace:*"
   }
 }
