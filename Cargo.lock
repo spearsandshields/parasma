@@ -219,7 +219,7 @@ dependencies = [
  "base64",
  "ooxml-codegen",
  "ooxml-xml",
- "quick-xml",
+ "quick-xml 0.39.4",
  "serde",
  "thiserror",
 ]
@@ -230,7 +230,7 @@ version = "0.1.1-alpha.2.parasma.2"
 source = "git+https://github.com/spearsandshields/parasma-ooxml?tag=v0.1.1-alpha.2.parasma.2#23bc567d52ed973f49367ee63487f42c93e9c1fc"
 dependencies = [
  "ooxml-xml",
- "quick-xml",
+ "quick-xml 0.39.4",
  "thiserror",
 ]
 
@@ -239,7 +239,7 @@ name = "ooxml-opc"
 version = "0.1.1-alpha.2.parasma.2"
 source = "git+https://github.com/spearsandshields/parasma-ooxml?tag=v0.1.1-alpha.2.parasma.2#23bc567d52ed973f49367ee63487f42c93e9c1fc"
 dependencies = [
- "quick-xml",
+ "quick-xml 0.39.4",
  "thiserror",
  "zip",
 ]
@@ -254,7 +254,7 @@ dependencies = [
  "ooxml-dml",
  "ooxml-opc",
  "ooxml-xml",
- "quick-xml",
+ "quick-xml 0.39.4",
  "serde",
  "thiserror",
 ]
@@ -268,7 +268,7 @@ dependencies = [
  "ooxml-codegen",
  "ooxml-opc",
  "ooxml-xml",
- "quick-xml",
+ "quick-xml 0.39.4",
  "serde",
  "thiserror",
 ]
@@ -283,7 +283,7 @@ dependencies = [
  "ooxml-omml",
  "ooxml-opc",
  "ooxml-xml",
- "quick-xml",
+ "quick-xml 0.39.4",
  "serde",
  "thiserror",
 ]
@@ -293,7 +293,7 @@ name = "ooxml-xml"
 version = "0.1.1-alpha.2.parasma.2"
 source = "git+https://github.com/spearsandshields/parasma-ooxml?tag=v0.1.1-alpha.2.parasma.2#23bc567d52ed973f49367ee63487f42c93e9c1fc"
 dependencies = [
- "quick-xml",
+ "quick-xml 0.39.4",
  "serde",
  "thiserror",
 ]
@@ -310,7 +310,7 @@ dependencies = [
  "ooxml-sml",
  "ooxml-wml",
  "ooxml-xml",
- "quick-xml",
+ "quick-xml 0.42.0",
  "rustybuzz",
  "smallvec",
  "ttf-parser",
@@ -345,6 +345,15 @@ checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
 dependencies = [
  "memchr",
  "serde",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

@@ -164,7 +164,7 @@ ooxml-opc = { version = "0.1.1-alpha.2", default-features = false, optional = tr
 # when self-parsing layout parts (the fork's `FromXml` trait takes a
 # `quick_xml::Reader`). Pinned to the SAME 0.39 the fork uses so the `Reader<R>`
 # type unifies. Armed (linked) only by the `pml` feature.
-quick-xml = { version = "0.39", optional = true }
+quick-xml = { version = "0.42", optional = true }
 
 # Unicode Line Breaking Algorithm (UAX #14). Used to find break opportunities
 # in run text for paragraph wrapping. Latin + basic CJK every-char break out
