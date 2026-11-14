@@ -10,10 +10,17 @@ are held stable regardless.
 
 ## [0.1.1] — 2026-11-13
 
-No change in behaviour; the WebAssembly engine is byte-for-byte the same as in
-0.1.0.
-Source comments and test descriptions were rewritten so they stand on their
-own.
+No change in rendering.
+
+### Changed
+
+- Dependencies: `@xstate/store` 4 and `xstate` 5.33 (`@parasma/headless`), the
+  fontsource faces 5.3 (`@parasma/snippet`), and zip 9.4 inside the
+  WebAssembly engine, which grows by 3.4 KB gzipped.
+- The declaration files are built with TypeScript 7. They export the same
+  names and type-check in projects on TypeScript 5.9 or 7.
+- Source comments and test descriptions were rewritten so they stand on their
+  own.
 
 ## [0.1.0] — 2026-11-13
 
