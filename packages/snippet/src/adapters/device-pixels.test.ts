@@ -1,20 +1,20 @@
 /**
- * device-pixels.test.ts — the grid scroll-PIN device-snap math (adapter-only
- * fractional-DPR gutter-shimmer fix). Pure, no DOM: asserts the invariants the
- * DomGridAdapter.paint() pin relies on so the sticky gutter + gridlines land on
+ * device-pixels.test.ts — the grid scroll-OFFSET device-snap math (adapter-only
+ * fractional-DPR gutter-shimmer fix). Pure, no DOM: asserts the invariants
+ * DomGridAdapter.paint() relies on so the sticky gutter + gridlines land on
  * the SAME physical-pixel grid every scroll frame.
  *
- * The pin computes domX = snapLenToDevice(scrollLeft, dpr) for the CSS translate
- * and derives the engine content offset sx = domX·scaleX/zoom from the SAME
- * value, so the translate and the paint agree on one device-rounded offset.
+ * paint() computes domX = snapLenToDevice(scrollLeft, dpr) and derives the
+ * engine content offset sx = domX·scaleX/zoom from it, so the paint lands on
+ * a device-rounded offset inside the CSS-pinned canvas.
  */
 import { describe, it, expect } from "vitest";
 import { snapLenToDevice } from "./device-pixels";
 
 const FRACTIONAL_DPRS = [1.25, 1.5];
 
-describe("grid scroll-pin device snap", () => {
-  it("pins the translate onto a whole device pixel", () => {
+describe("grid scroll-offset device snap", () => {
+  it("snaps the scroll offset onto a whole device pixel", () => {
     for (const dpr of FRACTIONAL_DPRS) {
       for (let s = 0; s < 200; s += 0.13) {
         const domX = snapLenToDevice(s, dpr);

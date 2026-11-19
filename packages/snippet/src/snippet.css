@@ -626,13 +626,26 @@
   position: relative;
   background: var(--ps-paper);
 }
+/* Spacer and canvas share one grid cell (the adapter shows the view as
+ * `display: grid`): the spacer gives the cell the sheet's full extent, which
+ * drives the native scrollbars, and the viewport-sized canvas sticks to the
+ * scroll corner. The browser pins a sticky box on its scroll thread, in step
+ * with the scroll itself. A transform written from a scroll handler cannot do
+ * that: it lands a frame or more late, so the canvas, column headers included,
+ * slides out of view and snaps back. */
+.ps-grid-spacer,
+.ps-grid-canvas {
+  grid-area: 1 / 1;
+}
 .ps-grid-spacer {
   position: relative;
 }
 .ps-grid-canvas {
-  position: absolute;
+  position: sticky;
   top: 0;
   left: 0;
+  align-self: start;
+  justify-self: start;
   pointer-events: auto;
 }
 

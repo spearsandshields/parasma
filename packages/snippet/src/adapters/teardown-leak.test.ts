@@ -178,6 +178,21 @@ describe("DomGridAdapter teardown", () => {
     expect(viewer.paintGridViewport).not.toHaveBeenCalled();
   });
 
+  it("never pins the canvas with a scroll translate (CSS sticky pins it)", async () => {
+    // A translate written from the scroll handler always trails the browser's
+    // own scroll by a frame or more: the canvas slides off and snaps back.
+    const { adapter, gridviewEl, gridCanvasEl } = make();
+    kernel.emitBus("grid:mode-changed", { mode: "grid" });
+    gridviewEl.scrollLeft = 300;
+    gridviewEl.scrollTop = 500;
+    gridviewEl.dispatch("scroll");
+    g.raf.flush();
+    await Promise.resolve();
+    expect(viewer.paintGridViewport).toHaveBeenCalled();
+    expect(String(gridCanvasEl.style.transform ?? "")).not.toMatch(/translate/);
+    adapter.destroy();
+  });
+
   it("is idempotent: double destroy is a safe no-op", () => {
     const { adapter } = make();
     adapter.destroy();

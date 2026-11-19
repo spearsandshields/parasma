@@ -12,7 +12,8 @@
  *
  * plugin-grid owns the grid DECISIONS/state (mode, extent, grid.cellAt); this
  * owns the windowed virtual scroller DOM: #grid-canvas pinned to the
- * scroll corner via translate(scrollX,scrollY), #grid-spacer sized to the full
+ * scroll corner by CSS `position: sticky` (never by a scroll-driven transform,
+ * which trails the browser's own scroll), #grid-spacer sized to the full
  * extent (native-scrollbar trick), and the rAF-coalesced scroll/ResizeObserver.
  */
 
@@ -196,20 +197,18 @@ export class DomGridAdapter {
    * around the cursor anchor (so the content point under the cursor stays put —
    * the SAME point setup() re-pins crisply at settle, so the hand-off is seamless).
    * A fixed bitmap scaled on the GPU glides smoothly without re-snapping any line,
-   * so the gridlines don't flicker mid-zoom. The scroll/spacer are frozen during
-   * the burst (setup() is skipped), so the pin translate reads the stable scroll.
+   * so the gridlines don't flicker mid-zoom. The canvas is sticky-pinned to the
+   * scroll corner, so the transform carries the scale alone, no scroll term.
    */
   private applyGestureScale(): void {
     const rel = this.zoom / this.gestureBaseScale;
-    const domX = this.gridviewEl.scrollLeft;
-    const domY = this.gridviewEl.scrollTop;
     const a = this.pendingZoomAnchor;
     const cx = a ? a.cx : this.gridviewEl.clientWidth / 2;
     const cy = a ? a.cy : this.gridviewEl.clientHeight / 2;
-    // pin(scroll) ∘ scale(rel) about (cx,cy), with transform-origin at 0,0:
-    // scale-about-point collapses to translate((1−rel)·c) ∘ scale(rel).
-    const tx = domX + cx * (1 - rel);
-    const ty = domY + cy * (1 - rel);
+    // scale(rel) about (cx,cy), with transform-origin at 0,0: scale-about-point
+    // collapses to translate((1−rel)·c) ∘ scale(rel).
+    const tx = cx * (1 - rel);
+    const ty = cy * (1 - rel);
     this.gridCanvasEl.style.transformOrigin = "0 0";
     this.gridCanvasEl.style.transform = `translate(${tx}px, ${ty}px) scale(${rel})`;
   }
@@ -244,7 +243,8 @@ export class DomGridAdapter {
         // resurfaced at row ~4 on the successor). The real per-sheet position
         // lives in plugin-grid's scroll map, not in the hidden DOM.
         if (!showGrid) this.gridviewEl.scrollTo(0, 0);
-        this.gridviewEl.style.display = showGrid ? "block" : "none";
+        // "grid": spacer and canvas stack in one cell (see .ps-grid-canvas).
+        this.gridviewEl.style.display = showGrid ? "grid" : "none";
         this.viewerEl.style.display = showGrid ? "none" : "";
         if (!showGrid) this.clearSelection();
       }),
@@ -472,7 +472,7 @@ export class DomGridAdapter {
     this.gridSpacerEl.style.height = "0px";
     this.gridCanvasEl.width = 0;
     this.gridCanvasEl.height = 0;
-    this.gridCanvasEl.style.transform = "translate(0px, 0px)";
+    this.gridCanvasEl.style.transform = "";
     this.gridviewEl.scrollTo(0, 0);
   }
 
@@ -569,24 +569,24 @@ export class DomGridAdapter {
     }
     this.painting = true;
     try {
-      // Canvas pinning is DOM(spacer)-space; the ENGINE paints in content space
-      // ×zoom (identical until zoom≠1 or the spacer cap arms on a monster
+      // The scroll position is DOM(spacer)-space; the ENGINE paints in content
+      // space ×zoom (identical until zoom≠1 or the spacer cap arms on a monster
       // extent).
       const dpr = this.scope.dpr();
-      // Device-pixel snap the scroll PIN (the snapLenToDevice discipline).
-      // A fractional scrollLeft/Top at fractional DPR leaves the engine-pinned
-      // sticky gutter + gridlines on a shifting device-pixel phase = shimmer.
-      // Round the DOM scroll to whole device px and derive BOTH the translate pin
-      // AND the engine paint offset from that ONE value so they agree on the same
-      // physical-pixel grid every frame. ≤0.5 device px off true scroll = no
-      // perceptible content jump; the GPU translate still glides.
+      // Device-pixel snap the scroll OFFSET (the snapLenToDevice discipline).
+      // The canvas itself is sticky-pinned at the scroll corner, on the device
+      // grid. A fractional scrollLeft/Top at fractional DPR would leave the
+      // engine-pinned gutter + gridlines on a shifting device-pixel phase =
+      // shimmer, so the engine paint offset derives from the scroll rounded to
+      // whole device px. ≤0.5 device px off true scroll = no perceptible jump.
       const domX = snapLenToDevice(this.gridviewEl.scrollLeft, dpr);
       const domY = snapLenToDevice(this.gridviewEl.scrollTop, dpr);
       const sx = (domX * this.scaleX) / this.zoom;
       const sy = (domY * this.scaleY) / this.zoom;
       const vw = this.gridviewEl.clientWidth;
       const vh = this.gridviewEl.clientHeight;
-      this.gridCanvasEl.style.transform = `translate(${domX}px, ${domY}px)`;
+      // Drop the gesture tier's CSS scale, if any: this paint is crisp.
+      this.gridCanvasEl.style.transform = "";
       await this.viewer.paintGridViewport(this.sheet, this.gridCanvasEl, sx, sy, vw, vh, this.zoom);
       // Re-check after the await: a doc switch / mode flip / destroy can land
       // mid-paint (the worker RPC is a real suspension point).

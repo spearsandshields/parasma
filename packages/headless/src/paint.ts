@@ -28,8 +28,8 @@ export type PaintIntent =
   // GRID WINDOW repaint (plugin-grid): paint the visible window of the
   // continuous spreadsheet grid (the windowed virtual scroller), a
   // SEPARATE canvas from the per-page `.page` canvases. The DOM grid adapter
-  // (DomGridAdapter) drains this tag, pins #grid-canvas via a translate(scrollX,
-  // scrollY) transform, and calls viewer.paintGridViewport(sheet, canvas, …) for
+  // (DomGridAdapter) drains this tag and, with #grid-canvas pinned to the scroll
+  // corner by CSS, calls viewer.paintGridViewport(sheet, canvas, …) for
   // O(visible-rows) painting. The DomViewportAdapter ignores it (its drain only
   // handles 'page'/'page-invalidate'); the grid adapter ignores 'page'.
   | {
