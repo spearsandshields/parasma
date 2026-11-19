@@ -8,6 +8,15 @@ are held stable regardless.
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-11-19
+
+### Fixed
+
+- Spreadsheets: while scrolling, the grid and its column headers no longer
+  slide out of view and snap back. The grid canvas is now pinned to the scroll
+  corner by the browser (`position: sticky`) instead of by a transform written
+  on each scroll event, which always trailed the scroll.
+
 ## [0.1.1] — 2026-11-13
 
 No change in rendering.
