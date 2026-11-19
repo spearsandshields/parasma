@@ -1,14 +1,61 @@
 # Parasma
 
-A read-only viewer for Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`)
-and CSV files that runs entirely in the browser. A layout engine written in
-Rust and compiled to WebAssembly renders documents to a canvas with high
-layout fidelity; the viewer around it is framework-agnostic TypeScript.
-Layout rules follow ECMA-376 and are calibrated against Word's observed
-behaviour.
+[![npm](https://img.shields.io/npm/v/@parasma/snippet.svg)](https://www.npmjs.com/package/@parasma/snippet)
+[![CI](https://github.com/spearsandshields/parasma/actions/workflows/ci.yml/badge.svg)](https://github.com/spearsandshields/parasma/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[Try the demo](https://spearsandshields.github.io/parasma/). It opens your own
-files too, and they stay in your browser.
+**Show Word, Excel and PowerPoint files in your web application, laid out page for page,
+without a server and without the document ever leaving the browser.**
+
+Parasma is a read-only viewer for `.docx`, `.xlsx`, `.pptx` and CSV. Its core is a document
+layout engine written in Rust and compiled to WebAssembly: it reads the file, breaks lines
+and pages by the rules of ECMA-376 as Word applies them, and paints the result to a canvas.
+Around the engine sits a framework-agnostic TypeScript viewer that you embed with one element.
+
+The goal is to be for Office documents what PDF.js is for PDF: the component you reach for when
+a document has to appear inside a web page, as its author saw it.
+
+**[Try the demo](https://spearsandshields.github.io/parasma/)**. It opens your own files too,
+and they stay in your browser.
+
+```html
+<parasma-viewer src="/files/report.docx" controls style="height: 80vh"></parasma-viewer>
+```
+
+## Why Parasma
+
+**No conversion service.** The usual ways to show an Office file on the web are to upload it to
+a third party, or to run a headless office suite that turns it into PDF or images. Parasma needs
+neither: the file is parsed, laid out and painted on the user's device. There is nothing to
+deploy, nothing to scale, and no copy of a confidential document on someone else's machine.
+
+**Layout, not reflow.** Turning a document into HTML lets the browser decide where lines and
+pages break, so page 7 in the viewer is not page 7 in Word. Parasma computes the layout itself:
+sections and columns, tables, floating objects with text wrap, footnotes,
+numbering, fields. Where the standard leaves a behaviour open, the rule was measured on real
+documents in Word and is recorded beside the code that implements it. Where the engine knowingly
+does less than the standard, the deviation is declared, not hidden.
+
+**Canvas-native.** A page keeps the geometry of every glyph, so painting, zooming, selecting
+text, copying as plain text or HTML and searching work on positions the engine computed, not on
+whatever a DOM text layer happened to produce.
+
+**Off the main thread.** Parsing, layout and paint run in a worker by default, so a long report
+does not freeze the page that embeds it. A worker that stalls is ended and replaced.
+
+**Documents are untrusted input.** The engine runs in the WebAssembly sandbox: a memory-safety
+failure traps and cannot touch the host page. A package is refused before parsing when its parts
+inflate past fixed limits (counted on the bytes actually inflated, not on what the zip directory
+claims). Word layout watches a memory budget and stops gracefully with the pages laid out so far
+instead of taking the tab down. [SECURITY.md](SECURITY.md) has the threat model, and
+[docs/memory-architecture.md](docs/memory-architecture.md) the measurements behind the limits.
+
+**Made to be embedded.** One custom element, or `mountViewer`, or a headless viewer under your
+own toolbar; adapters for React and Vue; theming through CSS tokens. The names you build on are listed in a [stability contract](docs/stability.md) and pinned
+by tests.
+
+**No telemetry.** The library makes no analytics requests. The only network traffic is the
+engine and the fonts, both of which you can host yourself.
 
 ## Features
 
@@ -137,7 +184,23 @@ To avoid any third-party request, host the font files yourself and set
 `fontBaseUrl` (or supply a `fontResolver`); `assetBaseUrl` relocates the
 wasm binary and fonts together.
 
-## Architecture
+## How it works
+
+A document goes through four stages, all inside the browser:
+
+1. **Open.** The package is unzipped with its inflated size metered, and parsed by a Rust OOXML
+   parser into typed structures for WordprocessingML, SpreadsheetML, PresentationML and
+   DrawingML.
+2. **Lay out.** The engine resolves styles, numbering and themes, measures text with the fonts
+   available (the named font, or a metric-compatible open substitute), and breaks lines, columns
+   and pages. A Word document becomes a list of pages; a workbook a windowed grid that
+   materialises only what is scrolled into view; a deck a list of slides.
+3. **Paint.** Each page is a display list that the worker replays onto a canvas.
+4. **Interact.** Selection, copy, search, zoom and printing are plugins of a headless kernel
+   that has no DOM and no UI framework; the default toolbar is one more client of it.
+
+The engine is about 77,000 lines of Rust with some 800 native tests, built as one
+WebAssembly module with a feature per format.
 
 The codebase is layered, with dependencies pointing strictly downward:
 
