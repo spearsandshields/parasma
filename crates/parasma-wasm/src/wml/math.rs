@@ -670,6 +670,15 @@ pub(crate) fn layout_math_zone(
     is_display: bool,
 ) -> MathBox {
     let ctx = MathContext::new(fc);
+    // Math measures with the math font's full features (see `glyph_box`), so
+    // it is drawn with them too, not with the body text's Word defaults.
+    let base = &RunStyle {
+        glyph_features: crate::engine::paint::GlyphFeatures {
+            kerning: crate::engine::paint::Kerning::On,
+            ligatures: true,
+        },
+        ..base.clone()
+    };
     let mut b = layout_zone(zone, base, &ctx);
     // Ultimate safety net: a zone that produced NOTHING AT ALL — no primitives
     // and no reserved extent — still shows its text (e.g. an all-unknown subtree

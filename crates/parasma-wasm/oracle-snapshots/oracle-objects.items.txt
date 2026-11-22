@@ -1,6 +1,6 @@
-y0 b1 i0 pt16.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y2 b0 i0 pt7.15 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y0 b1 i0 pt16.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y2 b0 i0 pt7.15 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 == page 0 num1 sect1
 A rel"rId10" behind0 anchorSome(1)
 FN [1, 2]
@@ -8,7 +8,7 @@ L0 p0 f1 l1 segs1
   S0 n6
     i0 y0 w75.85 cw69.93 c0+7 "Layout " sh7g adv75.85 r0 s1
     i1 y0 w72.34 cw66.42 c7+7 "Oracle " sh7g adv72.34 r0 s1
-    i2 y0 w54.51 cw48.58 c14+5 "Two: " sh5g adv54.51 r0 s1
+    i2 y0 w55.69 cw49.76 c14+5 "Two: " sh5g adv55.69 r0 s1
     i3 y0 w74.68 cw68.75 c19+8 "Floats, " sh8g adv74.68 r0 s1
     i4 y0 w103.11 cw97.19 c27+9 "Columns, " sh9g adv103.11 r0 s1
     i5 y0 w103.09 cw103.09 c36+9 "Footnotes" sh9g adv103.09 r0 s1
@@ -45,8 +45,8 @@ L3 p1 f0 l0 segs1
     i4 y1 w40.76 cw36.69 c150+6 "never " sh6g adv40.76 r0 s1
     i5 y1 w12.23 cw8.16 c156+2 "a " sh2g adv12.23 r0 s1
     i6 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i7 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i8 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i7 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i8 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i9 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i10 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
 L4 p1 f0 l0 segs1
@@ -142,8 +142,8 @@ L11 p2 f0 l0 segs1
     i4 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i5 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i6 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i7 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i8 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i7 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i8 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i9 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i10 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L12 p2 f0 l0 segs1
@@ -205,7 +205,7 @@ L15 p2 f0 l1 segs1
     i2 y1 w40.76 cw36.68 c402+6 "them. " sh6g adv40.76 r0 s1
 L16 p3 f1 l0 segs1
   S0 n17
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -346,12 +346,12 @@ L24 p4 f0 l0 segs1
 L25 p4 f0 l1 segs1
   S0 n2
     i0 y1 w34.24 cw30.16 c357+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c363+7 "early. " sh7g adv38.85 r0 s1
+    i1 y1 w39.94 cw35.86 c363+7 "early. " sh7g adv39.94 r0 s1
 L26 p5 f1 l1 segs1
   S0 n0
 L27 p6 f1 l1 segs1
   S0 n3
-    i0 y0 w48.58 cw48.58 c0+4 "Two-" sh4g adv48.58 r0 s1
+    i0 y0 w49.76 cw49.76 c0+4 "Two-" sh4g adv49.76 r0 s1
     i1 y0 w85.32 cw79.40 c4+7 "Column " sh7g adv85.32 r0 s1
     i2 y0 w77.05 cw77.05 c11+7 "Section" sh7g adv77.05 r0 s1
 L28 p7 f1 l0 segs1
@@ -391,8 +391,8 @@ L31 p7 f0 l0 segs1
 L32 p7 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -437,8 +437,8 @@ L37 p8 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L38 p8 f0 l0 segs1
@@ -486,7 +486,7 @@ L42 p8 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L43 p9 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -667,7 +667,7 @@ L64 p11 f0 l1 segs1
     i1 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
     i5 y2 w4.77 cw4.77 c- "1" fn2
 L65 p12 f1 l0 segs1
   S0 n6
@@ -706,8 +706,8 @@ L68 p12 f0 l0 segs1
 L69 p12 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -752,8 +752,8 @@ L74 p13 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L75 p13 f0 l0 segs1
@@ -801,7 +801,7 @@ L79 p13 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L80 p14 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -983,7 +983,7 @@ L12 p16 f0 l1 segs1
     i1 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L13 p17 f1 l0 segs1
   S0 n6
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -1021,8 +1021,8 @@ L16 p17 f0 l0 segs1
 L17 p17 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -1067,8 +1067,8 @@ L22 p18 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L23 p18 f0 l0 segs1
@@ -1116,7 +1116,7 @@ L27 p18 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L28 p19 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -1297,7 +1297,7 @@ L49 p21 f0 l1 segs1
     i1 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L50 p22 f1 l0 segs1
   S0 n6
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -1335,8 +1335,8 @@ L53 p22 f0 l0 segs1
 L54 p22 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -1381,8 +1381,8 @@ L59 p23 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L60 p23 f0 l0 segs1
@@ -1430,7 +1430,7 @@ L64 p23 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L65 p24 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -1611,7 +1611,7 @@ L86 p26 f0 l1 segs1
     i1 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L87 p27 f1 l0 segs1
   S0 n6
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -1649,8 +1649,8 @@ L90 p27 f0 l0 segs1
 L91 p27 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -1696,8 +1696,8 @@ L4 p28 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L5 p28 f0 l0 segs1
@@ -1745,7 +1745,7 @@ L9 p28 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L10 p29 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -1926,7 +1926,7 @@ L31 p31 f0 l1 segs1
     i1 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L32 p32 f1 l0 segs1
   S0 n6
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -1964,8 +1964,8 @@ L35 p32 f0 l0 segs1
 L36 p32 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -2010,8 +2010,8 @@ L41 p33 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L42 p33 f0 l0 segs1
@@ -2059,7 +2059,7 @@ L46 p33 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L47 p34 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -2240,7 +2240,7 @@ L68 p36 f0 l1 segs1
     i1 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L69 p37 f1 l0 segs1
   S0 n6
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -2278,8 +2278,8 @@ L72 p37 f0 l0 segs1
 L73 p37 f0 l0 segs1
   S0 n8
     i0 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c184+10 "straddles " sh10g adv63.59 r0 s1
@@ -2324,8 +2324,8 @@ L78 p38 f0 l0 segs1
     i1 y1 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i2 y1 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i4 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i5 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i4 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i5 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i6 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i7 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L79 p38 f0 l0 segs1
@@ -2373,7 +2373,7 @@ L83 p38 f0 l1 segs1
     i6 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L84 p39 f1 l0 segs1
   S0 n7
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -2494,7 +2494,7 @@ L8 p42 f1 l1 segs1
     i3 y0 w79.40 cw79.40 c12+6 "Column" sh6g adv79.40 r0 s1
 L9 p43 f1 l0 segs1
   S0 n17
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -2651,7 +2651,7 @@ L18 p45 f0 l1 segs1
     i11 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i12 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i13 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i14 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i14 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
     i15 y2 w4.77 cw4.77 c- "1" fn3
 L19 p46 f1 l0 segs1
   S0 n14
@@ -2684,8 +2684,8 @@ L20 p46 f0 l0 segs1
     i10 y1 w40.76 cw36.69 c150+6 "never " sh6g adv40.76 r0 s1
     i11 y1 w12.23 cw8.16 c156+2 "a " sh2g adv12.23 r0 s1
     i12 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i13 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i14 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i13 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i14 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i15 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i16 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
 L21 p46 f0 l1 segs1
@@ -2726,8 +2726,8 @@ L22 p47 f1 l0 segs1
 L23 p47 f0 l0 segs1
   S0 n16
     i0 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c116+10 "straddles " sh10g adv63.59 r0 s1
@@ -2769,7 +2769,7 @@ L25 p47 f0 l1 segs1
     i7 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L26 p48 f1 l0 segs1
   S0 n17
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1
@@ -2926,7 +2926,7 @@ L35 p50 f0 l1 segs1
     i11 y1 w40.76 cw36.69 c247+6 "never " sh6g adv40.76 r0 s1
     i12 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i13 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
-    i14 y1 w38.85 cw34.78 c261+7 "early. " sh7g adv38.85 r0 s1
+    i14 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L36 p51 f1 l0 segs1
   S0 n14
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -2958,8 +2958,8 @@ L37 p51 f0 l0 segs1
     i10 y1 w40.76 cw36.69 c150+6 "never " sh6g adv40.76 r0 s1
     i11 y1 w12.23 cw8.16 c156+2 "a " sh2g adv12.23 r0 s1
     i12 y1 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i13 y1 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i14 y1 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i13 y1 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i14 y1 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i15 y1 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i16 y1 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
 L38 p51 f0 l1 segs1
@@ -3000,8 +3000,8 @@ L39 p52 f1 l0 segs1
 L40 p52 f0 l0 segs1
   S0 n16
     i0 y1 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y1 w38.85 cw34.78 c96+7 "early. " sh7g adv38.85 r0 s1
-    i2 y1 w13.05 cw8.97 c103+2 "A " sh2g adv13.05 r0 s1
+    i1 y1 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
+    i2 y1 w13.86 cw9.78 c103+2 "A " sh2g adv13.86 r0 s1
     i3 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i4 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
     i5 y1 w63.59 cw59.51 c116+10 "straddles " sh10g adv63.59 r0 s1
@@ -3043,7 +3043,7 @@ L42 p52 f0 l1 segs1
     i7 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
 L43 p53 f1 l0 segs1
   S0 n17
-    i0 y1 w13.05 cw8.97 c0+2 "A " sh2g adv13.05 r0 s1
+    i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i1 y1 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i2 y1 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
     i3 y1 w63.59 cw59.51 c13+10 "straddles " sh10g adv63.59 r0 s1

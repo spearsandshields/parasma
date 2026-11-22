@@ -49,6 +49,63 @@ pub(crate) enum VertAlign {
     Subscript,
 }
 
+/// Kerning for a run, relative to the canvas the run is drawn on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Kerning {
+    /// Shape with the font's kerning and draw with whatever the canvas does
+    /// (PresentationML and SpreadsheetML text, which never changes it).
+    HostDefault,
+    /// No kerning: Word's default for a run with no applicable `w:kern`.
+    Off,
+    /// Kerning on: a Word run whose `w:kern` threshold its size reaches.
+    On,
+}
+
+/// The OpenType features a run is shaped AND drawn with. The engine measures
+/// with rustybuzz and the browser draws with its own shaper, so both sides
+/// read this one value; if they disagreed, words would be placed for one width
+/// and drawn at another.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct GlyphFeatures {
+    pub(crate) kerning: Kerning,
+    /// Standard and contextual ligatures (`liga`, `clig`, `calt`).
+    pub(crate) ligatures: bool,
+}
+
+impl GlyphFeatures {
+    /// The shaper's and the canvas's own defaults.
+    pub(crate) const HOST_DEFAULT: Self = Self { kerning: Kerning::HostDefault, ligatures: true };
+
+    pub(crate) fn kerns(self) -> bool {
+        !matches!(self.kerning, Kerning::Off)
+    }
+}
+
+/// Insert a zero-width non-joiner between the characters of `text`, so the
+/// browser forms no ligatures when it draws it. Applied only to text in scripts
+/// whose ligatures are optional; complex scripts keep their joining, and a
+/// combining mark is never separated from its base.
+pub(crate) fn block_ligatures(text: &str) -> std::borrow::Cow<'_, str> {
+    let optional_ligature_script = |c: char| {
+        (c as u32) < 0x0590 || (0x1E00..=0x1FFF).contains(&(c as u32)) || (0x2000..=0x2BFF).contains(&(c as u32))
+    };
+    let joins_previous = |c: char| {
+        matches!(c as u32, 0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF
+            | 0xFE00..=0xFE0F | 0xFE20..=0xFE2F | 0x200C | 0x200D)
+    };
+    if text.chars().count() < 2 || !text.chars().all(optional_ligature_script) {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() * 2);
+    for (i, c) in text.chars().enumerate() {
+        if i > 0 && !joins_previous(c) {
+            out.push('\u{200C}');
+        }
+        out.push(c);
+    }
+    std::borrow::Cow::Owned(out)
+}
+
 #[derive(Clone)]
 pub(crate) struct RunStyle {
     pub(crate) bold: bool,
@@ -85,6 +142,8 @@ pub(crate) struct RunStyle {
     /// Baseline raise (+) / lower (−) in px from `w:position` (§17.3.2.24).
     /// Independent of super/subscript, which scale the font; this just shifts.
     pub(crate) baseline_shift_px: f64,
+    /// Kerning and ligatures, for both the measuring shaper and the canvas.
+    pub(crate) glyph_features: GlyphFeatures,
 }
 
 impl Default for RunStyle {
@@ -118,6 +177,7 @@ impl Default for RunStyle {
             emboss: false,
             imprint: false,
             baseline_shift_px: 0.0,
+            glyph_features: GlyphFeatures::HOST_DEFAULT,
         }
     }
 }
@@ -142,7 +202,13 @@ impl RunStyle {
             run_is_complex, color, underline, strikethrough, double_strike,
             vert_align, highlight, run_shading, char_spacing_px, all_caps,
             small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px,
+            glyph_features,
         } = self;
+        let kern = match glyph_features.kerning {
+            Kerning::HostDefault => "host",
+            Kerning::Off => "off",
+            Kerning::On => "on",
+        };
         let u = match underline {
             Underline::None => "none",
             Underline::Single => "single",
@@ -161,12 +227,13 @@ impl RunStyle {
             out,
             "b{} i{} pt{font_pt:.2} fam{family:?} ea{family_east_asia:?} cs{family_complex:?} \
              rcx{} col{color:?} u={u} st{} ds{} va={va} hl{} rs{} csp{char_spacing_px:.2} \
-             caps{} smcaps{} vanish{} outline{} shadow{} emboss{} imprint{} bshift{baseline_shift_px:.2}",
+             caps{} smcaps{} vanish{} outline{} shadow{} emboss{} imprint{} bshift{baseline_shift_px:.2} \
+             kern={kern} liga{}",
             *bold as u8, *italic as u8, *run_is_complex as u8, *strikethrough as u8,
             *double_strike as u8,
             highlight.as_deref().unwrap_or("-"), run_shading.as_deref().unwrap_or("-"),
             *all_caps as u8, *small_caps as u8, *vanish as u8, *outline as u8,
-            *shadow as u8, *emboss as u8, *imprint as u8,
+            *shadow as u8, *emboss as u8, *imprint as u8, glyph_features.ligatures as u8,
         );
     }
 }
@@ -306,11 +373,30 @@ pub(crate) trait Painter {
     #[allow(dead_code)]
     fn clear_line_dash(&self);
 
+    /// Turn the canvas's own kerning on or off for the text drawn after it
+    /// (`fontKerning`). Part of the canvas state, so `save`/`restore` scope it.
+    fn set_font_kerning(&self, on: bool);
+
     /// Paint one glyph run at a baseline, honoring the outline/shadow/emboss/imprint
     /// run effects (§17.3.2.13/.18/.23/.31). The caller has already set the font and
     /// the run's fill colour; this leaves the fill colour unchanged for the normal
     /// path and restores it after the fake-3D paths so following draws are unaffected.
     fn paint_glyph_run(&self, style: &RunStyle, text: &str, x: f64, y: f64) -> Result<(), JsValue> {
+        let text = if style.glyph_features.ligatures { std::borrow::Cow::Borrowed(text) } else { block_ligatures(text) };
+        // A Word page sets kerning off once, at its top (`paint_wml_page`); a
+        // run that kerns turns it back on for itself only.
+        if style.glyph_features.kerning == Kerning::On {
+            self.save();
+            self.set_font_kerning(true);
+            let r = self.paint_glyph_run_effects(style, &text, x, y);
+            self.restore();
+            return r;
+        }
+        self.paint_glyph_run_effects(style, &text, x, y)
+    }
+
+    /// `paint_glyph_run` once its features are in place: the run effects.
+    fn paint_glyph_run_effects(&self, style: &RunStyle, text: &str, x: f64, y: f64) -> Result<(), JsValue> {
         let font_px = pt_to_px(style.font_pt);
 
         if style.outline {
@@ -637,6 +723,16 @@ impl Painter for CanvasPainter<'_> {
     fn clear_line_dash(&self) {
         let _ = self.call_set_line_dash(&js_sys::Array::new());
     }
+
+    fn set_font_kerning(&self, on: bool) {
+        // Set by name: older bindings and some engines lack the property, and
+        // an unknown property is simply ignored there.
+        let _ = js_sys::Reflect::set(
+            self.ctx.as_ref(),
+            &JsValue::from_str("fontKerning"),
+            &JsValue::from_str(if on { "normal" } else { "none" }),
+        );
+    }
 }
 
 /// A `Painter` DECORATOR that translates page-logical coordinates into
@@ -889,10 +985,25 @@ impl Painter for OffsetPainter<'_> {
     fn clear_line_dash(&self) {
         self.inner.clear_line_dash();
     }
+    fn set_font_kerning(&self, on: bool) {
+        self.inner.set_font_kerning(on);
+    }
 }
 
 #[cfg(test)]
 mod offset_tests {
+    #[test]
+    fn block_ligatures_separates_letters_but_keeps_marks_and_complex_scripts() {
+        use super::block_ligatures;
+        assert_eq!(block_ligatures("office"), "o\u{200C}f\u{200C}f\u{200C}i\u{200C}c\u{200C}e");
+        // A combining mark stays on its base letter.
+        assert_eq!(block_ligatures("e\u{0301}f"), "e\u{0301}\u{200C}f");
+        // Joining scripts and CJK pass through untouched.
+        assert_eq!(block_ligatures("سلام"), "سلام");
+        assert_eq!(block_ligatures("日本語"), "日本語");
+        assert_eq!(block_ligatures("f"), "f");
+    }
+
     use super::*;
     use std::cell::Cell;
 
@@ -1060,6 +1171,7 @@ mod offset_tests {
         }
         fn set_line_dash(&self, _s: &[f64]) {}
         fn clear_line_dash(&self) {}
+        fn set_font_kerning(&self, _on: bool) {}
     }
 
     /// Drive a representative page paint (background + absolute content + a

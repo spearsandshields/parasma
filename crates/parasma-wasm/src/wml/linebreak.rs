@@ -590,9 +590,15 @@ pub(crate) fn collect_items(
                 };
                 let mut seg_style = style.clone();
                 seg_style.family = seg_family.to_string();
+                // Complex scripts keep their ligatures: Word's "no standard
+                // ligatures" default is a Latin-text choice, and joining
+                // scripts depend on them.
+                if seg_slot == FontSlot::ComplexScript {
+                    seg_style.glyph_features.ligatures = true;
+                }
                 let (width, content_width, shaped) = if visible.is_empty() {
                     (0.0, 0.0, None)
-                } else if let Some(mut run) = seg_font.and_then(|f| faces.shape(&visible, f, seg_style.font_pt)) {
+                } else if let Some(mut run) = seg_font.and_then(|f| faces.shape_with(&visible, f, seg_style.font_pt, seg_style.glyph_features)) {
                     if seg_style.char_spacing_px.abs() > 0.001 {
                         let n = run.glyphs.len();
                         for g in &mut run.glyphs {
@@ -1932,7 +1938,7 @@ pub(crate) fn measure_item_text<'f>(text: &str, style: &RunStyle, font_cache: &'
         return (0.0, 0.0, None);
     }
     let font = font_cache.resolve(&style.family, if style.bold { 700 } else { 400 }, style.italic);
-    if let Some(mut run) = font.and_then(|f| faces.shape(text, f, style.font_pt)) {
+    if let Some(mut run) = font.and_then(|f| faces.shape_with(text, f, style.font_pt, style.glyph_features)) {
         if style.char_spacing_px.abs() > 0.001 {
             let n = run.glyphs.len();
             for g in &mut run.glyphs {

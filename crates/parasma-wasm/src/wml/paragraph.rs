@@ -308,7 +308,7 @@ pub(crate) fn layout_paragraph(
             style.italic,
         );
         let hanging_px = twips_to_px(m.indent_hanging_twips);
-        let (marker_advance, marker_cw, shaped) = if let Some(run) = font.and_then(|f| faces.shape(&marker_text, f, style.font_pt)) {
+        let (marker_advance, marker_cw, shaped) = if let Some(run) = font.and_then(|f| faces.shape_with(&marker_text, f, style.font_pt, style.glyph_features)) {
             // `trailing_ws_advance` counts the baked NBSP suffix gap
             // (char::is_whitespace includes U+00A0), so `cw` is the lvlText
             // glyphs alone.

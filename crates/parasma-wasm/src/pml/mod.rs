@@ -1653,6 +1653,7 @@ fn run_style(run: &SlideRun) -> RunStyle {
         emboss: false,
         imprint: false,
         baseline_shift_px: 0.0,
+        glyph_features: crate::engine::paint::GlyphFeatures::HOST_DEFAULT,
     }
 }
 

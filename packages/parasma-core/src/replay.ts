@@ -54,6 +54,8 @@ const OP_SET_RADIAL_GRADIENT = 36;
 const OP_SET_PATTERN_FILL = 37;
 const OP_SET_LINE_DASH = 38;
 const OP_CLEAR_LINE_DASH = 39;
+/** `fontKerning`: 1 = "normal", 0 = "none". */
+const OP_SET_FONT_KERNING = 40;
 // pattern-tile sub-tags (mirror engine/displaylist.rs TILE_LINE / TILE_DOT).
 const TILE_LINE = 0;
 const TILE_DOT = 1;
@@ -373,6 +375,11 @@ export function replayDisplayList(
       }
       case OP_CLEAR_LINE_DASH:
         ctx.setLineDash([]);
+        break;
+      case OP_SET_FONT_KERNING:
+        // Ignored where the property is unsupported (it is then never kerned
+        // or always kerned by the browser's own default).
+        ctx.fontKerning = next() !== 0 ? "normal" : "none";
         break;
       default:
         throw new Error(`replayDisplayList: unknown opcode ${op} at ${i - 1}`);

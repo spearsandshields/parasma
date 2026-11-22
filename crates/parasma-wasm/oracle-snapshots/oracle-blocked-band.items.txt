@@ -1,4 +1,4 @@
-y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 == page 0 num1 sect0
 L0 p0 f1 l0 segs1
   S0 n14
@@ -31,8 +31,8 @@ L1 p0 f0 l0 segs1
     i10 y0 w40.76 cw36.69 c150+6 "never " sh6g adv40.76 r0 s1
     i11 y0 w12.23 cw8.16 c156+2 "a " sh2g adv12.23 r0 s1
     i12 y0 w34.24 cw30.16 c158+6 "pixel " sh6g adv34.24 r0 s1
-    i13 y0 w38.85 cw34.78 c164+7 "early. " sh7g adv38.85 r0 s1
-    i14 y0 w13.05 cw8.97 c171+2 "A " sh2g adv13.05 r0 s1
+    i13 y0 w39.94 cw35.86 c164+7 "early. " sh7g adv39.94 r0 s1
+    i14 y0 w13.86 cw9.78 c171+2 "A " sh2g adv13.86 r0 s1
     i15 y0 w35.88 cw31.80 c173+6 "table " sh6g adv35.88 r0 s1
     i16 y0 w28.54 cw24.46 c179+5 "that " sh5g adv28.54 r0 s1
 L2 p0 f0 l0 segs1
@@ -124,8 +124,8 @@ L7 p0 f0 l0 segs1
 L8 p0 f0 l0 segs1
   S0 n16
     i0 y0 w34.24 cw30.16 c634+6 "pixel " sh6g adv34.24 r0 s1
-    i1 y0 w38.85 cw34.78 c640+7 "early. " sh7g adv38.85 r0 s1
-    i2 y0 w13.05 cw8.97 c647+2 "A " sh2g adv13.05 r0 s1
+    i1 y0 w39.94 cw35.86 c640+7 "early. " sh7g adv39.94 r0 s1
+    i2 y0 w13.86 cw9.78 c647+2 "A " sh2g adv13.86 r0 s1
     i3 y0 w35.88 cw31.80 c649+6 "table " sh6g adv35.88 r0 s1
     i4 y0 w28.54 cw24.46 c655+5 "that " sh5g adv28.54 r0 s1
     i5 y0 w63.59 cw59.51 c660+10 "straddles " sh10g adv63.59 r0 s1
@@ -214,8 +214,8 @@ L13 p0 f0 l0 segs1
     i2 y0 w40.76 cw36.69 c1102+6 "never " sh6g adv40.76 r0 s1
     i3 y0 w12.23 cw8.16 c1108+2 "a " sh2g adv12.23 r0 s1
     i4 y0 w34.24 cw30.16 c1110+6 "pixel " sh6g adv34.24 r0 s1
-    i5 y0 w38.85 cw34.78 c1116+7 "early. " sh7g adv38.85 r0 s1
-    i6 y0 w13.05 cw8.97 c1123+2 "A " sh2g adv13.05 r0 s1
+    i5 y0 w39.94 cw35.86 c1116+7 "early. " sh7g adv39.94 r0 s1
+    i6 y0 w13.86 cw9.78 c1123+2 "A " sh2g adv13.86 r0 s1
     i7 y0 w35.88 cw31.80 c1125+6 "table " sh6g adv35.88 r0 s1
     i8 y0 w28.54 cw24.46 c1131+5 "that " sh5g adv28.54 r0 s1
     i9 y0 w63.59 cw59.51 c1136+10 "straddles " sh10g adv63.59 r0 s1

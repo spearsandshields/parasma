@@ -774,11 +774,23 @@ impl<'f> FaceCache<'f> {
     /// Shape `text` with `font`, reusing this scope's face for it if one was
     /// already built. Replaces an earlier free `shape_text` function.
     pub(crate) fn shape(&self, text: &str, font: &'f LoadedFont, font_pt: f64) -> Option<ShapedRun> {
+        self.shape_with(text, font, font_pt, crate::engine::paint::GlyphFeatures::HOST_DEFAULT)
+    }
+
+    /// `shape` with explicit kerning and ligature features. The canvas draws
+    /// with the same `GlyphFeatures` (`Painter::paint_glyph_run`).
+    pub(crate) fn shape_with(
+        &self,
+        text: &str,
+        font: &'f LoadedFont,
+        font_pt: f64,
+        features: crate::engine::paint::GlyphFeatures,
+    ) -> Option<ShapedRun> {
         let mut faces = self.faces.borrow_mut();
         let face = faces
             .entry(font as *const LoadedFont as usize)
             .or_insert_with(|| build_face(font));
-        shape_with_face(face, text, font_pt)
+        shape_with_face(face, text, font_pt, features)
     }
 }
 
@@ -786,11 +798,22 @@ fn shape_with_face(
     face: &rustybuzz::Face<'_>,
     text: &str,
     font_pt: f64,
+    features: crate::engine::paint::GlyphFeatures,
 ) -> Option<ShapedRun> {
     let mut buffer = rustybuzz::UnicodeBuffer::new();
     buffer.push_str(text);
 
-    let glyph_buffer = rustybuzz::shape(face, &[], buffer);
+    // Only the features the run turns OFF are passed; the defaults stay the
+    // shaper's own, so host-default text shapes exactly as before.
+    let off = |tag: &[u8; 4]| rustybuzz::Feature::new(rustybuzz::ttf_parser::Tag::from_bytes(tag), 0, ..);
+    let mut overrides = Vec::new();
+    if !features.kerns() {
+        overrides.push(off(b"kern"));
+    }
+    if !features.ligatures {
+        overrides.extend([off(b"liga"), off(b"clig"), off(b"calt")]);
+    }
+    let glyph_buffer = rustybuzz::shape(face, &overrides, buffer);
     let infos = glyph_buffer.glyph_infos();
     let positions = glyph_buffer.glyph_positions();
 

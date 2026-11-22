@@ -164,7 +164,7 @@ use wml::table::{
     collect_cell_paragraphs, collect_row_cells, layout_table, CellFloatDraw, CellVAlign,
 };
 use wml::watermark::{find_watermark_in_blocks, Watermark};
-use engine::paint::{RunStyle, Underline, VertAlign};
+use engine::paint::{GlyphFeatures, Kerning, RunStyle, Underline, VertAlign};
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -6660,6 +6660,12 @@ impl Viewer {
         let w = geo.width_px;
         let h = geo.height_px;
 
+        // Word kerns no run unless its `w:kern` applies (§17.3.2.19): turn the
+        // canvas's own kerning off once, here, outside every save/restore, so it
+        // holds for the whole page; a kerning run re-enables it for itself
+        // (`Painter::paint_glyph_run`).
+        p.set_font_kerning(false);
+
         // Page background. Under a windowed paint this ONE page-spanning fill is
         // reduced to the window ∩ page box (`cull::bg_rect`) so its device extent
         // stays bounded by the SLICE at high zoom (the offset alone would leave it
@@ -8895,6 +8901,18 @@ impl RunStyle {
         })
         .unwrap_or(VertAlign::Baseline);
 
+        // §17.3.2.19: kern only when a `w:kern` in the style hierarchy applies,
+        // and only at or above its size threshold (half-points, compared with
+        // the run's own `w:sz`, before any superscript scaling). Standard
+        // ligatures stay off: Word's default.
+        let kerning = resolve_run_option(
+            &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
+            |rpr| rpr.kern.as_ref().and_then(|k| k.value.parse::<f64>().ok()),
+        )
+        .map(|min_half_pts| if font_pt * 2.0 + 1e-9 >= min_half_pts { Kerning::On } else { Kerning::Off })
+        .unwrap_or(Kerning::Off);
+        let glyph_features = GlyphFeatures { kerning, ligatures: false };
+
         let font_pt = if vert_align != VertAlign::Baseline {
             font_pt * 0.583
         } else {
@@ -8963,7 +8981,7 @@ impl RunStyle {
         .map(|half_pts| pt_to_px(half_pts / 2.0))
         .unwrap_or(0.0);
 
-        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px }
+        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features }
     }
 
     fn font_css(&self) -> String {

@@ -1289,7 +1289,10 @@ fn oracle_flow_layout_snapshot() {
     // 67/2048em), so every line's height grew +3.27% to the font's true line
     // height (ascent+descent+lineGap, the Windows/Word model). Page count held at
     // 5; only line geometry shifted. gap=0 fonts (oracle-objects) are unchanged.
-    assert_oracle("oracle-flow", oracle_flow_docx(), 5, 0xd476c421510f1870);
+    // Re-baselined again for §17.3.2.19: runs without `w:kern` are no longer
+    // kerned. One line moved (a centred title, 1.18px left: its unkerned text is
+    // 2.36px wider); page count held at 5.
+    assert_oracle("oracle-flow", oracle_flow_docx(), 5, 0x37c47e353e2e88b5);
 }
 
 #[test]
@@ -9505,4 +9508,103 @@ fn memory_census_type_sizes() {
     println!("size_of ShapedGlyph = {:>4} B", size_of::<crate::engine::fonts::ShapedGlyph>());
     println!("size_of PagedLine   = {:>4} B", size_of::<PagedLine>());
     println!("size_of PageLayout  = {:>4} B", size_of::<PageLayout>());
+}
+
+// ─── kerning and standard ligatures (§17.3.2.19) ───────────────────────────
+//
+// §17.3.2.19: "If this element is never applied in the style hierarchy, then
+// font kerning shall not be applied to the contents of this run", and with it
+// applied, only at sizes at or above its threshold. Standard ligatures are off
+// in Word unless a run asks for them. Both the measuring shaper and the canvas
+// that draws the run must agree, or words are placed for one width and drawn
+// at another.
+
+fn kerning_docx(rpr: &str, text: &str) -> Vec<u8> {
+    let styles = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles {W_NS}><w:docDefaults><w:rPrDefault><w:rPr>
+  <w:rFonts w:ascii="Arimo" w:hAnsi="Arimo" w:cs="Arimo"/><w:sz w:val="22"/>
+</w:rPr></w:rPrDefault></w:docDefaults></w:styles>"#
+    );
+    let document = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document {W_NS}><w:body>{}<w:sectPr/></w:body></w:document>"#,
+        p("", &r(rpr, text)),
+    );
+    let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>"#
+        .to_string();
+    let root_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"#
+        .to_string();
+    let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"#
+        .to_string();
+    build_docx(&[
+        ("[Content_Types].xml", content_types),
+        ("_rels/.rels", root_rels),
+        ("word/document.xml", document),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/styles.xml", styles),
+    ])
+}
+
+/// Width of the first word item on page 1.
+fn first_word_width(viewer: &Viewer) -> f64 {
+    let pages = viewer.pages.borrow();
+    for el in &pages[0].elements {
+        let PageElement::Line(l) = el else { continue };
+        for s in &l.segments {
+            if let Some(it) = s.items.iter().find(|it| !it.text.trim().is_empty()) {
+                return it.width;
+            }
+        }
+    }
+    panic!("no word item on page 1");
+}
+
+#[test]
+fn word_runs_are_kerned_only_when_w_kern_applies() {
+    let plain = first_word_width(&layout(kerning_docx("", "AVAWAY")));
+    let kerned = first_word_width(&layout(kerning_docx(r#"<w:kern w:val="2"/>"#, "AVAWAY")));
+    let below = first_word_width(&layout(kerning_docx(r#"<w:kern w:val="28"/>"#, "AVAWAY")));
+    assert!(kerned < plain - 0.5, "w:kern at 1pt must kern an 11pt run: kerned {kerned} vs plain {plain}");
+    assert!((below - plain).abs() < 1e-9, "w:kern at 14pt must not kern an 11pt run: {below} vs {plain}");
+}
+
+/// The canvas must draw a word run the way it was measured: kerning off unless
+/// `w:kern` applies, and no standard ligatures (a zero-width non-joiner keeps
+/// the browser from forming them).
+#[test]
+fn word_runs_draw_with_the_measured_features() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let draw = |rpr: &str| {
+        let viewer = layout(kerning_docx(rpr, "office AVAWAY"));
+        let rec = RecordingPainter::new();
+        viewer.paint_wml_page(0, &rec, None).expect("paint page");
+        let cmds = rec.cmds();
+        let kerning: Vec<bool> = cmds.iter().filter_map(|c| match c {
+            DrawCmd::SetFontKerning(on) => Some(*on),
+            _ => None,
+        }).collect();
+        let texts: Vec<String> = cmds.iter().filter_map(|c| match c {
+            DrawCmd::FillText { text, .. } => Some(text.clone()),
+            _ => None,
+        }).collect();
+        (kerning, texts)
+    };
+    let (kerning, texts) = draw("");
+    assert_eq!(kerning, vec![false], "kerning switched off once, before the first run");
+    assert!(texts.iter().any(|t| t.contains("f\u{200C}f\u{200C}i")), "ligatures blocked in {texts:?}");
+    let (kerning, _) = draw(r#"<w:kern w:val="2"/>"#);
+    assert_eq!(kerning, vec![false, true, true], "page baseline off; each kerned run turns it on for itself");
 }

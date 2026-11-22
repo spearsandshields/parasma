@@ -194,6 +194,7 @@ impl Painter for RecordingPainter {
     fn clear_line_dash(&self) {
         self.push(Op::ClearLineDash);
     }
+    fn set_font_kerning(&self, _on: bool) {}
 }
 
 // ── EMF byte writer ─────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ const OP_SET_RADIAL_GRADIENT = 36;
 const OP_SET_PATTERN_FILL = 37;
 const OP_SET_LINE_DASH = 38;
 const OP_CLEAR_LINE_DASH = 39;
+const OP_SET_FONT_KERNING = 40;
 const TILE_LINE = 0;
 const TILE_DOT = 1;
 
@@ -53,6 +54,9 @@ function makeCtx(log: Call[]): CanvasRenderingContext2D {
       return { __pattern: true };
     },
     setLineDash: (segs: number[]) => log.push({ op: "setLineDash", args: [segs] }),
+    set fontKerning(v: string) {
+      log.push({ op: "set fontKerning", args: [v] });
+    },
     set fillStyle(v: unknown) {
       fillStyle = v;
       log.push({ op: "set fillStyle", args: [v] });
@@ -218,6 +222,22 @@ describe("replay — PML style opcodes", () => {
     });
     replayDisplayList(ctx, opcodes, strings, new Map());
     expect(log).toEqual([{ op: "setLineDash", args: [[4, 3, 1, 3]] }]);
+  });
+
+  it("40 font kerning → fontKerning none/normal", () => {
+    // RED: an unknown opcode throws; a wrong mapping would kern Word text the
+    // engine measured unkerned (or the reverse).
+    const log: Call[] = [];
+    const ctx = makeCtx(log);
+    const { opcodes, strings } = frame((push) => {
+      push(OP_SET_FONT_KERNING, 0);
+      push(OP_SET_FONT_KERNING, 1);
+    });
+    replayDisplayList(ctx, opcodes, strings, new Map());
+    expect(log).toEqual([
+      { op: "set fontKerning", args: ["none"] },
+      { op: "set fontKerning", args: ["normal"] },
+    ]);
   });
 
   it("39 clear line dash → setLineDash([])", () => {

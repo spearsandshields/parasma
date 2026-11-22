@@ -1,23 +1,23 @@
-y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=wave st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y2 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st1 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y3 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds1 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y4 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps1 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y5 b0 i0 pt9.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps1 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y6 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline1 shadow0 emboss0 imprint0 bshift0.00
-y7 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow1 emboss0 imprint0 bshift0.00
-y8 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss1 imprint0 bshift0.00
-y9 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint1 bshift0.00
-y10 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl#ffff00 rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y11 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs#D9E2F3 csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y12 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp2.67 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y13 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift5.33
-y14 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y15 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sub hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y16 b0 i0 pt11.00 fam"arimo" ea"arimo" cs"Arimo" rcx0 col"#C00000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y17 b0 i0 pt11.00 fam"XITS Math" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y18 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#0563C1" u=single st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
-y19 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00
+y0 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=wave st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y2 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st1 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y3 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds1 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y4 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps1 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y5 b0 i0 pt9.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps1 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y6 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline1 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y7 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow1 emboss0 imprint0 bshift0.00 kern=off liga0
+y8 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss1 imprint0 bshift0.00 kern=off liga0
+y9 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint1 bshift0.00 kern=off liga0
+y10 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl#ffff00 rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y11 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs#D9E2F3 csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y12 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp2.67 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y13 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift5.33 kern=off liga0
+y14 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y15 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=sub hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y16 b0 i0 pt11.00 fam"arimo" ea"arimo" cs"Arimo" rcx0 col"#C00000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y17 b0 i0 pt11.00 fam"XITS Math" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y18 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#0563C1" u=single st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y19 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga1
 == page 0 num1 sect0
 L0 p0 f1 l1 segs1 shade"#FFF2CC" bt=#1F4E79/1.50/4.00 bb=#C00000/1.00/2.00 bl=#00B050/0.75/3.00 br=#7030A0/3.00/1.00 bars1
   S0 n14
@@ -41,9 +41,9 @@ L1 p1 f1 l0 segs1
     i1 y2 w43.19 cw39.12 c5+7 "struck " sh7g adv43.19 r0 s1
     i2 y3 w48.93 cw48.93 c12+7 "double-" sh7g adv48.93 r0 s1
     i3 y3 w43.19 cw39.12 c19+7 "struck " sh7g adv43.19 r0 s1
-    i4 y4 w29.63 cw25.55 c26+4 "ALL " sh4g adv29.63 r0 s1
+    i4 y4 w30.17 cw26.10 c26+4 "ALL " sh4g adv30.17 r0 s1
     i5 y4 w44.01 cw39.94 c30+5 "CAPS " sh5g adv44.01 r0 s1
-    i6 y5 w42.24 cw38.91 c35+6 "SMALL " sh6g adv42.24 r0 s1
+    i6 y5 w42.69 cw39.35 c35+6 "SMALL " sh6g adv42.69 r0 s1
     i7 y5 w36.01 cw32.68 c41+5 "CAPS " sh5g adv36.01 r0 s1
     i8 y6 w47.29 cw43.22 c46+8 "outline " sh8g adv47.29 r0 s1
     i9 y7 w54.63 cw50.55 c54+7 "shadow " sh7g adv54.63 r0 s1
@@ -64,9 +64,9 @@ L3 p2 f1 l1 segs1
     i5 y16 w56.25 cw52.18 c28+8 "Georgia " sh8g adv56.25 r0 s1
     i6 y16 w15.49 cw11.42 c36+3 "in " sh3g adv15.49 r0 s1
     i7 y16 w25.27 cw21.20 c39+4 "red " sh4g adv25.27 r0 s1
-    i8 y17 w36.12 cw32.46 c43+5 "XITS " sh5g adv36.12 r0 s1
-    i9 y17 w34.75 cw31.08 c48+5 "Math " sh5g adv34.75 r0 s1
-    i10 y17 w24.04 cw24.04 c53+4 "face" sh4g adv24.04 r0 s1
+    i8 y17 w36.26 cw32.59 c43+5 "XITS " sh5g adv36.26 r0 s1
+    i9 y17 w34.63 cw30.96 c48+5 "Math " sh5g adv34.63 r0 s1
+    i10 y17 w24.42 cw24.42 c53+4 "face" sh4g adv24.42 r0 s1
 L4 p3 f1 l1 segs1
   S0 n8
     i0 y0 w66.86 cw62.78 c0+9 "Anchored " sh9g adv66.86 r0 s1 bm"target"

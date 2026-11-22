@@ -99,6 +99,7 @@ fn dump_ops(cmds: &[DrawCmd]) -> String {
             DrawCmd::SetShadowOffsetX(v) => { let _ = write!(out, "SetShadowOffsetX {v:.2}"); }
             DrawCmd::SetShadowOffsetY(v) => { let _ = write!(out, "SetShadowOffsetY {v:.2}"); }
             DrawCmd::SetShadowBlur(v) => { let _ = write!(out, "SetShadowBlur {v:.2}"); }
+            DrawCmd::SetFontKerning(on) => { let _ = write!(out, "SetFontKerning {on}"); }
             DrawCmd::Translate { x, y } => { let _ = write!(out, "Translate {x:.2} {y:.2}"); }
             DrawCmd::Rotate { angle } => { let _ = write!(out, "Rotate {angle:.2}"); }
             DrawCmd::Scale { x, y } => { let _ = write!(out, "Scale {x:.2} {y:.2}"); }

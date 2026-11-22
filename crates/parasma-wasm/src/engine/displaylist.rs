@@ -88,6 +88,8 @@ pub(crate) enum DrawCmd {
     SetPatternFill { key: String, fg: String, bg: String, size: f64, prims: Vec<TilePrim> },
     SetLineDash(Vec<f64>),
     ClearLineDash,
+    /// `fontKerning` on (`true`) or off.
+    SetFontKerning(bool),
 }
 
 /// An ordered list of draw commands for one render (page / window / grid slice).
@@ -144,6 +146,8 @@ pub(crate) const OP_SET_RADIAL_GRADIENT: f64 = 36.0;
 pub(crate) const OP_SET_PATTERN_FILL: f64 = 37.0;
 pub(crate) const OP_SET_LINE_DASH: f64 = 38.0;
 pub(crate) const OP_CLEAR_LINE_DASH: f64 = 39.0;
+/// `fontKerning`: 1 = "normal", 0 = "none".
+pub(crate) const OP_SET_FONT_KERNING: f64 = 40.0;
 // pattern-tile sub-tags (module-private; discriminate the count-prefixed prims).
 const TILE_LINE: f64 = 0.0;
 const TILE_DOT: f64 = 1.0;
@@ -264,6 +268,10 @@ pub(crate) fn encode_display_list(list: &DisplayList) -> (Vec<f64>, Vec<String>)
                 ops.extend_from_slice(segs);
             }
             DrawCmd::ClearLineDash => ops.push(OP_CLEAR_LINE_DASH),
+            DrawCmd::SetFontKerning(on) => {
+                ops.push(OP_SET_FONT_KERNING);
+                ops.push(if *on { 1.0 } else { 0.0 });
+            }
         }
     }
     (ops, strings)
@@ -503,6 +511,9 @@ impl Painter for RecordingPainter {
     fn clear_line_dash(&self) {
         self.push(DrawCmd::ClearLineDash);
     }
+    fn set_font_kerning(&self, on: bool) {
+        self.push(DrawCmd::SetFontKerning(on));
+    }
 }
 
 #[cfg(test)]
@@ -682,6 +693,7 @@ mod tests {
                     DrawCmd::SetLineDash(segs)
                 }
                 OP_CLEAR_LINE_DASH => DrawCmd::ClearLineDash,
+                OP_SET_FONT_KERNING => DrawCmd::SetFontKerning(a!() != 0.0),
                 other => panic!("unknown opcode {other}"),
             });
         }
