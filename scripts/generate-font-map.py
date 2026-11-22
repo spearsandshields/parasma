@@ -35,14 +35,19 @@ SUBSTITUTES = {
     "Caladea":    {"css_name": "Caladea",     "weights": [400, 700], "styles": ["normal", "italic"]},
     "Noto Sans":  {"css_name": "Noto+Sans",   "weights": [400, 700], "styles": ["normal", "italic"]},
     "Noto Serif": {"css_name": "Noto+Serif",  "weights": [400, 700], "styles": ["normal", "italic"]},
+    "Gelasio":    {"css_name": "Gelasio",     "weights": [400, 700], "styles": ["normal", "italic"]},
+    "Lato":       {"css_name": "Lato",        "weights": [400, 700], "styles": ["normal", "italic"]},
+    "Poppins":    {"css_name": "Poppins",     "weights": [400, 700], "styles": ["normal", "italic"]},
+    "Comic Neue": {"css_name": "Comic+Neue",  "weights": [400, 700], "styles": ["normal", "italic"]},
 }
 
 
 # ─── Classification rules ───────────────────────────────────────────────────
 #
 # Each entry: (font_name_lowercase, substitute, quality, reason)
-# Applied in order; first match wins. The VCL.xcu chain analysis below
-# catches everything not explicitly listed here.
+# An explicit entry always wins and is always emitted, whether or not VCL.xcu
+# lists the name. The VCL.xcu chain analysis below catches everything not
+# explicitly listed here. Substitutes are Google Fonts families only.
 
 EXPLICIT_MAPPINGS = {
     # === Metric-compatible substitutes (designed as drop-in replacements) ===
@@ -84,7 +89,8 @@ EXPLICIT_MAPPINGS = {
 
     # === Same-class: serif fonts → Tinos ===
     "times":            ("Tinos",    "same-class", "Times is the original; Times New Roman is the digitization; Tinos matches TNR"),
-    "georgia":          ("Tinos",    "same-class", "Slab-influenced serif designed for screen; Tinos is closest serif. Georgia has wider glyphs"),
+    "georgia":          ("Gelasio",  "metric-compatible", "Gelasio is designed to be metric-compatible with Georgia"),
+    "gelasio":          ("Gelasio",  "exact", "Gelasio is itself a Google Fonts family"),
     "garamond":         ("Tinos",    "same-class", "Old-style serif; Tinos is closest available. Different proportions than Garamond"),
     "palatino":         ("Tinos",    "same-class", "Old-style serif; wider than Times. Tinos is narrower but same class"),
     "palatinolinotype": ("Tinos",    "same-class", "Palatino Linotype = digital Palatino; Tinos substitutes as closest serif"),
@@ -104,11 +110,53 @@ EXPLICIT_MAPPINGS = {
     "courier":          ("Cousine",  "same-class", "Courier is the typewriter original; Cousine matches Courier New"),
     "monaco":           ("Cousine",  "same-class", "macOS monospace; Cousine is closest mono on Google Fonts"),
     "consolas":         ("Cousine",  "same-class", "Modern monospace; Cousine is closest. Consolas has different proportions"),
+    "robotomono":       ("Cousine",  "same-class", "Google Fonts monospace shipped only as a variable font; Cousine until variable fonts are supported"),
+    "sourcecodepro":    ("Cousine",  "same-class", "Google Fonts monospace shipped only as a variable font; Cousine until variable fonts are supported"),
+    "inconsolata":      ("Cousine",  "same-class", "Google Fonts monospace shipped only as a variable font; Cousine until variable fonts are supported"),
+    "jetbrainsmono":    ("Cousine",  "same-class", "Monospace shipped only as a variable font; Cousine until variable fonts are supported"),
+    "firacode":         ("Cousine",  "same-class", "Monospace shipped only as a variable font; Cousine until variable fonts are supported"),
     "lucidaconsole":    ("Cousine",  "same-class", "Monospace; Cousine substitutes"),
     "lucidasanstypewriter": ("Cousine", "same-class", "Monospace; Cousine substitutes"),
     "lettergothic":     ("Cousine",  "same-class", "Monospace typewriter font; Cousine substitutes"),
     "menlo":            ("Cousine",  "same-class", "macOS monospace (DejaVu Sans Mono derivative); Cousine is closest"),
     "andalemono":       ("Cousine",  "same-class", "Monospace; Cousine substitutes"),
+
+    # === Google Fonts families loaded as themselves (static files available) ===
+    "lato":             ("Lato",     "exact", "Lato is a Google Fonts family; the real face is loaded"),
+    "poppins":          ("Poppins",  "exact", "Poppins is a Google Fonts family; the real face is loaded"),
+    "comicneue":        ("Comic Neue", "exact", "Comic Neue is a Google Fonts family; the real face is loaded"),
+    "comicsans":        ("Comic Neue", "same-class", "Comic Neue is the Google Fonts casual face drawn after Comic Sans; not metric-compatible"),
+    "comicsansms":      ("Comic Neue", "same-class", "Comic Neue is the Google Fonts casual face drawn after Comic Sans; not metric-compatible"),
+
+    # === Google Fonts families shipped only as variable fonts → same class ===
+    # The engine measures static faces only, so these resolve to the
+    # closest metric-stable family until variable fonts are supported.
+    "roboto":           ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "montserrat":       ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "raleway":          ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "sourcesanspro":    ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "sourcesans3":      ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "nunito":           ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "worksans":         ("Arimo",    "same-class", "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"),
+    "merriweather":     ("Tinos",    "same-class", "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"),
+    "playfairdisplay":  ("Tinos",    "same-class", "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"),
+    "robotoslab":       ("Tinos",    "same-class", "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"),
+    "lora":             ("Tinos",    "same-class", "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"),
+    "ebgaramond":       ("Tinos",    "same-class", "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"),
+
+    # === Fonts absent from VCL.xcu but common in OOXML ===
+    "segoeui":          ("Arimo",    "same-class", "Segoe UI is Microsoft's UI font; Arimo is closest sans"),
+    "microsoftsansserif":("Arimo",   "same-class", "Microsoft Sans Serif → Arimo"),
+    "trebuchetms":      ("Arimo",    "same-class", "Trebuchet MS is a geometric sans; Arimo is closest"),
+    "franklingothicmedium":("Arimo", "same-class", "Franklin Gothic Medium is a grotesque sans; Arimo substitutes"),
+    "franklingothicbook":("Arimo",   "same-class", "Franklin Gothic Book is a grotesque sans; Arimo substitutes"),
+    "aptos":            ("Carlito",  "same-class", "Aptos is Microsoft's default since 2024; no metric-compatible Google Fonts family exists. Carlito is closest available"),
+    "aptosnarrow":      ("Carlito",  "same-class", "Aptos Narrow has no metric-compatible Google Fonts family; Carlito is width-incompatible but functional"),
+    "aptosdisplay":     ("Carlito",  "same-class", "Aptos Display has no metric-compatible Google Fonts family; Carlito substitutes"),
+    "arialnova":        ("Arimo",    "metric-compatible", "Arimo (Arial metric clone) matches Arial Nova advance widths for layout fidelity"),
+    "candara":          ("Arimo",    "same-class", "Candara is a humanist sans from MS ClearType collection; Arimo substitutes"),
+    "corbel":           ("Arimo",    "same-class", "Corbel is a humanist sans from MS ClearType collection; Arimo substitutes"),
+    "constantia":       ("Tinos",    "same-class", "Constantia is a serif from MS ClearType collection; Tinos substitutes"),
 
     # === LibreOffice intermediate fonts → their proper substitute ===
     "albanyamt":        ("Arimo",    "same-class", "LibreOffice's Arial substitute; we use Arimo instead"),
@@ -121,7 +169,7 @@ EXPLICIT_MAPPINGS = {
     "liberationserif":  ("Tinos",    "metric-compatible", "Liberation Serif is also metric-compatible with Times New Roman, like Tinos"),
     "liberationmono":   ("Cousine",  "metric-compatible", "Liberation Mono is also metric-compatible with Courier New, like Cousine"),
     "liberationsansnarrow": ("Arimo","same-class", "Condensed sans; no condensed variant available, using Arimo"),
-    "dejavusans":       ("Arimo",    "same-class", "DejaVu Sans is a wide sans; Arimo is narrower but same class"),
+    "dejavusans":       ("DejaVuSans", "exact", "DejaVu Sans is libre — load the real (wide) face; Arimo's Arial metrics are too narrow and shift every line break"),
     "dejavuserif":      ("Tinos",    "same-class", "DejaVu Serif → Tinos"),
     "dejavusansmono":   ("Cousine",  "same-class", "DejaVu Sans Mono → Cousine"),
     "dejavusanscondensed": ("Arimo", "same-class", "Condensed sans → Arimo"),
@@ -198,8 +246,6 @@ NO_SUBSTITUTE = {
 
     # Decorative/display — rare in OOXML, no good substitute
     "impact":           "Heavy display sans; no metric-compatible web font. Arimo 700 is lighter",
-    "comicsans":        "Casual handwriting font; no web equivalent matches the style",
-    "comicsansms":      "Comic Sans MS; no web equivalent matches the informal style",
     "broadway":         "Art Deco display font; no web equivalent",
     "algerian":         "Decorative shadowed font; no web equivalent",
     "castellar":        "All-caps engraved display; no web equivalent",
@@ -447,22 +493,13 @@ def main():
         chain_str = subst.split(";")[0].strip() if subst else "(no chain)"
         unclassified.append((name, chain_str))
 
-    # Add explicitly known fonts not in VCL.xcu but common in OOXML docs
-    extra_mappings = {
-        "segoeui":          ("Arimo",  "same-class", "Segoe UI is Microsoft's UI font; Arimo is closest sans"),
-        "microsoftsansserif":("Arimo", "same-class", "Microsoft Sans Serif → Arimo"),
-        "trebuchetms":      ("Arimo",  "same-class", "Trebuchet MS is a geometric sans; Arimo is closest"),
-        "franklingothicmedium":("Arimo","same-class","Franklin Gothic Medium is a grotesque sans; Arimo substitutes"),
-        "aptos":            ("Carlito","same-class", "Aptos is Microsoft's new default (replaces Calibri in M365); Carlito is closest available"),
-        "aptosnarrow":      ("Carlito","same-class", "Aptos Narrow → Carlito (width incompatible but functional)"),
-        "candara":          ("Arimo",  "same-class", "Candara is a humanist sans from MS ClearType collection; Arimo substitutes"),
-        "corbel":           ("Arimo",  "same-class", "Corbel is a humanist sans from MS ClearType collection; Arimo substitutes"),
-        "constantia":       ("Tinos",  "same-class", "Constantia is a serif from MS ClearType collection; Tinos substitutes"),
-    }
-    for norm_name, (sub, quality, reason) in extra_mappings.items():
-        if norm_name not in {normalize(k) for k in mappings}:
-            display_name = norm_name  # These won't have a display name from VCL.xcu
-            mappings[display_name] = {
+    # Every explicit entry is emitted, including names VCL.xcu does not list
+    # (Consolas, Segoe UI, Aptos and the Google Fonts families). Skipping them
+    # would leave those names to the engine's default face.
+    emitted = {normalize(k) for k in mappings}
+    for norm_name, (sub, quality, reason) in EXPLICIT_MAPPINGS.items():
+        if norm_name not in emitted:
+            mappings[norm_name] = {
                 "substitute": sub,
                 "quality": quality,
                 "reason": reason,

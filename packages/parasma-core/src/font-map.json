@@ -78,6 +78,50 @@
         "normal",
         "italic"
       ]
+    },
+    "Gelasio": {
+      "css_name": "Gelasio",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Lato": {
+      "css_name": "Lato",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Poppins": {
+      "css_name": "Poppins",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
+    },
+    "Comic Neue": {
+      "css_name": "Comic+Neue",
+      "weights": [
+        400,
+        700
+      ],
+      "styles": [
+        "normal",
+        "italic"
+      ]
     }
   },
   "mappings": {
@@ -90,6 +134,11 @@
       "substitute": "Arimo",
       "quality": "same-class",
       "reason": "LibreOffice's Arial substitute; we use Arimo instead"
+    },
+    "andalemono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Monospace; Cousine substitutes"
     },
     "andalesans": {
       "substitute": "Arimo",
@@ -114,22 +163,37 @@
     "aptos": {
       "substitute": "Carlito",
       "quality": "same-class",
-      "reason": "Aptos is Microsoft's new default (replaces Calibri in M365); Carlito is closest available"
+      "reason": "Aptos is Microsoft's default since 2024; no metric-compatible Google Fonts family exists. Carlito is closest available"
+    },
+    "aptosdisplay": {
+      "substitute": "Carlito",
+      "quality": "same-class",
+      "reason": "Aptos Display has no metric-compatible Google Fonts family; Carlito substitutes"
     },
     "aptosnarrow": {
       "substitute": "Carlito",
       "quality": "same-class",
-      "reason": "Aptos Narrow → Carlito (width incompatible but functional)"
+      "reason": "Aptos Narrow has no metric-compatible Google Fonts family; Carlito is width-incompatible but functional"
     },
     "arial": {
       "substitute": "Arimo",
       "quality": "metric-compatible",
       "reason": "Arimo is Google's metric-compatible clone of Arial"
     },
+    "arialblack": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Heavy sans; Arimo 700 is lighter than Arial Black but same class"
+    },
     "arialnarrow": {
       "substitute": "Arimo",
       "quality": "same-class",
       "reason": "Condensed sans; no condensed variant on Google Fonts, Arimo is width-incompatible but functional"
+    },
+    "arialnova": {
+      "substitute": "Arimo",
+      "quality": "metric-compatible",
+      "reason": "Arimo (Arial metric clone) matches Arial Nova advance widths for layout fidelity"
     },
     "arialunicode": {
       "substitute": "Arimo",
@@ -206,6 +270,11 @@
       "quality": "metric-compatible",
       "reason": "Carlito is Google's metric-compatible clone of Calibri"
     },
+    "calibrilight": {
+      "substitute": "Carlito",
+      "quality": "metric-compatible",
+      "reason": "Carlito covers Calibri Light weight range"
+    },
     "calisto": {
       "substitute": "Tinos",
       "quality": "same-class",
@@ -215,6 +284,11 @@
       "substitute": "Caladea",
       "quality": "metric-compatible",
       "reason": "Caladea is the metric-compatible clone of Cambria"
+    },
+    "cambriamath": {
+      "substitute": "Caladea",
+      "quality": "metric-compatible",
+      "reason": "Caladea substitutes for Cambria family; math glyphs may be missing"
     },
     "candara": {
       "substitute": "Arimo",
@@ -275,6 +349,26 @@
       "substitute": "Cousine",
       "quality": "same-class",
       "reason": "Computer Modern Typewriter → Cousine"
+    },
+    "comicneue": {
+      "substitute": "Comic Neue",
+      "quality": "exact",
+      "reason": "Comic Neue is a Google Fonts family; the real face is loaded"
+    },
+    "comicsans": {
+      "substitute": "Comic Neue",
+      "quality": "same-class",
+      "reason": "Comic Neue is the Google Fonts casual face drawn after Comic Sans; not metric-compatible"
+    },
+    "comicsansms": {
+      "substitute": "Comic Neue",
+      "quality": "same-class",
+      "reason": "Comic Neue is the Google Fonts casual face drawn after Comic Sans; not metric-compatible"
+    },
+    "consolas": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Modern monospace; Cousine is closest. Consolas has different proportions"
     },
     "constantia": {
       "substitute": "Tinos",
@@ -341,6 +435,11 @@
       "quality": "same-class",
       "reason": "Industrial sans-serif; Arimo is functional substitute"
     },
+    "ebgaramond": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"
+    },
     "elite": {
       "substitute": "Cousine",
       "quality": "same-class",
@@ -355,6 +454,16 @@
       "substitute": "Arimo",
       "quality": "rough-fallback",
       "reason": "CSS fantasy generic; no decorative font matches well"
+    },
+    "firacode": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Monospace shipped only as a variable font; Cousine until variable fonts are supported"
+    },
+    "franklingothicbook": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Franklin Gothic Book is a grotesque sans; Arimo substitutes"
     },
     "franklingothicmedium": {
       "substitute": "Arimo",
@@ -381,10 +490,20 @@
       "quality": "same-class",
       "reason": "Humanist sans-serif; Arimo is closest available"
     },
+    "futura": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Geometric sans; no metric-compatible web font exists"
+    },
     "garamond": {
       "substitute": "Tinos",
       "quality": "same-class",
       "reason": "Old-style serif; Tinos is closest available. Different proportions than Garamond"
+    },
+    "gelasio": {
+      "substitute": "Gelasio",
+      "quality": "exact",
+      "reason": "Gelasio is itself a Google Fonts family"
     },
     "geneva": {
       "substitute": "Arimo",
@@ -392,9 +511,9 @@
       "reason": "macOS system sans-serif; Arimo substitutes adequately"
     },
     "georgia": {
-      "substitute": "Tinos",
-      "quality": "same-class",
-      "reason": "Slab-influenced serif designed for screen; Tinos is closest serif. Georgia has wider glyphs"
+      "substitute": "Gelasio",
+      "quality": "metric-compatible",
+      "reason": "Gelasio is designed to be metric-compatible with Georgia"
     },
     "helmet": {
       "substitute": "Arimo",
@@ -416,6 +535,21 @@
       "quality": "same-class",
       "reason": "Condensed sans; Arimo is closest available sans on Google Fonts"
     },
+    "inconsolata": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Google Fonts monospace shipped only as a variable font; Cousine until variable fonts are supported"
+    },
+    "jetbrainsmono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Monospace shipped only as a variable font; Cousine until variable fonts are supported"
+    },
+    "lato": {
+      "substitute": "Lato",
+      "quality": "exact",
+      "reason": "Lato is a Google Fonts family; the real face is loaded"
+    },
     "lettergothic": {
       "substitute": "Cousine",
       "quality": "same-class",
@@ -431,6 +565,11 @@
       "quality": "metric-compatible",
       "reason": "Liberation Sans is also metric-compatible with Arial, like Arimo"
     },
+    "liberationsansnarrow": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Condensed sans; no condensed variant available, using Arimo"
+    },
     "liberationserif": {
       "substitute": "Tinos",
       "quality": "metric-compatible",
@@ -445,6 +584,11 @@
       "substitute": "Cousine",
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "lora": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"
     },
     "lucidabright": {
       "substitute": "Tinos",
@@ -486,6 +630,16 @@
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
     },
+    "menlo": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "macOS monospace (DejaVu Sans Mono derivative); Cousine is closest"
+    },
+    "merriweather": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"
+    },
     "microsoftsansserif": {
       "substitute": "Arimo",
       "quality": "same-class",
@@ -515,6 +669,11 @@
       "substitute": "Cousine",
       "quality": "same-class",
       "reason": "Generic monospace → Cousine"
+    },
+    "montserrat": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
     },
     "newcenturyschlbk": {
       "substitute": "Tinos",
@@ -556,6 +715,11 @@
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
     },
+    "nunito": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
+    },
     "ocean": {
       "substitute": "Arimo",
       "quality": "same-class",
@@ -566,10 +730,20 @@
       "quality": "same-class",
       "reason": "Sans-serif; Arimo is functional substitute"
     },
+    "optima": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Humanist sans with serif hints; no good web match, Arimo is functional fallback"
+    },
     "palatino": {
       "substitute": "Tinos",
       "quality": "same-class",
       "reason": "Old-style serif; wider than Times. Tinos is narrower but same class"
+    },
+    "palatinolinotype": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Palatino Linotype = digital Palatino; Tinos substitutes as closest serif"
     },
     "palladio": {
       "substitute": "Tinos",
@@ -591,6 +765,16 @@
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
     },
+    "playfairdisplay": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"
+    },
+    "poppins": {
+      "substitute": "Poppins",
+      "quality": "exact",
+      "reason": "Poppins is a Google Fonts family; the real face is loaded"
+    },
     "ps": {
       "substitute": "Cousine",
       "quality": "same-class",
@@ -605,6 +789,26 @@
       "substitute": "Cousine",
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to mono bucket (Cumberland AMT)"
+    },
+    "raleway": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
+    },
+    "roboto": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
+    },
+    "robotomono": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Google Fonts monospace shipped only as a variable font; Cousine until variable fonts are supported"
+    },
+    "robotoslab": {
+      "substitute": "Tinos",
+      "quality": "same-class",
+      "reason": "Google Fonts serif shipped only as a variable font; Tinos until variable fonts are supported"
     },
     "roman": {
       "substitute": "Cousine",
@@ -736,6 +940,21 @@
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to serif bucket (Thorndale AMT)"
     },
+    "sourcecodepro": {
+      "substitute": "Cousine",
+      "quality": "same-class",
+      "reason": "Google Fonts monospace shipped only as a variable font; Cousine until variable fonts are supported"
+    },
+    "sourcesans3": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
+    },
+    "sourcesanspro": {
+      "substitute": "Arimo",
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
+    },
     "swiss": {
       "substitute": "Arimo",
       "quality": "same-class",
@@ -781,6 +1000,11 @@
       "quality": "same-class",
       "reason": "VCL.xcu chain leads to Times New Roman → Tinos"
     },
+    "tinos": {
+      "substitute": "Tinos",
+      "quality": "metric-compatible",
+      "reason": "Tinos is itself the substitute"
+    },
     "tmsrmn": {
       "substitute": "Tinos",
       "quality": "same-class",
@@ -816,28 +1040,13 @@
       "quality": "same-class",
       "reason": "Humanist sans-serif; Arimo is closer in weight than Noto Sans. Verdana has wider glyphs — not metric-compatible"
     },
-    "calibrilight": {
-      "substitute": "Carlito",
-      "quality": "metric-compatible",
-      "reason": "Carlito (Calibri metric clone) shares Calibri Light advance widths; the Light weight differs only visually, so pagination/line-break match Word"
-    },
-    "arialnova": {
+    "worksans": {
       "substitute": "Arimo",
-      "quality": "metric-compatible",
-      "reason": "Arimo (Arial metric clone) matches Arial Nova advance widths for layout fidelity"
+      "quality": "same-class",
+      "reason": "Google Fonts sans shipped only as a variable font; Arimo until variable fonts are supported"
     }
   },
   "no_substitute": {
-    "agdasima": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font; counterpart to Agency FB (display sans). No need to substitute — available directly on Google Fonts"
-    },
-    "agencyfb": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Microsoft display sans; Agdasima is Google's alternative but visually quite different"
-    },
     "algerian": {
       "substitute": null,
       "quality": "none",
@@ -868,11 +1077,6 @@
       "quality": "none",
       "reason": "VCL.xcu chain leads to palacescript (no web equivalent)"
     },
-    "bacasimeantique": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font; counterpart to Baskerville Old Face. Available directly on Google Fonts"
-    },
     "batang": {
       "substitute": null,
       "quality": "none",
@@ -882,16 +1086,6 @@
       "substitute": null,
       "quality": "none",
       "reason": "Korean serif mono; future: Noto Serif CJK KR"
-    },
-    "belanosima": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font; counterpart to Berlin Sans FB. Available directly on Google Fonts"
-    },
-    "berlinsansfb": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Microsoft display sans; Belanosima is Google's alternative"
     },
     "blackadder": {
       "substitute": null,
@@ -917,11 +1111,6 @@
       "substitute": null,
       "quality": "none",
       "reason": "Thai sans variant; future: Noto Sans Thai"
-    },
-    "caprasimo": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font; counterpart to Cooper Black. Available directly on Google Fonts"
     },
     "castellar": {
       "substitute": null,
@@ -963,25 +1152,10 @@
       "quality": "none",
       "reason": "Decorative outline; no web equivalent"
     },
-    "comicsans": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Casual handwriting font; no web equivalent matches the style"
-    },
-    "comicsansms": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Comic Sans MS; no web equivalent matches the informal style"
-    },
     "conga": {
       "substitute": null,
       "quality": "none",
       "reason": "VCL.xcu chain leads to sheffield (no web equivalent)"
-    },
-    "cooperblack": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Heavy decorative serif; Caprasimo is Google's alternative but visually different"
     },
     "copperlategothic": {
       "substitute": null,
@@ -1287,21 +1461,6 @@
       "substitute": null,
       "quality": "none",
       "reason": "VCL.xcu chain leads to starsymbol (no web equivalent)"
-    },
-    "lugrasimo": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font substitute for Lucida Calligraphy. Available on Google Fonts"
-    },
-    "lumanosimo": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font substitute for Lucida Handwriting. Available on Google Fonts"
-    },
-    "lunasima": {
-      "substitute": null,
-      "quality": "none",
-      "reason": "Google Font substitute for Lucida Grande. Available on Google Fonts"
     },
     "marlett": {
       "substitute": null,

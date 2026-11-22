@@ -711,7 +711,7 @@ export interface RefreshFontsResult {
 
 // ─── Font resolver ──────────────────────────────────────────────────────────
 
-import { BUNDLED_FONT_ORIGINS, buildFontPlan, type FontPlanEntry } from "./font-resolver";
+import { BUNDLED_FONT_ORIGINS, buildFontPlan, isCjkSubstitute, type FontPlanEntry } from "./font-resolver";
 import {
   LocalFontProvider,
   readLocalFontCached,
@@ -3035,7 +3035,7 @@ export class Viewer {
           origin,
           matchTier: origin === "local" ? match?.tier ?? null : null,
           matchedFamily: origin === "local" ? match?.family ?? null : null,
-          isCjk: plan?.family === "Noto Sans CJK",
+          isCjk: isCjkSubstitute(plan?.family),
           candidateInstalled,
         }),
         localCandidates,

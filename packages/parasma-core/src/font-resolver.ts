@@ -4,11 +4,14 @@
  *
  * Two layers:
  *   1. font-map.json classifies 315+ proprietary fonts -> substitute family
- *   2. Full TTF/OTF files are fetched for the 11 bundled families below — the
- *      five Word metric-clones (Arimo/Tinos/Cousine/Carlito/Caladea), Inter, the
- *      two libre faces we load for real (DejaVu Sans, Open Sans), the two
- *      on-demand script faces (Noto Sans Arabic, Noto Sans CJK) and XITS Math.
- *      Every URL is pinned to an exact upstream commit — see PINNED_COMMITS.
+ *   2. Full TTF/OTF files are fetched for the bundled families below — the
+ *      Word metric-clones (Arimo/Tinos/Cousine/Carlito/Caladea, and Gelasio for
+ *      Georgia), Inter, the libre faces loaded as themselves (DejaVu Sans, Open
+ *      Sans, Lato, Poppins, Comic Neue), the on-demand script faces (Noto Sans
+ *      Arabic, Noto Sans CJK, the four regional Noto Serif CJK faces) and XITS
+ *      Math. New families come from the Google Fonts catalog; DejaVu Sans and
+ *      XITS Math are kept exceptions. Every URL is pinned to an exact upstream
+ *      commit — see PINNED_COMMITS.
  */
 
 import fontMap from "./font-map.json";
@@ -118,23 +121,53 @@ const CJK_WEIGHT_SUFFIXES = [
   "medium", "regular", "black", "heavy", "thin",
 ];
 
-function isCjkFontName(fontName: string): boolean {
+/**
+ * Serif (Song/Ming/Mincho/Myeongjo) CJK names → the regional Noto Serif face.
+ * Without this every CJK font rendered as sans. Regional faces (not the pan-CJK
+ * one) because the pan-CJK serif files exceed the CDN's per-file limit, and
+ * because each region's face draws that region's glyph forms. Keys are
+ * normalised like CJK_FONT_NAMES; kai/fangsong (brush and imitation-Song
+ * styles) take the serif face as the closer of the two.
+ */
+const CJK_SERIF_REGION: Readonly<Record<string, "JP" | "SC" | "TC" | "KR">> = {
+  "宋体": "SC", "新宋体": "SC", "楷体": "SC", "楷体gb2312": "SC", "仿宋": "SC",
+  "仿宋gb2312": "SC", "华文宋体": "SC", "华文楷体": "SC", "隶书": "SC",
+  "simsun": "SC", "nsimsun": "SC", "kaiti": "SC", "kaitigb2312": "SC",
+  "fangsong": "SC", "fangsonggb2312": "SC", "stsong": "SC", "stkaiti": "SC", "lisu": "SC",
+  "新細明體": "TC", "細明體": "TC", "標楷體": "TC",
+  "pmingliu": "TC", "mingliu": "TC", "dfkaisb": "TC", "kaiu": "TC",
+  "ｍｓ明朝": "JP", "游明朝": "JP", "msmincho": "JP", "mspmincho": "JP", "yumincho": "JP",
+  "바탕": "KR", "궁서": "KR", "batang": "KR", "gungsuh": "KR", "nanummyeongjo": "KR",
+};
+
+/** The CJK base name a (possibly weight-suffixed) font name resolves to, or null. */
+function cjkBaseName(fontName: string): string | null {
   const key = normalizeFontKey(fontName);
-  if (CJK_FONT_NAMES.has(key)) return true;
+  if (CJK_FONT_NAMES.has(key)) return key;
   for (const w of CJK_WEIGHT_SUFFIXES) {
     if (key.length > w.length && key.endsWith(w)) {
       const base = key.slice(0, key.length - w.length);
-      if (CJK_FONT_NAMES.has(base)) return true;
+      if (CJK_FONT_NAMES.has(base)) return base;
     }
   }
-  return false;
+  return null;
 }
+
+/** True for every family a CJK font name can resolve to. */
+export function isCjkSubstitute(family: string | undefined): boolean {
+  return family === "Noto Sans CJK" || (family?.startsWith("Noto Serif CJK ") ?? false);
+}
+
 
 export function resolveSubstitute(fontName: string): string | null {
   const lower = fontName.toLowerCase().replace(/ /g, "").replace(/-/g, "");
 
   // CJK names first — they're never in the Latin font-map (§17.3.2.26).
-  if (isCjkFontName(fontName)) return "Noto Sans CJK";
+  const cjk = cjkBaseName(fontName);
+  if (cjk !== null) {
+    const region = CJK_SERIF_REGION[cjk];
+    return region ? `Noto Serif CJK ${region}` : "Noto Sans CJK";
+  }
 
   // OMML math faces next — never in the Latin font-map.
   if (MATH_FONT_NAMES.has(normalizeFontKey(fontName))) return "XITS Math";
@@ -188,6 +221,8 @@ const PINNED_COMMITS = {
   "notofonts/notofonts.github.io": "eaa1a5cf8cb83ea73941197e492d659e51bb11dd",
   "notofonts/noto-cjk": "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
   "aliftype/xits": "81258e3318693741a50bd921d87c73d497103d37", // = tag v1.302
+  // Gelasio's upstream source repo: the Google Fonts catalog copy is variable-only.
+  "SorkinType/Gelasio": "7ab20e7e5c42791e603b9ee3201a0b49849cfdb2",
 } as const;
 
 /** jsDelivr GitHub URL for `path` in a pinned repo. */
@@ -266,6 +301,33 @@ const FONT_URLS: Record<string, FontVariantUrls> = {
     italic: gh("googlefonts/opensans", "fonts/ttf/OpenSans-Italic.ttf"),
     boldItalic: gh("googlefonts/opensans", "fonts/ttf/OpenSans-BoldItalic.ttf"),
   },
+  // Georgia's metric-compatible clone (Google Fonts catalog family).
+  Gelasio: {
+    regular: gh("SorkinType/Gelasio", "fonts/ttf/Gelasio-Regular.ttf"),
+    bold: gh("SorkinType/Gelasio", "fonts/ttf/Gelasio-Bold.ttf"),
+    italic: gh("SorkinType/Gelasio", "fonts/ttf/Gelasio-Italic.ttf"),
+    boldItalic: gh("SorkinType/Gelasio", "fonts/ttf/Gelasio-BoldItalic.ttf"),
+  },
+  // Google Fonts families a document can name directly: load the real face.
+  Lato: {
+    regular: gh("google/fonts", "ofl/lato/Lato-Regular.ttf"),
+    bold: gh("google/fonts", "ofl/lato/Lato-Bold.ttf"),
+    italic: gh("google/fonts", "ofl/lato/Lato-Italic.ttf"),
+    boldItalic: gh("google/fonts", "ofl/lato/Lato-BoldItalic.ttf"),
+  },
+  Poppins: {
+    regular: gh("google/fonts", "ofl/poppins/Poppins-Regular.ttf"),
+    bold: gh("google/fonts", "ofl/poppins/Poppins-Bold.ttf"),
+    italic: gh("google/fonts", "ofl/poppins/Poppins-Italic.ttf"),
+    boldItalic: gh("google/fonts", "ofl/poppins/Poppins-BoldItalic.ttf"),
+  },
+  // Comic Sans substitute (same class, not metric-compatible).
+  "Comic Neue": {
+    regular: gh("google/fonts", "ofl/comicneue/ComicNeue-Regular.ttf"),
+    bold: gh("google/fonts", "ofl/comicneue/ComicNeue-Bold.ttf"),
+    italic: gh("google/fonts", "ofl/comicneue/ComicNeue-Italic.ttf"),
+    boldItalic: gh("google/fonts", "ofl/comicneue/ComicNeue-BoldItalic.ttf"),
+  },
   // East Asian (CJK) and Complex Script (Arabic) font slots — §17.3.2.26.
   // Loaded on-demand only when the doc contains those scripts (the WASM reports
   // the family via fontFamiliesUsed only then). TTF/OTF (not woff2) so the Rust
@@ -282,6 +344,32 @@ const FONT_URLS: Record<string, FontVariantUrls> = {
     bold: gh("notofonts/noto-cjk", "Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf"),
     italic: gh("notofonts/noto-cjk", "Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"),
     boldItalic: gh("notofonts/noto-cjk", "Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf"),
+  },
+  // Serif CJK (Song/Ming/Mincho/Myeongjo names), one regional face per
+  // region: the pan-CJK serif files are over the CDN's per-file size limit.
+  "Noto Serif CJK JP": {
+    regular: gh("notofonts/noto-cjk", "Serif/SubsetOTF/JP/NotoSerifJP-Regular.otf"),
+    bold: gh("notofonts/noto-cjk", "Serif/SubsetOTF/JP/NotoSerifJP-Bold.otf"),
+    italic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/JP/NotoSerifJP-Regular.otf"),
+    boldItalic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/JP/NotoSerifJP-Bold.otf"),
+  },
+  "Noto Serif CJK SC": {
+    regular: gh("notofonts/noto-cjk", "Serif/SubsetOTF/SC/NotoSerifSC-Regular.otf"),
+    bold: gh("notofonts/noto-cjk", "Serif/SubsetOTF/SC/NotoSerifSC-Bold.otf"),
+    italic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/SC/NotoSerifSC-Regular.otf"),
+    boldItalic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/SC/NotoSerifSC-Bold.otf"),
+  },
+  "Noto Serif CJK TC": {
+    regular: gh("notofonts/noto-cjk", "Serif/SubsetOTF/TC/NotoSerifTC-Regular.otf"),
+    bold: gh("notofonts/noto-cjk", "Serif/SubsetOTF/TC/NotoSerifTC-Bold.otf"),
+    italic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/TC/NotoSerifTC-Regular.otf"),
+    boldItalic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/TC/NotoSerifTC-Bold.otf"),
+  },
+  "Noto Serif CJK KR": {
+    regular: gh("notofonts/noto-cjk", "Serif/SubsetOTF/KR/NotoSerifKR-Regular.otf"),
+    bold: gh("notofonts/noto-cjk", "Serif/SubsetOTF/KR/NotoSerifKR-Bold.otf"),
+    italic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/KR/NotoSerifKR-Regular.otf"),
+    boldItalic: gh("notofonts/noto-cjk", "Serif/SubsetOTF/KR/NotoSerifKR-Bold.otf"),
   },
   // OMML math face — XITS Math (a STIX fork, SIL OFL). jsDelivr's
   // GitHub mirror serves the FULL, non-subset OTF (so the MATH table survives)
@@ -388,7 +476,7 @@ export function buildFontPlan(
   // direct, substitute, and synthesized paths are covered in one DRY place.
   // CJK-routed families are EXCLUDED v1 (label-only in coverage; a follow-on).
   for (const [docFamily, entry] of plans) {
-    if (entry.family === "Noto Sans CJK" || entry.family === "XITS Math") continue;
+    if (isCjkSubstitute(entry.family) || entry.family === "XITS Math") continue;
     const wordTarget = WORD_SUBSTITUTIONS[normalizeFontKey(docFamily)];
     entry.localCandidates = wordTarget ? [docFamily, wordTarget] : [docFamily];
     if (wordTarget) entry.wordTarget = wordTarget;

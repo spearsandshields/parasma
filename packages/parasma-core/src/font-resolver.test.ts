@@ -1,5 +1,6 @@
+import fontMap from "./font-map.json";
 import { describe, it, expect } from "vitest";
-import { resolveSubstitute, buildFontPlan } from "./font-resolver";
+import { resolveSubstitute, buildFontPlan, BUNDLED_FONT_FAMILIES } from "./font-resolver";
 
 describe("resolveSubstitute", () => {
   it("maps calibri to Carlito (metric-compatible)", () => {
@@ -22,12 +23,24 @@ describe("resolveSubstitute", () => {
   // Chinese/Japanese/Korean font (the norm) must trigger the CJK face, else the
   // text renders in a Latin fallback (overlapping) — regression: a document
   // naming 宋体/黑体/楷体.
-  it("maps Chinese font names (宋体/黑体/楷体) to Noto Sans CJK", () => {
-    expect(resolveSubstitute("宋体")).toBe("Noto Sans CJK");
+  it("maps Chinese font names (宋体/黑体/楷体) to a Noto CJK face", () => {
+    expect(resolveSubstitute("宋体")).toBe("Noto Serif CJK SC");
     expect(resolveSubstitute("黑体")).toBe("Noto Sans CJK");
-    expect(resolveSubstitute("楷体_GB2312")).toBe("Noto Sans CJK");
-    expect(resolveSubstitute("SimSun")).toBe("Noto Sans CJK");
+    expect(resolveSubstitute("楷体_GB2312")).toBe("Noto Serif CJK SC");
+    expect(resolveSubstitute("SimSun")).toBe("Noto Serif CJK SC");
     expect(resolveSubstitute("Microsoft YaHei")).toBe("Noto Sans CJK");
+  });
+
+  // Serif CJK families (Song/Ming/Mincho/Myeongjo) keep their class and take
+  // their own region's face; sans names stay on the pan-CJK sans face.
+  it("maps serif CJK names to the regional Noto Serif face", () => {
+    expect(resolveSubstitute("MS Mincho")).toBe("Noto Serif CJK JP");
+    expect(resolveSubstitute("游明朝")).toBe("Noto Serif CJK JP");
+    expect(resolveSubstitute("PMingLiU")).toBe("Noto Serif CJK TC");
+    expect(resolveSubstitute("新細明體")).toBe("Noto Serif CJK TC");
+    expect(resolveSubstitute("Batang")).toBe("Noto Serif CJK KR");
+    expect(resolveSubstitute("바탕")).toBe("Noto Serif CJK KR");
+    expect(resolveSubstitute("MS Gothic")).toBe("Noto Sans CJK");
   });
 
   // Windows "* UI" variants (real-world xlsx files name "Microsoft YaHei UI" in a
@@ -47,7 +60,7 @@ describe("resolveSubstitute", () => {
     expect(resolveSubstitute("游ゴシック Light")).toBe("Noto Sans CJK");
     expect(resolveSubstitute("DengXian Light")).toBe("Noto Sans CJK");
     expect(resolveSubstitute("Yu Gothic Light")).toBe("Noto Sans CJK");
-    expect(resolveSubstitute("SimSun Bold")).toBe("Noto Sans CJK");
+    expect(resolveSubstitute("SimSun Bold")).toBe("Noto Serif CJK SC");
   });
 
   // The weight-strip must NOT misfire on Latin families that end in a weight
@@ -59,8 +72,7 @@ describe("resolveSubstitute", () => {
     expect(resolveSubstitute("Bold")).toBeNull();
   });
 
-  it("maps Japanese + Korean font names to Noto Sans CJK", () => {
-    expect(resolveSubstitute("MS Mincho")).toBe("Noto Sans CJK");
+  it("maps Japanese + Korean sans font names to Noto Sans CJK", () => {
     expect(resolveSubstitute("Meiryo")).toBe("Noto Sans CJK");
     expect(resolveSubstitute("Malgun Gothic")).toBe("Noto Sans CJK");
   });
@@ -78,8 +90,29 @@ describe("resolveSubstitute", () => {
     expect(resolveSubstitute("helvetica")).toBe("Arimo");
   });
 
-  it("maps georgia to Tinos (same-class)", () => {
-    expect(resolveSubstitute("georgia")).toBe("Tinos");
+  it("maps georgia to Gelasio (metric-compatible)", () => {
+    expect(resolveSubstitute("georgia")).toBe("Gelasio");
+  });
+
+  // Hand-written mappings for names LibreOffice's table does not list used to
+  // be dropped by the generator, leaving them on the engine's default face.
+  it("maps names absent from VCL.xcu (Consolas, Segoe UI, Aptos)", () => {
+    expect(resolveSubstitute("Consolas")).toBe("Cousine");
+    expect(resolveSubstitute("Segoe UI")).toBe("Arimo");
+    expect(resolveSubstitute("Aptos")).toBe("Carlito");
+    expect(resolveSubstitute("Palatino Linotype")).toBe("Tinos");
+  });
+
+  it("loads Google Fonts families as themselves, and Comic Sans as Comic Neue", () => {
+    expect(resolveSubstitute("Lato")).toBe("Lato");
+    expect(resolveSubstitute("Poppins")).toBe("Poppins");
+    expect(resolveSubstitute("Comic Sans MS")).toBe("Comic Neue");
+  });
+
+  it("maps variable-only Google Fonts families to their class", () => {
+    expect(resolveSubstitute("Roboto")).toBe("Arimo");
+    expect(resolveSubstitute("Merriweather")).toBe("Tinos");
+    expect(resolveSubstitute("Source Code Pro")).toBe("Cousine");
   });
 
   it("handles VCL.xcu chain entries like garamond", () => {
@@ -221,9 +254,25 @@ describe("buildFontPlan — localCandidates = [declared, ...curated]", () => {
   });
 
   it("CJK-routed families get NO localCandidates (excluded from the ladder v1)", () => {
-    const plan = buildFontPlan(["宋体"]).get("宋体");
-    expect(plan).toBeDefined();
-    expect(plan!.family).toBe("Noto Sans CJK");
-    expect(plan!.localCandidates).toBeUndefined();
+    for (const [name, family] of [["宋体", "Noto Serif CJK SC"], ["黑体", "Noto Sans CJK"]]) {
+      const plan = buildFontPlan([name!]).get(name!);
+      expect(plan).toBeDefined();
+      expect(plan!.family).toBe(family);
+      expect(plan!.localCandidates).toBeUndefined();
+    }
+  });
+
+  it("every substitute font-map.json names is a bundled family", () => {
+    const subs = new Set(Object.values((fontMap as { mappings: Record<string, { substitute: string | null }> }).mappings)
+      .map((m) => m.substitute)
+      .filter((x): x is string => x !== null));
+    for (const sub of subs) expect(BUNDLED_FONT_FAMILIES[sub], sub).toBeDefined();
+  });
+
+  it("every mapped substitute has fetchable URLs (no map entry points at a missing face)", () => {
+    for (const name of ["Georgia", "Lato", "Poppins", "Comic Sans MS", "MS Mincho", "SimSun", "PMingLiU", "Batang"]) {
+      const plan = buildFontPlan([name]).get(name);
+      expect(plan?.urls?.regular, name).toMatch(/^https:\/\/cdn\.jsdelivr\.net\//);
+    }
   });
 });
