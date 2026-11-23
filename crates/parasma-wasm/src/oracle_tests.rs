@@ -9608,3 +9608,85 @@ fn word_runs_draw_with_the_measured_features() {
     let (kerning, _) = draw(r#"<w:kern w:val="2"/>"#);
     assert_eq!(kerning, vec![false, true, true], "page baseline off; each kerned run turns it on for itself");
 }
+
+// ─── the default paragraph style (§17.7.4.17) ───────────────────────────────
+//
+// "The default paragraph style applies to every paragraph that carries no
+// pStyle." Word writes Normal paragraphs without a pStyle, so whatever a
+// document puts in Normal reaches most of its body text only through this rule.
+
+fn default_style_docx(styles_body: &str, body: &str) -> Vec<u8> {
+    let styles = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles {W_NS}><w:docDefaults><w:rPrDefault><w:rPr>
+  <w:rFonts w:ascii="Arimo" w:hAnsi="Arimo" w:cs="Arimo"/><w:sz w:val="22"/>
+</w:rPr></w:rPrDefault></w:docDefaults>{styles_body}</w:styles>"#
+    );
+    let document = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document {W_NS}><w:body>{body}<w:sectPr/></w:body></w:document>"#
+    );
+    let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+</Types>"#
+        .to_string();
+    let root_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"#
+        .to_string();
+    let doc_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>"#
+        .to_string();
+    build_docx(&[
+        ("[Content_Types].xml", content_types),
+        ("_rels/.rels", root_rels),
+        ("word/document.xml", document),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/styles.xml", styles),
+    ])
+}
+
+/// (first line's first segment x, first word's font size in pt) on page 1.
+fn first_line_x_and_pt(viewer: &Viewer) -> (f64, f64) {
+    let pages = viewer.pages.borrow();
+    for el in &pages[0].elements {
+        let PageElement::Line(l) = el else { continue };
+        if let Some(s) = l.segments.first() {
+            if let Some(it) = s.items.iter().find(|it| !it.text.trim().is_empty()) {
+                return (s.x_start, it.style.font_pt);
+            }
+        }
+    }
+    panic!("no text line on page 1");
+}
+
+const NORMAL_CENTRED_20PT: &str = r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal">
+  <w:name w:val="Normal"/><w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:sz w:val="40"/></w:rPr></w:style>"#;
+
+#[test]
+fn unstyled_paragraphs_take_the_default_paragraph_style() {
+    let unstyled = first_line_x_and_pt(&layout(default_style_docx(NORMAL_CENTRED_20PT, &p("", &r("", "Centred")))));
+    let named = first_line_x_and_pt(&layout(default_style_docx(
+        NORMAL_CENTRED_20PT,
+        &p(r#"<w:pStyle w:val="Normal"/>"#, &r("", "Centred")),
+    )));
+    assert_eq!(unstyled.1, 20.0, "Normal's rPr reaches a paragraph with no pStyle");
+    assert!((unstyled.0 - named.0).abs() < 1e-9, "Normal's jc reaches it too: {unstyled:?} vs {named:?}");
+}
+
+#[test]
+fn the_last_default_paragraph_style_wins_and_untyped_counts() {
+    // Two styles claim default; the later one in the part wins. The later one
+    // here has no w:type, which defaults to paragraph.
+    let styles = r#"<w:style w:type="paragraph" w:default="1" w:styleId="First"><w:rPr><w:sz w:val="30"/></w:rPr></w:style>
+<w:style w:default="1" w:styleId="Second"><w:rPr><w:sz w:val="50"/></w:rPr></w:style>"#;
+    let (_, pt) = first_line_x_and_pt(&layout(default_style_docx(styles, &p("", &r("", "Text")))));
+    assert_eq!(pt, 25.0);
+}

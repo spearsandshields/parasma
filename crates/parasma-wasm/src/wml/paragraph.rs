@@ -37,6 +37,7 @@ use crate::engine::color::ooxml_color_to_css;
 use crate::engine::paint::{RunStyle, Underline};
 use crate::engine::units::{pt_to_px, twips_to_px};
 use crate::wml::bidi::rtl_swap_jc;
+use crate::wml::loader::DEFAULT_PARAGRAPH_STYLE_KEY;
 use crate::wml::border::{resolve_border_edge, BorderEdge};
 use crate::wml::linebreak::{
     apply_east_asian_refinements, collect_items, pack_lines, AnchoredImageInfo,
@@ -661,8 +662,8 @@ impl ParagraphLayout {
                 .unwrap_or(true)
         };
         // General on/off toggle (§17.3.1): direct pPr → style chain (first hit,
-        // derived-first) → per-site spec default. Unlike `resolve_ea` this does
-        // NOT consult docDefaults (`default_ppr`) — these seven toggles never did.
+        // derived-first) → docDefaults (§17.7.2, the bottom of the hierarchy) →
+        // per-site default.
         let resolve_ppr_toggle = |direct: Option<bool>,
                                   field: fn(
             &ooxml_wml::types::CTPPrGeneral,
@@ -672,6 +673,7 @@ impl ParagraphLayout {
          -> bool {
             direct
                 .or_else(|| style_pprs.iter().find_map(|ppr| check_toggle(field(ppr))))
+                .or_else(|| default_ppr.and_then(|d| check_toggle(field(d))))
                 .unwrap_or(default)
         };
         let direct_ppr = paragraph.p_pr.as_ref();
@@ -1038,6 +1040,37 @@ mod marker_slot_tests {
 }
 
 #[cfg(test)]
+mod doc_default_toggle_tests {
+    use super::*;
+    use ooxml_wml::types::{CTPPrGeneral, OnOffElement, Paragraph};
+
+    fn on_off(on: bool) -> Option<Box<OnOffElement>> {
+        Some(Box::new(OnOffElement { value: Some(if on { "1" } else { "0" }.into()), ..Default::default() }))
+    }
+
+    /// §17.7.2: document defaults are the bottom of the style hierarchy, so an
+    /// on/off paragraph property set in pPrDefault applies to every paragraph
+    /// that does not override it.
+    #[test]
+    fn doc_default_on_off_paragraph_properties_apply() {
+        let defaults = CTPPrGeneral {
+            widow_control: on_off(false),
+            keep_next: on_off(true),
+            keep_lines: on_off(true),
+            ..Default::default()
+        };
+        let ctx = StyleContext::default();
+        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, &[], None, false);
+        assert!(!layout.widow_control, "pPrDefault widowControl val=0");
+        assert!(layout.keep_next, "pPrDefault keepNext");
+        assert!(layout.keep_lines, "pPrDefault keepLines");
+
+        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, &[], None, false);
+        assert!(none.widow_control && !none.keep_next, "absent everywhere: the site defaults");
+    }
+}
+
+#[cfg(test)]
 mod line_height_tests {
     use super::*;
 
@@ -1164,9 +1197,8 @@ pub(crate) fn collect_paragraph_style_chain<'a>(
         .and_then(|ppr| ppr.paragraph_style.as_ref())
         .map(|ps| ps.value.as_str());
 
-    let Some(mut current_id) = style_id.map(str::to_owned) else {
-        return Vec::new();
-    };
+    // No pStyle: the document's default paragraph style (§17.7.4.17).
+    let mut current_id = style_id.unwrap_or(DEFAULT_PARAGRAPH_STYLE_KEY).to_owned();
 
     let mut result = Vec::new();
     let mut depth = 0;
@@ -1193,9 +1225,8 @@ pub(crate) fn collect_paragraph_style_rprs<'a>(
         .and_then(|ppr| ppr.paragraph_style.as_ref())
         .map(|ps| ps.value.as_str());
 
-    let Some(mut current_id) = style_id.map(str::to_owned) else {
-        return Vec::new();
-    };
+    // No pStyle: the document's default paragraph style (§17.7.4.17).
+    let mut current_id = style_id.unwrap_or(DEFAULT_PARAGRAPH_STYLE_KEY).to_owned();
 
     let mut result = Vec::new();
     let mut depth = 0;

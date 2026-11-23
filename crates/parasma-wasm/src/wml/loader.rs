@@ -209,6 +209,54 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
     map
 }
 
+// ─── The default paragraph style ────────────────────────────────────────────
+
+/// Key under which the document's default paragraph style is registered in the
+/// style map. NUL cannot appear in XML, so no real styleId can collide with it.
+pub(crate) const DEFAULT_PARAGRAPH_STYLE_KEY: &str = "\u{0}default-paragraph-style";
+
+/// §17.7.4.17: the default paragraph style "applies to every paragraph that
+/// carries no pStyle". It is the style with `w:default` true and type paragraph
+/// (an absent `w:type` means paragraph); when several claim it, the last one in
+/// the part wins. Word writes Normal paragraphs without a pStyle, so most body
+/// text reaches its Normal style only through this rule.
+///
+/// Registered once at load as an alias entry whose `basedOn` is the default
+/// style, so every style-chain walk falls back to `DEFAULT_PARAGRAPH_STYLE_KEY`
+/// and reaches it in one keyed lookup. Picked from `styles.style` (document
+/// order), not from the context's map, which has none.
+pub(crate) fn register_default_paragraph_style(
+    ctx: &mut ooxml_wml::ext::StyleContext,
+    styles: &ooxml_wml::types::Styles,
+) {
+    use ooxml_wml::types::{CTString, STStyleType, Style};
+    let default_id = styles
+        .style
+        .iter()
+        .rev()
+        .filter(|s| {
+            matches!(s.r#type, None | Some(STStyleType::Paragraph))
+                && s.default.as_deref().is_some_and(|v| matches!(v, "1" | "true" | "on"))
+        })
+        .find_map(|s| s.style_id.clone());
+    if let Some(id) = default_id {
+        ctx.styles.insert(
+            DEFAULT_PARAGRAPH_STYLE_KEY.to_string(),
+            Style {
+                based_on: Some(Box::new(CTString { value: id })),
+                ..Default::default()
+            },
+        );
+    }
+}
+
+/// The default paragraph style's id, if the document declares one.
+pub(crate) fn default_paragraph_style_id(ctx: &ooxml_wml::ext::StyleContext) -> Option<&str> {
+    ctx.style(DEFAULT_PARAGRAPH_STYLE_KEY)
+        .and_then(|alias| alias.based_on.as_ref())
+        .map(|b| b.value.as_str())
+}
+
 // ─── Built-in header/footer styles ──────────────────────────────────────────
 
 /// WORD-BEHAVIOR (no ECMA definition — the same precedent as the default for an
@@ -235,26 +283,10 @@ pub(crate) fn inject_builtin_hdr_ftr_styles(ctx: &mut ooxml_wml::ext::StyleConte
         STTabJc, Style,
     };
     // basedOn target: the document's default paragraph style (Word chains the
-    // built-ins off Normal). A missing target breaks safely — the style-chain
+    // built-ins off Normal), as `register_default_paragraph_style` picked it,
+    // which must run first. A missing target breaks safely — the style-chain
     // collector tolerates dangling basedOn ids.
-    //
-    // Deterministic pick: `styles` is a HashMap (random iteration order), and a
-    // malformed styles.xml can carry MULTIPLE w:default="1" paragraph styles —
-    // `find` would make the basedOn parent vary per process (the determinism
-    // hazard class the layout restartability self-tests hunt). Smallest
-    // styleId wins, stably.
-    let default_para_id = ctx
-        .styles
-        .values()
-        .filter(|s| {
-            matches!(s.r#type, Some(STStyleType::Paragraph))
-                && s.default
-                    .as_deref()
-                    .is_some_and(|v| matches!(v, "1" | "true" | "on"))
-        })
-        .min_by(|a, b| a.style_id.cmp(&b.style_id))
-        .and_then(|s| s.style_id.clone())
-        .unwrap_or_else(|| "Normal".into());
+    let default_para_id = default_paragraph_style_id(ctx).unwrap_or("Normal").to_string();
     for (id, name) in [("Header", "header"), ("Footer", "footer")] {
         if ctx.styles.contains_key(id) {
             continue;
