@@ -123,4 +123,12 @@ fetch_dejavu "DejaVuSans-Bold.ttf"        "e6476c1b80502924294eed40894c5b18e06c1
 fetch_dejavu "DejaVuSans-Oblique.ttf"     "4af75fa16ee6d3ad43e1ecec41862c24954af26a55c6bb1ebb27bd486a50f5f4"
 fetch_dejavu "DejaVuSans-BoldOblique.ttf" "eb436dca0c2594b73d8b603b892e374fdfd8d885d25ffb4f18df4c4c0b49e50f"
 
+# Symbol-font fallback: Noto Sans Symbols 2 (SIL OFL), the face the engine
+# draws re-encoded Wingdings/Webdings characters in. Same google/fonts commit
+# as font-resolver.ts; the symbol-font tests load it.
+NOTOSANSSYMBOLS2_COMMIT="7ff85c87f93ea6cca5f41c69f2e4edcb90240f26"
+fetch_url "NotoSansSymbols2-Regular.ttf" \
+  "7d5fb73b7ca67a6798101741f5d280a3d016a56a197afcd4199dbb57b4b82a21" \
+  "https://cdn.jsdelivr.net/gh/google/fonts@${NOTOSANSSYMBOLS2_COMMIT}/ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf"
+
 echo "test fonts ready in $DEST"

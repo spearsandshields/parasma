@@ -2620,15 +2620,16 @@ impl Viewer {
             return Vec::new();
         };
 
+        let fc = &self.font_cache;
         let collect_from_blocks = |blocks: &[BlockContent], families: &mut HashSet<String>, w: &WmlRenderer| {
             for block in blocks {
                 match block {
-                    BlockContent::P(para) => w.collect_para_fonts(para, families),
+                    BlockContent::P(para) => w.collect_para_fonts(para, families, fc),
                     BlockContent::Tbl(table) => {
                         for row in table.rows() {
                             for cell in collect_row_cells(row) {
                                 for para in collect_cell_paragraphs(cell) {
-                                    w.collect_para_fonts(para, families);
+                                    w.collect_para_fonts(para, families, fc);
                                 }
                             }
                         }
@@ -2673,6 +2674,8 @@ impl Viewer {
         if self.wml_has_math() {
             families.insert(crate::engine::fonts::MATH_FAMILY.to_string());
         }
+        // List markers set in a symbol font draw in a substitute face.
+        families.extend(crate::wml::numbering::marker_face_families(&w.numbering_levels).map(str::to_owned));
 
         families.into_iter().collect()
     }
@@ -8544,19 +8547,13 @@ impl WmlRenderer {
     ) {
         let theme = &self.theme_fonts;
         for run in paragraph.runs() {
-            let family: Option<String> = resolve_run_option(
-                &run.r_pr,
+            let family = declared_ascii_family(
+                run,
                 &collect_char_style_rprs(run, &self.style_ctx),
                 &collect_paragraph_style_rprs(paragraph, &self.style_ctx),
                 &[],
                 &self.style_ctx,
-                |rpr| rpr.fonts.as_ref().and_then(|f|
-                    f.ascii.clone().or_else(||
-                        f.ascii_theme.as_ref()
-                            .and_then(|t| theme.resolve(t))
-                            .map(str::to_owned)
-                    )
-                ),
+                theme,
             );
             if let Some(f) = family {
                 let primary = f.split(';').next().unwrap_or(&f).trim().to_string();
@@ -8615,23 +8612,22 @@ impl WmlRenderer {
         &self,
         paragraph: &ooxml_wml::types::Paragraph,
         families: &mut HashSet<String>,
+        font_cache: &FontCache,
     ) {
         let theme = &self.theme_fonts;
         for run in paragraph.runs() {
-            let family: Option<String> = resolve_run_option(
-                &run.r_pr,
+            let family = declared_ascii_family(
+                run,
                 &collect_char_style_rprs(run, &self.style_ctx),
                 &collect_paragraph_style_rprs(paragraph, &self.style_ctx),
                 &[],
                 &self.style_ctx,
-                |rpr| rpr.fonts.as_ref().and_then(|f|
-                    f.ascii.clone().or_else(||
-                        f.ascii_theme.as_ref()
-                            .and_then(|t| theme.resolve(t))
-                            .map(str::to_owned)
-                    )
-                ),
+                theme,
             );
+            // Symbol text — in a symbol-font run, or a `w:sym` — draws in
+            // substitute faces the declared names do not lead to.
+            let symbol_font = family.as_deref().and_then(crate::wml::symbol_font::SymbolFont::from_family);
+            families.extend(crate::wml::linebreak::symbol_face_families(run, symbol_font, font_cache));
             if let Some(f) = family {
                 for part in f.split(';') {
                     let trimmed = part.trim();
@@ -8775,6 +8771,30 @@ mod hyperlink_parse_tests {
 
 // ─── Run-level formatting ────────────────────────────────────────────────────
 
+
+/// A run's declared `ascii`-slot family (§17.3.2.26) through its style chain
+/// and the theme fonts: the name the document wrote, before any substitution.
+/// `None` when nothing in the chain sets one.
+pub(crate) fn declared_ascii_family(
+    run: &ooxml_wml::types::Run,
+    char_style_rprs: &[&ooxml_wml::types::RunProperties],
+    para_style_rprs: &[&ooxml_wml::types::RunProperties],
+    table_style_rprs: &[&ooxml_wml::types::RunProperties],
+    ctx: &StyleContext,
+    theme_fonts: &ThemeFonts,
+) -> Option<String> {
+    resolve_run_option(
+        &run.r_pr, char_style_rprs, para_style_rprs, table_style_rprs, ctx,
+        |rpr| rpr.fonts.as_ref().and_then(|f|
+            f.ascii.clone().or_else(||
+                f.ascii_theme.as_ref()
+                    .and_then(|t| theme_fonts.resolve(t))
+                    .map(str::to_owned)
+            )
+        ),
+    )
+}
+
 impl RunStyle {
     /// Neutral style for zero-width, non-rendering marker items (e.g. bookmark
     /// anchors). Values are inert since the item carries no visible text. Now a
@@ -8811,15 +8831,8 @@ impl RunStyle {
         .map(|hp| hp as f64 / 2.0)
         .unwrap_or(DEFAULT_FONT_PT);
 
-        let doc_family = resolve_run_option(
-            &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
-            |rpr| rpr.fonts.as_ref().and_then(|f|
-                f.ascii.clone().or_else(||
-                    f.ascii_theme.as_ref()
-                        .and_then(|t| theme_fonts.resolve(t))
-                        .map(str::to_owned)
-                )
-            ),
+        let doc_family = declared_ascii_family(
+            run, &char_style_rprs, para_style_rprs, table_style_rprs, ctx, theme_fonts,
         )
         .unwrap_or_else(|| DEFAULT_FONT_FAMILY.to_owned());
         let family = resolve_font_with_fallbacks(&doc_family, font_cache);
@@ -8982,7 +8995,7 @@ impl RunStyle {
         .map(|half_pts| pt_to_px(half_pts / 2.0))
         .unwrap_or(0.0);
 
-        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features }
+        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None }
     }
 
     fn font_css(&self) -> String {
@@ -9032,7 +9045,7 @@ pub(crate) fn effective_line_gap(m: &crate::engine::fonts::FontMetrics) -> f64 {
 // ─── Paragraph style chain helpers ──────────────────────────────────────────
 
 
-fn collect_char_style_rprs<'a>(
+pub(crate) fn collect_char_style_rprs<'a>(
     run: &ooxml_wml::types::Run,
     ctx: &'a StyleContext,
 ) -> Vec<&'a ooxml_wml::types::RunProperties> {

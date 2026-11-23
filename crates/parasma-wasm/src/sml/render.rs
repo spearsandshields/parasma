@@ -843,6 +843,7 @@ fn cell_text_style(family: &str) -> RunStyle {
         imprint: false,
         baseline_shift_px: 0.0,
         glyph_features: crate::engine::paint::GlyphFeatures::HOST_DEFAULT,
+        line_metrics_family: None,
     }
 }
 

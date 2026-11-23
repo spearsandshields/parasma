@@ -15,6 +15,7 @@ use ooxml_wml::types::{STLevelSuffix, STNumberFormat};
 
 use crate::collect_paragraph_style_chain;
 use crate::engine::paint::Underline;
+use crate::wml::symbol_font::{SymbolFace, SymbolFont};
 
 /// §17.9.24 "Numbering Symbol Run Properties" — the digest of a `<w:lvl>`'s
 /// own `<w:rPr>`, i.e. the formatting of the NUMBERING TEXT (marker) itself.
@@ -96,6 +97,9 @@ pub(crate) struct NumberingLevelDef {
 
 pub(crate) struct NumberingMarker {
     pub(crate) text: String,
+    /// The face a marker set in a symbol font draws in, its text re-encoded
+    /// (`wml::symbol_font`); `None` for a marker in any other font.
+    pub(crate) symbol_face: Option<SymbolFace>,
     pub(crate) indent_left_twips: i64,
     pub(crate) indent_hanging_twips: i64,
     /// §17.9.28 `w:suff` separator type (see `NumberingLevelDef::suffix`).
@@ -206,8 +210,12 @@ pub(crate) fn resolve_marker_for(
         }
     }
 
-    // The two "•" arms are kept distinct on purpose: a symbol-font PUA bullet
-    // (normalised to •) and an empty lvlText (default •) are separate causes.
+    // The level's font (§17.9.24) — a symbol font gives its codes their own
+    // meaning, so the marker text is re-encoded below.
+    let symbol_font = level.rpr.family.as_deref().and_then(SymbolFont::from_family);
+    // The two "•" arms are kept distinct on purpose: a private-use symbol
+    // bullet with no symbol font to read it in, and an empty lvlText (default •),
+    // are separate causes.
     #[allow(clippy::if_same_then_else)]
     let text = match level.format {
         STNumberFormat::Bullet => {
@@ -216,12 +224,11 @@ pub(crate) fn resolve_marker_for(
             // before measuring/rendering — otherwise the marker shapes as the
             // literal "&#8226;" string, which is ~6 glyphs wide and overflows its
             // hanging slot (this is what the marker-overflow advance would otherwise
-            // expose; decoding keeps a real • narrow). Symbol-font private-use
-            // bullets still normalise to • first.
+            // expose; decoding keeps a real • narrow).
             let raw = decode_lvl_text_entities(&level.lvl_text);
-            if raw.contains('\u{f0b7}') || raw.contains('\u{f0a7}') {
+            if raw.is_empty() {
                 "\u{2022}".to_string()
-            } else if raw.is_empty() {
+            } else if symbol_font.is_none() && (raw.contains('\u{f0b7}') || raw.contains('\u{f0a7}')) {
                 "\u{2022}".to_string()
             } else {
                 raw
@@ -255,8 +262,17 @@ pub(crate) fn resolve_marker_for(
         }
     };
 
+    let (text, symbol_face) = match symbol_font {
+        Some(font) => {
+            let (text, face) = font.reencode(&text);
+            (text, Some(face))
+        }
+        None => (text, None),
+    };
+
     NumberingMarker {
         text,
+        symbol_face,
         indent_left_twips: level.indent_left_twips,
         indent_hanging_twips: level.indent_hanging_twips,
         suffix: level.suffix,
@@ -267,6 +283,18 @@ pub(crate) fn resolve_marker_for(
         fmt: level.format,
         rpr: level.rpr.clone(),
     }
+}
+
+/// The substitute faces the levels' markers draw in — for the font plan, which
+/// fetches them before layout. Every defined level counts, drawn or not: the
+/// plan is built before the counters that decide which levels are drawn.
+pub(crate) fn marker_face_families(
+    levels: &HashMap<(i64, i64), NumberingLevelDef>,
+) -> impl Iterator<Item = &'static str> + '_ {
+    levels.values().filter_map(|level| {
+        let font = level.rpr.family.as_deref().and_then(SymbolFont::from_family)?;
+        font.reencode(&decode_lvl_text_entities(&level.lvl_text)).1.family()
+    })
 }
 
 /// Decode the XML char references the parser leaves verbatim in a `lvlText`

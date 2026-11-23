@@ -256,6 +256,11 @@ pub(crate) fn layout_paragraph(
             family_complex: DEFAULT_FONT_FAMILY.to_owned(),
             ..Default::default()
         });
+        // A first item drawn in a symbol substitute face (a leading `w:sym`
+        // check box) is not the run's face: the marker takes the base face.
+        if let Some(base) = style.line_metrics_family.take() {
+            style.family = base;
+        }
         // The marker (bullet/number + separator) is padded to the hanging width;
         // carrying the run's underline/strike across that pad draws a rule under
         // the empty gap before the text — and past it. The marker is not part of
@@ -276,13 +281,19 @@ pub(crate) fn layout_paragraph(
         // risk across every numbered fixture for zero corpus evidence. The
         // overlay applies on top of whichever base.
         let ov = &m.rpr;
-        if let Some(fam) = ov.family.as_deref() {
-            // Resolve through the substitution chain; on total miss (Symbol/
-            // OpenSymbol/Wingdings — never shipped; markers never enter
-            // fontCodepointsUsed so marker-only faces are never fetched), KEEP
-            // the run-derived family so the remapped • keeps today's face and
-            // advance. (No hardcoded symbol-font name set: keep-base-on-miss
-            // subsumes it.)
+        if let Some(face) = m.symbol_face {
+            // A marker in a symbol font, its text already re-encoded: draw in
+            // the face those characters need, sizing the line by the base face
+            // (see `wml::symbol_font`). `Base` keeps the run-derived family.
+            if let Some(family) = face.family() {
+                style.line_metrics_family = Some(std::mem::replace(&mut style.family, family.to_owned()));
+            }
+        } else if let Some(fam) = ov.family.as_deref() {
+            // Resolve through the substitution chain; on total miss (OpenSymbol
+            // and other fonts never shipped — markers never enter
+            // fontCodepointsUsed, so marker-only faces are never fetched), KEEP
+            // the run-derived family and its advance. (No hardcoded font-name
+            // set: keep-base-on-miss subsumes it.)
             if let Some(resolved) = try_resolve_font(fam, font_cache) {
                 style.family = resolved;
             }

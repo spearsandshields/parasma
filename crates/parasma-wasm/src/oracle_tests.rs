@@ -9690,3 +9690,129 @@ fn the_last_default_paragraph_style_wins_and_untyped_counts() {
     let (_, pt) = first_line_x_and_pt(&layout(default_style_docx(styles, &p("", &r("", "Text")))));
     assert_eq!(pt, 25.0);
 }
+
+// ─── Symbol fonts (§17.3.2.26, §17.3.3.30) and the non-breaking hyphen (§17.3.3.18) ───
+
+use super::wml::symbol_font::SYMBOLS_FAMILY;
+
+/// Lay out `body` with the test fonts plus the dingbat fallback face.
+fn symbol_layout(numbering_inner: &str, body: &str) -> Viewer {
+    let mut viewer = Viewer::new().unwrap_or_else(|_| panic!("Viewer::new failed"));
+    load_test_fonts(&mut viewer);
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/test-fonts/NotoSansSymbols2-Regular.ttf");
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|_| panic!("test font missing: {path}\n  run: ./scripts/fetch-test-fonts.sh"));
+    viewer.load_font(SYMBOLS_FAMILY, bytes, 400, false).expect("load symbols face");
+    if viewer.load_docx(numbering_docx("", numbering_inner, body)).is_err() {
+        panic!("load_docx failed");
+    }
+    viewer.run_layout_native().expect("run_layout_native");
+    viewer
+}
+
+fn text_items(viewer: &Viewer) -> Vec<super::wml::linebreak::Item> {
+    body_lines(viewer)
+        .into_iter()
+        .flat_map(|l| l.segments.into_iter().flat_map(|s| s.items))
+        .filter(|it| !it.text.is_empty())
+        .collect()
+}
+
+const WINGDINGS: &str = r#"<w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/>"#;
+
+#[test]
+fn text_in_a_dingbat_font_draws_the_character_the_font_means() {
+    let v = symbol_layout("", &(p("", &r(WINGDINGS, "\u{FC}")) + &p("", &r("", "plain"))));
+    let items = text_items(&v);
+    let check = &items[0];
+    assert_eq!(check.text, "\u{2713}", "Wingdings ü is a check mark");
+    assert_eq!(check.style.family, SYMBOLS_FAMILY);
+    assert!(check.shaped.is_some(), "the substitute face has the glyph, so it measures for real");
+    // The Wingdings run's base face is the document default (the cache spells
+    // it lower-case): the same face as the plain run's.
+    assert_eq!(
+        check.style.line_metrics_family.as_deref().map(str::to_lowercase),
+        Some(items[1].style.family.to_lowercase()),
+    );
+    let lines = body_lines(&v);
+    assert!(
+        (lines[0].line_height - lines[1].line_height).abs() < 1e-9,
+        "the 1.7 em substitute face must not grow the line: {} vs {}",
+        lines[0].line_height, lines[1].line_height,
+    );
+}
+
+#[test]
+fn a_sym_draws_from_its_own_font_inside_a_text_run() {
+    // §17.3.3.30's own example: Wingdings 003A after text in another font.
+    let run = r#"<w:r><w:t xml:space="preserve">This is a symbol character:</w:t><w:sym w:font="Wingdings" w:char="F03A"/></w:r>"#;
+    let items = text_items(&symbol_layout("", &p("", run)));
+    let sym = items.last().expect("an item");
+    let (want, _) = super::wml::symbol_font::SymbolFont::Wingdings.map(':').expect("0x3A is mapped");
+    assert_eq!(sym.text, want.to_string());
+    assert_eq!(sym.style.family, SYMBOLS_FAMILY);
+    assert!(items[..items.len() - 1].iter().all(|it| it.style.family != SYMBOLS_FAMILY), "the text keeps its run font");
+}
+
+#[test]
+fn a_sym_in_a_unicode_font_is_that_character() {
+    // Either spelling §17.3.3.30 allows: the code itself, or shifted by F000.
+    let run = r#"<w:r><w:sym w:font="Arimo" w:char="2022"/><w:sym w:font="Arimo" w:char="F041"/></w:r>"#;
+    let items = text_items(&symbol_layout("", &p("", run)));
+    let text: String = items.iter().map(|it| it.text.as_str()).collect();
+    assert_eq!(text, "\u{2022}A");
+    assert!(items.iter().all(|it| it.style.line_metrics_family.is_none()), "a named real font keeps its own metrics");
+}
+
+fn bullet_level(lvl_text: &str, font: &str) -> String {
+    format!(
+        r#"<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>
+<w:lvlText w:val="{lvl_text}"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr>
+<w:rPr><w:rFonts w:ascii="{font}" w:hAnsi="{font}"/></w:rPr></w:lvl></w:abstractNum>
+<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#
+    )
+}
+
+fn bulleted(lvl_text: &str, font: &str) -> Viewer {
+    let body = p(r#"<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>"#, &r("", "Item"));
+    symbol_layout(&bullet_level(lvl_text, font), &body)
+}
+
+#[test]
+fn wingdings_bullets_are_the_shapes_word_draws() {
+    let square = bulleted("&#xF0A7;", "Wingdings");
+    let marker = &text_items(&square)[0];
+    assert_eq!(marker.text, "\u{25AA}\u{a0}", "Wingdings § is the small square, not •");
+    assert_eq!(marker.style.line_metrics_family, None, "every text face has ▪: the marker keeps the run face");
+
+    let arrow = bulleted("\u{D8}", "Wingdings");
+    let items = text_items(&arrow);
+    assert_eq!(items[0].text, "\u{2B9A}\u{a0}");
+    assert_eq!(items[0].style.family, SYMBOLS_FAMILY);
+    assert_eq!(items[0].style.line_metrics_family.as_deref(), Some(items[1].style.family.as_str()));
+}
+
+#[test]
+fn the_font_plan_fetches_the_symbol_face_only_when_a_document_needs_it() {
+    let plan = |v: &Viewer| v.families_used_native();
+    assert!(!plan(&bulleted("&#xF0B7;", "Symbol")).iter().any(|f| f == SYMBOLS_FAMILY || f == "Tinos"),
+        "Word's default Symbol bullet draws in the run face: nothing to fetch");
+    assert!(plan(&bulleted("&#xF0FC;", "Wingdings")).iter().any(|f| f == SYMBOLS_FAMILY), "a check-mark bullet");
+    assert!(plan(&symbol_layout("", &p("", &r(WINGDINGS, "\u{FC}")))).iter().any(|f| f == SYMBOLS_FAMILY), "dingbat run text");
+    let sym = r#"<w:r><w:sym w:font="Wingdings" w:char="F0FE"/></w:r>"#;
+    assert!(plan(&symbol_layout("", &p("", sym))).iter().any(|f| f == SYMBOLS_FAMILY), "a w:sym");
+    let greek = symbol_layout("", &p("", &r(r#"<w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/>"#, "a")));
+    assert!(plan(&greek).iter().any(|f| f == "Tinos"), "Symbol's Greek draws in the Times-style face");
+    assert_eq!(text_items(&greek)[0].text, "\u{3B1}");
+}
+
+#[test]
+fn a_non_breaking_hyphen_draws_as_a_hyphen_and_never_breaks() {
+    let joined = r#"<w:r><w:t>well</w:t><w:noBreakHyphen/><w:t>known</w:t></w:r>"#;
+    let items = text_items(&symbol_layout("", &p("", joined)));
+    assert_eq!(items.iter().map(|it| it.text.as_str()).collect::<Vec<_>>(), ["well-known"],
+        "one unbreakable item, drawn with U+002D");
+    let plain = text_items(&symbol_layout("", &p("", &r("", "well-known"))));
+    assert_eq!(plain.iter().map(|it| it.text.as_str()).collect::<Vec<_>>(), ["well-", "known"],
+        "control: an ordinary hyphen is a break opportunity");
+}

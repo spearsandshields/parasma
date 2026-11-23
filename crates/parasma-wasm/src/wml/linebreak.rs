@@ -32,8 +32,9 @@ use crate::wml::drawing::{
     is_layout_control, parse_anchor_position, WrapInfo,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
+use crate::wml::symbol_font::SymbolFont;
 use crate::{
-    collect_paragraph_style_rprs, field, PagedLine,
+    collect_char_style_rprs, collect_paragraph_style_rprs, field, PagedLine,
     ResolvedTabStops, TabAlignment, TabLeader, DEFAULT_TEXT_COLOR, FIELD_DATES,
     HYPERLINK_RELS, RESERVE_TRAILING_BLANKS,
 };
@@ -457,23 +458,20 @@ pub(crate) fn collect_items(
             track_change,
             comment_ids: run_comment_ids,
         } = entry;
-        let text = text_override.clone().unwrap_or_else(|| {
-            // Deleted runs store their text in <w:delText>, which Run::text()
-            // skips. In All-Markup view that text must still render (struck
-            // through), so pull delText for deletions.
-            if matches!(track_change, Some(TrackChange::Deleted(_))) {
-                run_text_including_del(run)
-            } else {
-                run.text()
-            }
-        });
+        // Deleted runs store their text in <w:delText>. In All-Markup view that
+        // text must still render (struck through), so it counts for deletions.
+        let deleted = matches!(track_change, Some(TrackChange::Deleted(_)));
+        let has_text = match text_override {
+            Some(t) => !t.is_empty(),
+            None => RunText::any_in(run, deleted),
+        };
         let has_page_break = run.has_page_break();
         let drawings = run.drawings();
 
         let has_pict = run.run_content.iter().any(|rc| matches!(rc, ooxml_wml::types::RunContent::Pict(_)));
         let has_footnote_ref = run.footnote_ref().is_some();
         let has_endnote_ref = run.endnote_ref().is_some();
-        let has_content = !text.is_empty() || has_page_break || !drawings.is_empty() || has_pict || has_footnote_ref || has_endnote_ref;
+        let has_content = has_text || has_page_break || !drawings.is_empty() || has_pict || has_footnote_ref || has_endnote_ref;
         if !has_content {
             continue;
         }
@@ -521,13 +519,27 @@ pub(crate) fn collect_items(
             style.italic,
         );
 
-        let text = if style.all_caps || style.small_caps {
-            text.to_uppercase()
-        } else {
-            text
+        let caps = style.all_caps || style.small_caps;
+        let run_text = match text_override {
+            Some(t) => RunText::plain(t, caps),
+            None => {
+                let symbol_font = crate::declared_ascii_family(
+                    run, &collect_char_style_rprs(run, style_ctx), &para_style_rprs,
+                    table_style_rprs, style_ctx, theme_fonts,
+                )
+                .and_then(|f| SymbolFont::from_family(&f));
+                RunText::of(run, deleted, symbol_font, caps, font_cache)
+            }
         };
+        let text = run_text.text.as_str();
         let tab_chunks: Vec<&str> = text.split('\t').collect();
+        let mut chunk_base = 0;
         for (chunk_idx, chunk) in tab_chunks.iter().enumerate() {
+            if chunk_idx > 0 {
+                chunk_base += 1; // the '\t' between this chunk and the last
+            }
+            let base = chunk_base;
+            chunk_base += chunk.len();
             if chunk_idx > 0 {
                 items.push(Item {
                     text: "\t".to_string(),
@@ -550,11 +562,9 @@ pub(crate) fn collect_items(
             }
 
             let mut last_emit_idx = 0;
-            for (idx, break_class) in unicode_linebreak::linebreaks(chunk) {
+            for (idx, raw_mandatory) in run_text.breaks(chunk, base) {
                 let segment = &chunk[last_emit_idx..idx];
                 let last_char = segment.chars().last();
-                let raw_mandatory =
-                    matches!(break_class, unicode_linebreak::BreakOpportunity::Mandatory);
                 let ends_with_newline = matches!(last_char, Some('\n') | Some('\r'));
                 let real_mandatory = raw_mandatory && ends_with_newline;
 
@@ -578,10 +588,14 @@ pub(crate) fn collect_items(
                     .map(|c| resolve_font_slot(font_slot_class(c), style.run_is_complex))
                     .find(|s| matches!(s, FontSlot::EastAsia | FontSlot::ComplexScript))
                     .unwrap_or(FontSlot::Ascii);
-                let seg_family: &str = match seg_slot {
-                    FontSlot::EastAsia => &style.family_east_asia,
-                    FontSlot::ComplexScript => &style.family_complex,
-                    _ => &style.family,
+                // A re-encoded symbol character draws in the face its span
+                // names, whatever its slot (§17.3.3.30: a sym ignores rFonts).
+                let face = run_text.face_at(base + last_emit_idx);
+                let seg_family: &str = match (face, seg_slot) {
+                    (Some(f), _) => &f.family,
+                    (None, FontSlot::EastAsia) => &style.family_east_asia,
+                    (None, FontSlot::ComplexScript) => &style.family_complex,
+                    (None, _) => &style.family,
                 };
                 let seg_font = if seg_family == style.family {
                     font
@@ -590,6 +604,9 @@ pub(crate) fn collect_items(
                 };
                 let mut seg_style = style.clone();
                 seg_style.family = seg_family.to_string();
+                if face.is_some_and(|f| f.base_metrics) {
+                    seg_style.line_metrics_family = Some(style.family.clone());
+                }
                 // Complex scripts keep their ligatures: Word's "no standard
                 // ligatures" default is a Latin-text choice, and joining
                 // scripts depend on them.
@@ -1470,7 +1487,7 @@ pub(crate) fn accumulate_item_metrics(
         *asc = asc.max(vextent);
         *imgh = imgh.max(vextent);
     } else if let Some(font) = font_cache.resolve(
-        &item.style.family,
+        item.style.line_metrics_family.as_deref().unwrap_or(&item.style.family),
         if item.style.bold { 700 } else { 400 },
         item.style.italic,
     ) {
@@ -1895,23 +1912,182 @@ fn run_fld_char_type(run: &ooxml_wml::types::Run) -> Option<ooxml_wml::types::ST
     })
 }
 
-/// Like `Run::text()` but also includes `<w:delText>` content — used for
-/// deleted runs so struck-through text renders in All-Markup view. Mirrors the
-/// parser's text() (T, Tab→\t, Cr/Br→\n) plus DelText.
-fn run_text_including_del(run: &ooxml_wml::types::Run) -> String {
-    let mut out = String::new();
-    for rc in &run.run_content {
-        match rc {
-            ooxml_wml::types::RunContent::T(t)
-            | ooxml_wml::types::RunContent::DelText(t) => {
-                if let Some(ref s) = t.text { out.push_str(s); }
+/// A stretch of a run's text that draws in a face other than the run's own.
+struct FaceSpan {
+    range: std::ops::Range<usize>,
+    family: String,
+    /// Size the line box with the run's base face, not `family`: true for the
+    /// substitute faces re-encoded symbol characters draw in (see
+    /// `wml::symbol_font`), false for a font the document named.
+    base_metrics: bool,
+}
+
+/// A run's text as the line breaker lays it out — the parser's `Run::text()`
+/// (text, tab, carriage return, text-wrapping break) plus the characters that
+/// method drops: `w:sym` (§17.3.3.30), `w:noBreakHyphen` (§17.3.3.18) and, for
+/// a deleted run, `w:delText` (§17.3.3.7).
+///
+/// Text in a symbol font, and every `w:sym`, is re-encoded to the Unicode
+/// character the font draws; `faces` records the stretches that then draw in
+/// another face. `w:softHyphen` (§17.3.3.29) is still dropped: an optional
+/// hyphen needs a hyphen drawn at the line end it breaks, which the packers do
+/// not yet do.
+struct RunText {
+    text: String,
+    faces: Vec<FaceSpan>,
+    /// Offsets of the break opportunities UAX #14 would report but the document
+    /// forbids — each follows a non-breaking hyphen, which draws as U+002D
+    /// "without that hyphen being a line breaking position" (§17.3.3.18). Only
+    /// within the run: a run boundary is a break opportunity in this engine.
+    no_break: Vec<usize>,
+}
+
+impl RunText {
+    /// A field result or other replacement text: plain, in the run's face.
+    fn plain(text: &str, caps: bool) -> Self {
+        let text = if caps { text.to_uppercase() } else { text.to_owned() };
+        RunText { text, faces: Vec::new(), no_break: Vec::new() }
+    }
+
+    /// Whether `of` would produce any text — the cheap test run before the
+    /// style chain is resolved.
+    fn any_in(run: &ooxml_wml::types::Run, deleted: bool) -> bool {
+        use ooxml_wml::types::{RunContent, STBrType};
+        run.run_content.iter().any(|rc| match rc {
+            RunContent::T(t) => t.text.as_ref().is_some_and(|s| !s.is_empty()),
+            RunContent::DelText(t) => deleted && t.text.as_ref().is_some_and(|s| !s.is_empty()),
+            RunContent::Br(br) => !matches!(br.r#type, Some(STBrType::Page) | Some(STBrType::Column)),
+            RunContent::Tab(_) | RunContent::Cr(_) | RunContent::NoBreakHyphen(_) => true,
+            RunContent::Sym(sym) => sym_code(sym).is_some(),
+            _ => false,
+        })
+    }
+
+    /// `run`'s text. `symbol_font` is the run's own symbol font, when its text
+    /// must be re-encoded; `caps` upper-cases its text (§17.3.2.5, §17.3.2.33)
+    /// before re-encoding, the transform applying to the characters the run
+    /// holds, and never to a `w:sym`, which names one exact character.
+    fn of(
+        run: &ooxml_wml::types::Run,
+        deleted: bool,
+        symbol_font: Option<SymbolFont>,
+        caps: bool,
+        font_cache: &FontCache,
+    ) -> Self {
+        use ooxml_wml::types::{RunContent, STBrType};
+        let mut out = RunText { text: String::new(), faces: Vec::new(), no_break: Vec::new() };
+        let push_text = |out: &mut RunText, s: &str| {
+            let chars: Box<dyn Iterator<Item = char>> =
+                if caps { Box::new(s.chars().flat_map(char::to_uppercase)) } else { Box::new(s.chars()) };
+            for c in chars {
+                match symbol_font.and_then(|f| f.map(c)) {
+                    Some((u, face)) => out.push(u, face.family().map(|f| (f, true))),
+                    None => out.push(c, None),
+                }
             }
-            ooxml_wml::types::RunContent::Tab(_) => out.push('\t'),
-            ooxml_wml::types::RunContent::Cr(_) => out.push('\n'),
-            _ => {}
+        };
+        for rc in &run.run_content {
+            match rc {
+                RunContent::T(t) => push_text(&mut out, t.text.as_deref().unwrap_or("")),
+                RunContent::DelText(t) if deleted => push_text(&mut out, t.text.as_deref().unwrap_or("")),
+                RunContent::Tab(_) => out.push('\t', None),
+                RunContent::Cr(_) => out.push('\n', None),
+                RunContent::Br(br)
+                    if !matches!(br.r#type, Some(STBrType::Page) | Some(STBrType::Column)) =>
+                {
+                    out.push('\n', None)
+                }
+                RunContent::NoBreakHyphen(_) => {
+                    out.push('-', None);
+                    out.no_break.push(out.text.len());
+                }
+                RunContent::Sym(sym) => out.push_sym(sym, font_cache),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    fn push(&mut self, c: char, face: Option<(&str, bool)>) {
+        let start = self.text.len();
+        self.text.push(c);
+        let Some((family, base_metrics)) = face else { return };
+        match self.faces.last_mut() {
+            Some(span) if span.range.end == start && span.family == family => span.range.end = self.text.len(),
+            _ => self.faces.push(FaceSpan { range: start..self.text.len(), family: family.to_owned(), base_metrics }),
         }
     }
-    out
+
+    /// A `w:sym`: the character `@char` in the font `@font`, not the run's
+    /// fonts (§17.3.3.30). `@char` is the character itself or, for a font
+    /// that is not Unicode-encoded, its code shifted into U+F000–U+F0FF.
+    fn push_sym(&mut self, sym: &ooxml_wml::types::CTSym, font_cache: &FontCache) {
+        let Some(code) = sym_code(sym) else { return };
+        let font = sym.font.as_deref().unwrap_or("");
+        if let Some(symbol_font) = SymbolFont::from_family(font) {
+            if let Some((u, face)) = char::from_u32(code).and_then(|c| symbol_font.map(c)) {
+                return self.push(u, face.family().map(|f| (f, true)));
+            }
+        }
+        let shifted = if (0xF000..=0xF0FF).contains(&code) && SymbolFont::from_family(font).is_none() {
+            code - 0xF000
+        } else {
+            code
+        };
+        let Some(c) = char::from_u32(shifted) else { return };
+        match crate::engine::fonts::try_resolve_font(font, font_cache) {
+            Some(family) => self.push(c, Some((&family, false))),
+            None => self.push(c, None),
+        }
+    }
+
+    /// The span drawing the character at byte `at`, if any.
+    fn face_at(&self, at: usize) -> Option<&FaceSpan> {
+        self.faces.iter().find(|f| f.range.contains(&at))
+    }
+
+    /// The break opportunities in `chunk`, which starts at byte `base` of the
+    /// text, as (offset in `chunk`, mandatory): UAX #14's, less the ones a
+    /// non-breaking hyphen forbids, plus every edge of a face span — an item
+    /// carries one face, and an item boundary is a break opportunity.
+    fn breaks(&self, chunk: &str, base: usize) -> Vec<(usize, bool)> {
+        let end = base + chunk.len();
+        let mut out: Vec<(usize, bool)> = unicode_linebreak::linebreaks(chunk)
+            .map(|(i, b)| (i, matches!(b, unicode_linebreak::BreakOpportunity::Mandatory)))
+            .filter(|(i, _)| *i == chunk.len() || !self.no_break.contains(&(base + i)))
+            .collect();
+        for span in &self.faces {
+            for edge in [span.range.start, span.range.end] {
+                if edge > base && edge < end && !out.iter().any(|(i, _)| base + i == edge) {
+                    out.push((edge - base, false));
+                }
+            }
+        }
+        out.sort_unstable_by_key(|(i, _)| *i);
+        out
+    }
+}
+
+/// The substitute faces `run`'s symbol text draws in — for the font plan,
+/// which fetches them before layout. The same re-encoding `collect_items`
+/// lays out with, read without the run's caps (a caps run in a dingbat font
+/// may need a face this misses; it then draws through the browser's fallback).
+pub(crate) fn symbol_face_families(
+    run: &ooxml_wml::types::Run,
+    symbol_font: Option<SymbolFont>,
+    font_cache: &FontCache,
+) -> impl Iterator<Item = String> {
+    RunText::of(run, false, symbol_font, false, font_cache)
+        .faces
+        .into_iter()
+        .filter(|f| f.base_metrics)
+        .map(|f| f.family)
+}
+
+/// A `w:sym`'s character code: `@char`'s hex digits, big-endian.
+fn sym_code(sym: &ooxml_wml::types::CTSym) -> Option<u32> {
+    let bytes = sym.char.as_deref().filter(|b| !b.is_empty() && b.len() <= 3)?;
+    Some(bytes.iter().fold(0u32, |acc, b| acc << 8 | u32::from(*b)))
 }
 
 /// Concatenated `instrText` content of a run, or None if it has none.

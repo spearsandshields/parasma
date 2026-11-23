@@ -31,5 +31,6 @@ pub(crate) mod paragraph;
 pub(crate) mod render;
 pub(crate) mod section;
 pub(crate) mod select;
+pub(crate) mod symbol_font;
 pub(crate) mod table;
 pub(crate) mod watermark;

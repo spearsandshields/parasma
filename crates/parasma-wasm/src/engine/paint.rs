@@ -144,6 +144,11 @@ pub(crate) struct RunStyle {
     pub(crate) baseline_shift_px: f64,
     /// Kerning and ligatures, for both the measuring shaper and the canvas.
     pub(crate) glyph_features: GlyphFeatures,
+    /// The face whose ascent and descent size this run's line box, when it is
+    /// not `family`: text drawn in a substitute face whose metrics stand in for
+    /// no real font's (a symbol font's re-encoded characters) keeps its base
+    /// text face's. `None` means `family`.
+    pub(crate) line_metrics_family: Option<String>,
 }
 
 impl Default for RunStyle {
@@ -178,6 +183,7 @@ impl Default for RunStyle {
             imprint: false,
             baseline_shift_px: 0.0,
             glyph_features: GlyphFeatures::HOST_DEFAULT,
+            line_metrics_family: None,
         }
     }
 }
@@ -202,7 +208,7 @@ impl RunStyle {
             run_is_complex, color, underline, strikethrough, double_strike,
             vert_align, highlight, run_shading, char_spacing_px, all_caps,
             small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px,
-            glyph_features,
+            glyph_features, line_metrics_family,
         } = self;
         let kern = match glyph_features.kerning {
             Kerning::HostDefault => "host",
@@ -235,6 +241,10 @@ impl RunStyle {
             *all_caps as u8, *small_caps as u8, *vanish as u8, *outline as u8,
             *shadow as u8, *emboss as u8, *imprint as u8, glyph_features.ligatures as u8,
         );
+        // Written only when set, so every run without one dumps as before.
+        if let Some(m) = line_metrics_family {
+            let _ = write!(out, " lmf{m:?}");
+        }
     }
 }
 

@@ -91,6 +91,7 @@ describe("bundled font pins agree with the native harness", () => {
         "Tinos-Regular.ttf",
         "OpenSans-Regular.ttf",
         "DejaVuSans.ttf",
+        "NotoSansSymbols2-Regular.ttf", // symbol-font fallback
       ]),
     );
   });
@@ -102,7 +103,7 @@ describe("bundled font pins agree with the native harness", () => {
     // most likely hand-editing mistake (copy a pin line, forget to change the
     // sha), and it passed green. Bind the family to its own commit variable.
     const scriptCommits = new Map(
-      [...script.matchAll(/^([A-Z_]+)_COMMIT="([0-9a-f]{40})"/gm)].map((m) => [
+      [...script.matchAll(/^([A-Z0-9_]+)_COMMIT="([0-9a-f]{40})"/gm)].map((m) => [
         (m[1] ?? "").toLowerCase(),
         m[2] ?? "",
       ]),
@@ -123,7 +124,7 @@ describe("bundled font pins agree with the native harness", () => {
   });
 
   it("keeps the script's own commits immutable too", () => {
-    const commits = [...script.matchAll(/^([A-Z_]+_COMMIT)="([^"]*)"/gm)];
+    const commits = [...script.matchAll(/^([A-Z0-9_]+_COMMIT)="([^"]*)"/gm)];
     expect(commits.length).toBeGreaterThanOrEqual(4);
     const notShas = commits
       .map(([, name, sha]) => `${name}=${sha}`)

@@ -204,10 +204,11 @@ export function resolveSubstitute(fontName: string): string | null {
  * never routine maintenance: it is a deliberate change of rendering, and the
  * native baselines must be re-run behind it.
  *
- * Arimo, Carlito, Tinos, Open Sans, XITS Math and DejaVu Sans are ALSO fetched
- * by `scripts/fetch-test-fonts.sh` for the native layout harness. Those two
- * files must name the same version, or the browser renders against different
- * bytes than every pinned baseline was calibrated on. `font-pinning.test.ts`
+ * Arimo, Carlito, Tinos, Open Sans, DejaVu Sans, XITS Math, Noto Sans Arabic and
+ * Noto Sans Symbols 2 are ALSO fetched by `scripts/fetch-test-fonts.sh` for the
+ * native layout harness. Those two files must name the same version, or the
+ * browser renders against different bytes than every pinned baseline was
+ * calibrated on. `font-pinning.test.ts`
  * enforces both halves — immutability here, and agreement with that script.
  */
 const PINNED_COMMITS = {
@@ -242,6 +243,9 @@ const INTER_VF = gh("google/fonts", "ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf");
 
 /** One upright master serves all four XITS Math variants — see the map entry. */
 const XITS_MATH = gh("aliftype/xits", "XITSMath-Regular.otf");
+
+/** The single cut of the symbol fallback face — see the map entry. */
+const NOTO_SYMBOLS_2 = gh("google/fonts", "ofl/notosanssymbols2/NotoSansSymbols2-Regular.ttf");
 
 const FONT_URLS: Record<string, FontVariantUrls> = {
   Inter: {
@@ -385,6 +389,17 @@ const FONT_URLS: Record<string, FontVariantUrls> = {
     bold: XITS_MATH,
     italic: XITS_MATH,
     boldItalic: XITS_MATH,
+  },
+  // Dingbat face for text in the Wingdings/Webdings symbol fonts, which the
+  // engine re-encodes to the Unicode characters encoded for them. It carries
+  // most of those characters at their exact code points. On-demand: the engine
+  // reports it in fontFamiliesUsed only when a document draws one of them.
+  // One cut (there is no bold or italic); all four variants map to it.
+  "Noto Sans Symbols 2": {
+    regular: NOTO_SYMBOLS_2,
+    bold: NOTO_SYMBOLS_2,
+    italic: NOTO_SYMBOLS_2,
+    boldItalic: NOTO_SYMBOLS_2,
   },
 };
 
