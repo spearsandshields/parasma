@@ -8,6 +8,31 @@ are held stable regardless.
 
 ## [Unreleased]
 
+### Fixed
+
+- Documents: paragraphs with no named style now take the document's default
+  paragraph style (usually Normal), so body text gets the template's font,
+  size and spacing. On/off paragraph settings in the document defaults, such
+  as widow control, now apply too.
+- Documents: text is kerned only where the document asks for it, as Word does,
+  and is drawn exactly as it was measured. Standard ligatures are off unless a
+  run asks for them. A kerning value of 0 switches kerning off.
+- Documents: text in the Symbol, Wingdings, Wingdings 2, Wingdings 3 and
+  Webdings fonts draws the character the font means: check boxes, arrows and
+  dingbat bullets instead of letters. Symbol characters inserted with Word's
+  symbol command, and non-breaking hyphens, are no longer dropped.
+- Documents: tracked deletions keep their line breaks.
+- Fonts: names the font map had silently dropped, such as Consolas, Palatino
+  Linotype, Futura and Menlo, now reach their substitute, so monospaced text
+  stays monospaced. Georgia uses Gelasio, its metric-compatible equivalent;
+  Lato and Poppins load as themselves; Comic Sans uses Comic Neue; Chinese,
+  Japanese and Korean serif font names render in a serif face.
+
+### Changed
+
+- Fonts: documents that use those symbol fonts download Noto Sans Symbols 2
+  on demand. The WebAssembly engine grows by about 7 KB gzipped.
+
 ## [0.1.2] — 2026-11-19
 
 ### Fixed
