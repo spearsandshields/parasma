@@ -234,8 +234,10 @@ pub(crate) fn build_table_meta(cache: &TableCache) -> crate::wml::select::TableM
 /// Resolve a cell's WRAPPING anchored floats and re-pack its paragraph text
 /// around them, all in CELL-LOCAL coordinates (origin = cell content top-left;
 /// the in-cell float-wrap path). Returns `None` (the zero-cost fast path) unless the
-/// cell hosts ≥1 wrapping anchor AND has no nested table (nested-cell floats are
-/// a tracked follow-on). Mirrors the body float seam — resolve_anchor_position →
+/// cell hosts ≥1 anchored object AND has no nested table (nested-cell floats are
+/// a tracked follow-on). An anchor that does not wrap text (`wrapNone`, in front
+/// of or behind the text) is drawn at its position but excludes no text and does
+/// not grow the cell, as Word lays it over the content. Mirrors the body float seam — resolve_anchor_position →
 /// build_active_float → clear_below_floats → pack_lines_around_floats — walked
 /// in document order, which resolves the cell-internal anchor/text circularity
 /// the same single-pass way the body does.
@@ -253,21 +255,19 @@ fn build_cell_float_layout(
     numbering_levels: &HashMap<(i64, i64), NumberingLevelDef>,
 ) -> Option<CellFloatLayout> {
     // GATE: a nested table in the cell defers to the float-blind path; need ≥1
-    // wrapping anchor. An empty-Vec scan — zero cost for float-free cells.
-    let mut has_wrapping = false;
+    // anchored object. An empty-Vec scan — zero cost for float-free cells.
+    let mut has_anchor = false;
     for block in blocks {
         match block {
             CellBlock::Table(_) => return None,
             CellBlock::Paragraph(pc) => {
-                if pc.anchored_images.iter().any(|a| !matches!(a.wrap.mode, WrapMode::None))
-                    || pc.anchored_text_boxes.iter().any(|t| !matches!(t.wrap.mode, WrapMode::None))
-                {
-                    has_wrapping = true;
+                if !pc.anchored_images.is_empty() || !pc.anchored_text_boxes.is_empty() {
+                    has_anchor = true;
                 }
             }
         }
     }
-    if !has_wrapping {
+    if !has_anchor {
         return None;
     }
 
@@ -283,6 +283,8 @@ fn build_cell_float_layout(
     let mut lines: Vec<PagedLine> = Vec::new();
     let mut cursor = 0.0_f64; // cell-local y, origin at cell content top
     let mut prev_after = 0.0_f64;
+    // The lowest bottom of a float that wraps text: it grows the cell.
+    let mut float_bottom = 0.0_f64;
 
     for block in blocks {
         let CellBlock::Paragraph(pc) = block else { continue }; // gate excluded Tables
@@ -299,18 +301,19 @@ fn build_cell_float_layout(
             content_height: frame_extent,
         };
 
-        // (1) Resolve this paragraph's wrapping anchors at the paragraph top and
-        //     register their exclusions + draw records (cell-local).
+        // (1) Resolve this paragraph's anchors at the paragraph top: record
+        //     each one's draw (cell-local), and the exclusion and cell growth
+        //     of each that wraps text.
         for ai in &pc.anchored_images {
-            if matches!(ai.wrap.mode, WrapMode::None) {
-                continue;
-            }
             let (fx, fy) = resolve_anchor_position(
                 &ai.pos_h, &ai.pos_v, ai.h_relative_from, ai.v_relative_from,
                 ai.width_px, ai.height_px, &fctx,
             );
-            if let Some(af) = build_active_float(&ai.wrap, fx, fy, ai.width_px, ai.height_px, dom_left, dom_right) {
-                floats.push(af);
+            if !matches!(ai.wrap.mode, WrapMode::None) {
+                if let Some(af) = build_active_float(&ai.wrap, fx, fy, ai.width_px, ai.height_px, dom_left, dom_right) {
+                    floats.push(af);
+                }
+                float_bottom = float_bottom.max(fy + ai.height_px);
             }
             draws.push(CellFloatDraw::Image {
                 rel_id: ai.rel_id.clone(), x: fx, y: fy,
@@ -319,15 +322,15 @@ fn build_cell_float_layout(
             });
         }
         for tb in &pc.anchored_text_boxes {
-            if matches!(tb.wrap.mode, WrapMode::None) {
-                continue;
-            }
             let (tx, ty) = resolve_anchor_position(
                 &tb.pos_h, &tb.pos_v, tb.h_relative_from, tb.v_relative_from,
                 tb.width_px, tb.height_px, &fctx,
             );
-            if let Some(af) = build_active_float(&tb.wrap, tx, ty, tb.width_px, tb.height_px, dom_left, dom_right) {
-                floats.push(af);
+            if !matches!(tb.wrap.mode, WrapMode::None) {
+                if let Some(af) = build_active_float(&tb.wrap, tx, ty, tb.width_px, tb.height_px, dom_left, dom_right) {
+                    floats.push(af);
+                }
+                float_bottom = float_bottom.max(ty + tb.height_px);
             }
             let tb_lines = layout_text_box(
                 &tb.raw, tb.width_px, tb.height_px, &tb.frame, font_cache, style_ctx, default_ppr,
@@ -403,15 +406,8 @@ fn build_cell_float_layout(
 
     // Float-aware cell content height (pre v-margin): the lower of text bottom
     // (incl. the last paragraph's after-spacing, matching content_height) and
-    // the bottom of any float must fit, so take the max.
+    // the bottom of any float that wraps text must fit, so take the max.
     let text_bottom = cursor + prev_after;
-    let float_bottom = draws.iter().fold(0.0_f64, |m, d| {
-        let b = match d {
-            CellFloatDraw::Image { y, height_px, .. } => y + height_px,
-            CellFloatDraw::TextBox { y, height_px, .. } => y + height_px,
-        };
-        m.max(b)
-    });
     Some(CellFloatLayout { lines, draws, content_height: text_bottom.max(float_bottom) })
 }
 

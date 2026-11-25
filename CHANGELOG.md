@@ -42,6 +42,8 @@ are held stable regardless.
   formatting. Tracked moves draw as insertions and deletions. Table rows and
   cells wrapped in content controls, and tables inside a content control in a
   cell, are laid out. Fonts used only inside such wrappers are now fetched.
+- Documents: pictures and text boxes anchored in a table cell and set in
+  front of or behind the text are drawn; they were dropped.
 - Documents: tracked deletions keep their line breaks.
 - Fonts: names the font map had silently dropped, such as Consolas, Palatino
   Linotype, Futura and Menlo, now reach their substitute, so monospaced text

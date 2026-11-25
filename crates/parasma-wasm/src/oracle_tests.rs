@@ -10155,3 +10155,29 @@ fn block_level_custom_xml_is_laid_out() {
     let text = all_text(&layout(numbering_docx("", "", &body)));
     assert!(text.contains("Wrapped"), "{text}");
 }
+
+/// A paragraph run holding a floating text box (`wps`, anchored) with `text`,
+/// positioned `pos_v` EMU below its paragraph and wrapped by `wrap`.
+fn floating_text_box_run(text: &str, wrap: &str, pos_v: i64) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>{pos_v}</wp:posOffset></wp:positionV><wp:extent cx="1828800" cy="457200"/>{wrap}<wp:docPr id="1" name="Text Box 1"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>"#
+    )
+}
+
+fn drawing_body_docx(body: &str) -> Vec<u8> {
+    let ns = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape""#;
+    let docx = numbering_docx("", "", body);
+    unzip_replace(docx, "word/document.xml", "<w:body>", &format!("<w:body {ns}>"))
+}
+
+#[test]
+fn a_float_that_does_not_wrap_text_is_drawn_in_a_table_cell() {
+    let cell = format!("<w:p>{}{}</w:p>", run("Cell text"), floating_text_box_run("Overlay", "<wp:wrapNone/>", 0));
+    let body = tbl(&format!("<w:tr>{}</w:tr>", tc(&cell))) + "<w:p/>";
+    let v = layout(drawing_body_docx(&body));
+    let pages = v.pages.borrow();
+    assert_eq!(pages[0].positioned_text_boxes.len(), 1, "the in-front-of-text box is drawn");
+    drop(pages);
+    let text = all_text(&v);
+    assert!(text.contains("Overlay") && text.contains("Cell text"), "{text}");
+}
