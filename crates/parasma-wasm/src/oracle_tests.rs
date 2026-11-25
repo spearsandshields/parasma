@@ -9520,11 +9520,16 @@ fn memory_census_type_sizes() {
 // at another.
 
 fn kerning_docx(rpr: &str, text: &str) -> Vec<u8> {
+    kerning_docx_with_styles("", rpr, text)
+}
+
+/// `kerning_docx` with extra `w:style` elements in the styles part.
+fn kerning_docx_with_styles(styles_extra: &str, rpr: &str, text: &str) -> Vec<u8> {
     let styles = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles {W_NS}><w:docDefaults><w:rPrDefault><w:rPr>
   <w:rFonts w:ascii="Arimo" w:hAnsi="Arimo" w:cs="Arimo"/><w:sz w:val="22"/>
-</w:rPr></w:rPrDefault></w:docDefaults></w:styles>"#
+</w:rPr></w:rPrDefault></w:docDefaults>{styles_extra}</w:styles>"#
     );
     let document = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -9579,6 +9584,24 @@ fn word_runs_are_kerned_only_when_w_kern_applies() {
     let below = first_word_width(&layout(kerning_docx(r#"<w:kern w:val="28"/>"#, "AVAWAY")));
     assert!(kerned < plain - 0.5, "w:kern at 1pt must kern an 11pt run: kerned {kerned} vs plain {plain}");
     assert!((below - plain).abs() < 1e-9, "w:kern at 14pt must not kern an 11pt run: {below} vs {plain}");
+}
+
+/// Word writes `w:kern w:val="0"` on a run to switch off kerning its style turns
+/// on. Every size is at least 0, so read as a threshold it would kern; it must
+/// read as "off", and a closer level's 0 must win over the style's threshold.
+#[test]
+fn a_zero_kern_threshold_turns_kerning_off() {
+    let plain = first_word_width(&layout(kerning_docx("", "AVAWAY")));
+    let zero = first_word_width(&layout(kerning_docx(r#"<w:kern w:val="0"/>"#, "AVAWAY")));
+    assert!((zero - plain).abs() < 1e-9, "w:kern 0 must not kern: {zero} vs {plain}");
+
+    let style = r#"<w:style w:type="character" w:styleId="Kerned"><w:rPr><w:kern w:val="2"/></w:rPr></w:style>"#;
+    let styled = |rpr: &str| {
+        let rpr = format!(r#"<w:rStyle w:val="Kerned"/>{rpr}"#);
+        first_word_width(&layout(kerning_docx_with_styles(style, &rpr, "AVAWAY")))
+    };
+    assert!(styled("") < plain - 0.5, "control: the style's w:kern kerns the run");
+    assert!((styled(r#"<w:kern w:val="0"/>"#) - plain).abs() < 1e-9, "the run's 0 overrides the style");
 }
 
 /// The canvas must draw a word run the way it was measured: kerning off unless

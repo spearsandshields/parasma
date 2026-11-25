@@ -8919,10 +8919,16 @@ impl RunStyle {
         // and only at or above its size threshold (half-points, compared with
         // the run's own `w:sz`, before any superscript scaling). Standard
         // ligatures stay off: Word's default.
+        //
+        // WORD-BEHAVIOR: the spec calls the threshold "a positive measurement",
+        // but Word writes `w:val="0"` to switch kerning off on a run whose style
+        // turns it on. Read as a threshold, 0 would kern every size; it means
+        // off, and as the closest level's value it overrides the style's.
         let kerning = resolve_run_option(
             &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
             |rpr| rpr.kern.as_ref().and_then(|k| k.value.parse::<f64>().ok()),
         )
+        .filter(|&min_half_pts| min_half_pts > 0.0)
         .map(|min_half_pts| if font_pt * 2.0 + 1e-9 >= min_half_pts { Kerning::On } else { Kerning::Off })
         .unwrap_or(Kerning::Off);
         let glyph_features = GlyphFeatures { kerning, ligatures: false };
