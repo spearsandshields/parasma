@@ -29,7 +29,7 @@ use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::bidi::bidi_reorder_line;
 use crate::wml::drawing::{
     extract_drawing_text_box, extract_pict_text_box, extract_vml_dimensions, inline_dist_px,
-    is_layout_control, parse_anchor_position, WrapInfo,
+    is_layout_control, parse_anchor_position, TextBoxFrame, WrapInfo,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
 use crate::wml::symbol_font::SymbolFont;
@@ -57,9 +57,7 @@ pub(crate) struct AnchoredTextBoxInfo {
     pub(crate) h_relative_from: AnchorHRelFrom,
     pub(crate) v_relative_from: AnchorVRelFrom,
     pub(crate) behind_text: bool,
-    pub(crate) fill_color: Option<String>,
-    pub(crate) border_color: Option<String>,
-    pub(crate) border_width_px: f64,
+    pub(crate) frame: TextBoxFrame,
     pub(crate) wrap: WrapInfo,
 }
 
@@ -734,7 +732,7 @@ pub(crate) fn collect_items(
             }
 
             // Text boxes: walk extra_children to find <wps:wsp> → <wps:txbx> → <w:txbxContent>
-            if let Some(etb) = extract_drawing_text_box(drawing) {
+            if let Some(etb) = extract_drawing_text_box(drawing, theme_fonts) {
                 let (tw, th) = match drawing.extent_emu() {
                     Some((cx, cy)) => (emu_to_px(cx), emu_to_px(cy)),
                     None => (200.0, 100.0),
@@ -750,9 +748,7 @@ pub(crate) fn collect_items(
                         h_relative_from: h_rel,
                         v_relative_from: v_rel,
                         behind_text: behind,
-                        fill_color: etb.fill_color,
-                        border_color: etb.border_color,
-                        border_width_px: etb.border_width_px,
+                        frame: etb.frame,
                         wrap,
                     });
                 } else {
@@ -765,9 +761,7 @@ pub(crate) fn collect_items(
                             lines: Vec::new(),
                             width_px: tw,
                             height_px: th,
-                            fill_color: etb.fill_color,
-                            border_color: etb.border_color,
-                            border_width_px: etb.border_width_px,
+                            frame: etb.frame,
                         }),
                         // Not born of paragraph text — sentinel.
                         ..Default::default()
@@ -790,9 +784,7 @@ pub(crate) fn collect_items(
                             lines: Vec::new(),
                             width_px: tw,
                             height_px: th,
-                            fill_color: etb.fill_color,
-                            border_color: etb.border_color,
-                            border_width_px: etb.border_width_px,
+                            frame: etb.frame,
                         }),
                         // Not born of paragraph text — sentinel.
                         ..Default::default()
@@ -1743,13 +1735,10 @@ impl Item {
         }
         // `lines` is emitted as a COUNT here and walked in full by
         // `PagedLine::dump_into`, which recurses into the interior stream.
-        if let Some(TextBoxContent {
-            raw, lines, width_px, height_px, fill_color, border_color, border_width_px,
-        }) = text_box {
-            let _ = write!(out, " tbx{width_px:.2}x{height_px:.2} raw{} lines{} fill{} border{}/{border_width_px:.2}",
-                raw.is_some() as u8, lines.len(),
-                fill_color.as_deref().unwrap_or("-"),
-                border_color.as_deref().unwrap_or("-"));
+        if let Some(TextBoxContent { raw, lines, width_px, height_px, frame }) = text_box {
+            let _ = write!(out, " tbx{width_px:.2}x{height_px:.2} raw{} lines{} ",
+                raw.is_some() as u8, lines.len());
+            frame.dump_into(out);
         }
         if let Some(id) = footnote_id {
             let _ = write!(out, " fn{id}");
@@ -1830,9 +1819,7 @@ pub(crate) struct TextBoxContent {
     pub(crate) lines: Vec<PagedLine>,
     pub(crate) width_px: f64,
     pub(crate) height_px: f64,
-    pub(crate) fill_color: Option<String>,
-    pub(crate) border_color: Option<String>,
-    pub(crate) border_width_px: f64,
+    pub(crate) frame: TextBoxFrame,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

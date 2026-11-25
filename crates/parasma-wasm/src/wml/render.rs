@@ -24,8 +24,8 @@ use crate::chart;
 use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
 use crate::engine::images::draw_image_placeholder;
 use crate::engine::paint::{Painter, Underline, VertAlign};
-use crate::engine::units::{emu_to_px, pt_to_px};
-use crate::wml::drawing::is_layout_control;
+use crate::engine::units::pt_to_px;
+use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
 use crate::wml::hdr_ftr::{flatten_blocks, FlatBlock};
 use crate::wml::linebreak::{measure_item_text, FieldCode, Item, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::{resolve_numbering_marker, NumberingLevelDef};
@@ -146,9 +146,17 @@ pub(crate) fn substitute_page_fields(line: &mut PagedLine, page_num: usize, tota
 
 // Positional orchestrator args; struct-ification deferred to a dedicated pass.
 #[allow(clippy::too_many_arguments)]
+/// Lay out a text box's content inside its frame: between the left and right
+/// margins, starting below the top margin, and moved down within the space
+/// the margins leave when the frame anchors it to the centre or bottom
+/// (§20.4.2.22). Content taller than that space starts at the top margin when
+/// top-anchored and overflows evenly or upward otherwise, as anchoring
+/// specifies; the paint clips it to the box.
 pub(crate) fn layout_text_box(
     raw: &CTTxbxContent,
     width_px: f64,
+    height_px: f64,
+    frame: &TextBoxFrame,
     font_cache: &FontCache,
     style_ctx: &StyleContext,
     default_ppr: Option<&ooxml_wml::types::CTPPrGeneral>,
@@ -160,9 +168,8 @@ pub(crate) fn layout_text_box(
     let mut y = 0.0_f64;
     let mut prev_space_after = 0.0_f64;
     let mut list_counters: HashMap<(i64, i64), i64> = HashMap::new();
-    let inset = emu_to_px(91440); // ~0.1" default inset
-
-    let inner_width = (width_px - inset * 2.0).max(10.0);
+    let ins = frame.insets;
+    let inner_width = (width_px - ins.left - ins.right).max(10.0);
 
     // Block-level content controls are unwrapped: Word's built-in quote and
     // sidebar text boxes hold their paragraphs inside one. Tables in a text
@@ -195,7 +202,7 @@ pub(crate) fn layout_text_box(
                 );
                 let baseline = y + line.max_ascent;
 
-                let x_start = inset + cache.layout.indent_left_px;
+                let x_start = ins.left + cache.layout.indent_left_px;
 
                 result.push(PagedLine {
                     segments: PagedLine::single(line.items.clone(), x_start),
@@ -204,15 +211,15 @@ pub(crate) fn layout_text_box(
                     baseline_y: baseline,
                     para_shading: cache.layout.shading_color.clone(),
                     line_height: lh,
-                    content_left: inset,
-                    content_right: width_px - inset,
+                    content_left: ins.left,
+                    content_right: width_px - ins.right,
                     border_top: None,
                     border_bottom: None,
                     border_left: None,
                     border_right: None,
                     bar_tabs: cache.tab_stops.bar_xs(
-                        inset + cache.layout.indent_left_px,
-                        width_px - inset - cache.layout.indent_right_px,
+                        ins.left + cache.layout.indent_left_px,
+                        width_px - ins.right - cache.layout.indent_right_px,
                         cache.layout.base_rtl,
                     ),
                     is_first_line: false,
@@ -222,6 +229,16 @@ pub(crate) fn layout_text_box(
             }
             prev_space_after = cache.layout.space_after_px;
         }
+    }
+    // `y` is now the content's height; place it in the frame.
+    let room = height_px - ins.top - ins.bottom;
+    let shift = ins.top + match frame.anchor {
+        TextBoxAnchor::Top => 0.0,
+        TextBoxAnchor::Center => (room - y) / 2.0,
+        TextBoxAnchor::Bottom => room - y,
+    };
+    for line in &mut result {
+        line.baseline_y += shift;
     }
     result
 }
@@ -236,7 +253,7 @@ pub(crate) fn render_text_box(
     p.save();
 
     // Fill
-    if let Some(ref color) = tb.fill_color {
+    if let Some(ref color) = tb.frame.fill_color {
         p.set_fill_style_str(color);
         p.fill_rect(tb.x, tb.y, tb.width_px, tb.height_px);
     }
@@ -273,10 +290,10 @@ pub(crate) fn render_text_box(
     p.restore(); // remove clip
 
     // Border (drawn outside clip so it's crisp on the edge)
-    if let Some(ref color) = tb.border_color {
-        if tb.border_width_px > 0.0 {
+    if let Some(ref color) = tb.frame.border_color {
+        if tb.frame.border_width_px > 0.0 {
             p.set_stroke_style_str(color);
-            p.set_line_width(tb.border_width_px);
+            p.set_line_width(tb.frame.border_width_px);
             p.stroke_rect(tb.x, tb.y, tb.width_px, tb.height_px);
         }
     }
@@ -410,9 +427,7 @@ pub(crate) fn render_line(
                 width_px: tb.width_px,
                 height_px: tb.height_px,
                 behind_text: false,
-                fill_color: tb.fill_color.clone(),
-                border_color: tb.border_color.clone(),
-                border_width_px: tb.border_width_px,
+                frame: tb.frame.clone(),
             };
             render_text_box(p, &ptb, bitmaps, charts, ul_trail_space)?;
             x += item.width;

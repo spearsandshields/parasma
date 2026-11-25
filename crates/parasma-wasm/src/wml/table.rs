@@ -105,7 +105,7 @@ pub(crate) enum CellFloatDraw {
     TextBox {
         lines: Vec<PagedLine>, // box-local (untranslated), as PositionedTextBox expects
         x: f64, y: f64, width_px: f64, height_px: f64, behind_text: bool,
-        fill_color: Option<String>, border_color: Option<String>, border_width_px: f64,
+        frame: crate::wml::drawing::TextBoxFrame,
     },
 }
 
@@ -329,14 +329,13 @@ fn build_cell_float_layout(
                 floats.push(af);
             }
             let tb_lines = layout_text_box(
-                &tb.raw, tb.width_px, font_cache, style_ctx, default_ppr,
+                &tb.raw, tb.width_px, tb.height_px, &tb.frame, font_cache, style_ctx, default_ppr,
                 default_tab_stop_px, theme_fonts, numbering_levels,
             );
             draws.push(CellFloatDraw::TextBox {
                 lines: tb_lines, x: tx, y: ty,
                 width_px: tb.width_px, height_px: tb.height_px, behind_text: tb.behind_text,
-                fill_color: tb.fill_color.clone(), border_color: tb.border_color.clone(),
-                border_width_px: tb.border_width_px,
+                frame: tb.frame.clone(),
             });
         }
 

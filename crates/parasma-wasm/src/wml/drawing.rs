@@ -12,7 +12,8 @@
 //! Purity is enforced by the oracle snapshot tests — their geometry hashes
 //! must not drift on a pure move.
 
-use crate::engine::color::vml_color_to_css;
+use crate::engine::color::{apply_color_transforms, parse_dml_pct, vml_color_to_css, DmlTransform};
+use crate::engine::fonts::ThemeFonts;
 use crate::engine::units::{css_length_to_px, emu_to_px};
 use crate::engine::vml::{vml_attr, vml_find_descendant, xml_local_name};
 use crate::wml::float::{AnchorAlign, AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
@@ -284,12 +285,80 @@ fn parse_pos_child(parent: &ooxml_xml::RawXmlElement) -> AnchorPos {
 pub(crate) struct ExtractedTextBox {
     pub(crate) content: CTTxbxContent,
     pub(crate) is_anchored: bool,
-    pub(crate) fill_color: Option<String>,
-    pub(crate) border_color: Option<String>,
-    pub(crate) border_width_px: f64,
+    pub(crate) frame: TextBoxFrame,
 }
 
-pub(crate) fn extract_drawing_text_box(drawing: &ooxml_wml::types::CTDrawing) -> Option<ExtractedTextBox> {
+/// Where a text box's content sits between its top and bottom margins
+/// (`bodyPr@anchor`, ST_TextAnchoringType §20.1.10.60; VML `v-text-anchor`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TextBoxAnchor {
+    Top,
+    Center,
+    Bottom,
+}
+
+/// A text box's inner margins, px.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Insets {
+    pub(crate) left: f64,
+    pub(crate) top: f64,
+    pub(crate) right: f64,
+    pub(crate) bottom: f64,
+}
+
+impl Insets {
+    /// 0.1 inch left and right, 0.05 inch top and bottom: the default of both
+    /// DrawingML (`bodyPr` lIns/tIns/rIns/bIns, §20.4.2.22, §21.1.2.1.1) and VML
+    /// (`v:textbox@inset`, Part 4 §19.1.2.22).
+    pub(crate) fn default_px() -> Self {
+        Insets { left: emu_to_px(91_440), top: emu_to_px(45_720), right: emu_to_px(91_440), bottom: emu_to_px(45_720) }
+    }
+}
+
+/// How a text box is drawn around its content: fill, outline, inner margins
+/// and the content's vertical position. One value, carried whole from the
+/// markup to the paint.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TextBoxFrame {
+    /// A CSS colour, or `None` for no fill.
+    pub(crate) fill_color: Option<String>,
+    /// A CSS colour, or `None` for no outline.
+    pub(crate) border_color: Option<String>,
+    pub(crate) border_width_px: f64,
+    pub(crate) insets: Insets,
+    pub(crate) anchor: TextBoxAnchor,
+}
+
+impl Default for TextBoxFrame {
+    fn default() -> Self {
+        TextBoxFrame {
+            fill_color: None,
+            border_color: None,
+            border_width_px: 0.0,
+            insets: Insets::default_px(),
+            anchor: TextBoxAnchor::Top,
+        }
+    }
+}
+
+#[cfg(test)]
+impl TextBoxFrame {
+    /// Serialize every field into the oracle ITEM stream. The exhaustive
+    /// destructure fails to compile when a field is added and not emitted.
+    pub(crate) fn dump_into(&self, out: &mut String) {
+        use std::fmt::Write;
+        let TextBoxFrame { fill_color, border_color, border_width_px, insets, anchor } = self;
+        let Insets { left, top, right, bottom } = insets;
+        let _ = write!(out, "fill{} border{}/{border_width_px:.2} ins{left:.2},{top:.2},{right:.2},{bottom:.2} anc{anchor:?}",
+            fill_color.as_deref().unwrap_or("-"),
+            border_color.as_deref().unwrap_or("-"));
+    }
+}
+
+pub(crate) fn extract_drawing_text_box(
+    drawing: &ooxml_wml::types::CTDrawing,
+    theme: &ThemeFonts,
+) -> Option<ExtractedTextBox> {
     for child in &drawing.extra_children {
         let ooxml_xml::RawXmlNode::Element(ref elem) = child.node else { continue };
         let ln = xml_local_name(&elem.name);
@@ -299,85 +368,214 @@ pub(crate) fn extract_drawing_text_box(drawing: &ooxml_wml::types::CTDrawing) ->
         // Find wsp element to get shape properties + text box content
         if let Some(wsp) = vml_find_descendant(elem, "wsp") {
             let content = find_txbx_content_in(wsp)?;
-            let (fill_color, border_color, border_width_px) = extract_shape_chrome(wsp);
-            return Some(ExtractedTextBox {
-                content,
-                is_anchored,
-                fill_color,
-                border_color,
-                border_width_px,
-            });
+            return Some(ExtractedTextBox { content, is_anchored, frame: wsp_frame(wsp, theme) });
         }
     }
     None
 }
 
-fn extract_shape_chrome(wsp: &ooxml_xml::RawXmlElement) -> (Option<String>, Option<String>, f64) {
-    let mut fill_color = None;
-    let mut border_color = None;
-    let mut border_width_px = 0.0;
+/// The frame of a Word 2010 shape (`wps:wsp`): fill and outline from its
+/// `spPr`, falling back to its `wps:style` references, and margins and
+/// vertical position from its `bodyPr`.
+///
+/// Deviations, declared:
+/// - A fill or outline that comes only from the theme's style matrix
+///   (`fillRef`/`lnRef` with no `spPr` fill or line) is drawn as a solid of the
+///   reference's colour, the line at the default Office theme's width for its
+///   index; the theme's style lists themselves are not read yet.
+/// - A gradient fill is drawn as its first stop's colour; picture and pattern
+///   fills are not drawn.
+/// - Only a rectangle (or no geometry, or a rounded rectangle, drawn square)
+///   gets a fill and outline. Any other preset would need its real outline,
+///   which Word shapes do not draw yet, so its text shows without a frame
+///   rather than inside a wrong rectangle.
+/// - `bodyPr` autofit is not applied: Word stores the grown size in the
+///   extent when it saves.
+fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame {
+    let mut frame = TextBoxFrame::default();
+    fn child<'a>(parent: &'a ooxml_xml::RawXmlElement, name: &str) -> Option<&'a ooxml_xml::RawXmlElement> {
+        parent.children.iter().find_map(|c| match c {
+            ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == name => Some(e),
+            _ => None,
+        })
+    }
+    let sp_pr = child(wsp, "spPr");
+    let style = child(wsp, "style");
+    let style_ref = |name: &str| -> Option<(u32, Option<String>)> {
+        let r = child(style?, name)?;
+        let idx = vml_attr(r, "idx").and_then(|v| v.parse().ok()).unwrap_or(0);
+        Some((idx, dml_color(r, theme)))
+    };
 
-    // Find spPr child
-    for child in &wsp.children {
-        let ooxml_xml::RawXmlNode::Element(ref e) = child else { continue };
-        if xml_local_name(&e.name) != "spPr" { continue; }
+    let framed = match sp_pr.and_then(|sp| child(sp, "prstGeom")) {
+        Some(g) => matches!(vml_attr(g, "prst"), Some("rect" | "roundRect") | None),
+        None => sp_pr.and_then(|sp| child(sp, "custGeom")).is_none(),
+    };
 
-        for sp_child in &e.children {
-            let ooxml_xml::RawXmlNode::Element(ref se) = sp_child else { continue };
-            match xml_local_name(&se.name) {
-                "solidFill" => {
-                    fill_color = extract_color_from_fill(se);
+    if framed {
+        // Fill: the shape's own, else the style's reference.
+        let fills = ["noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill"];
+        match sp_pr.and_then(|sp| sp.children.iter().find_map(|c| match c {
+            ooxml_xml::RawXmlNode::Element(e) if fills.contains(&xml_local_name(&e.name)) => Some(e),
+            _ => None,
+        })) {
+            Some(f) => frame.fill_color = fill_color(f, theme),
+            None => {
+                if let Some((idx, color)) = style_ref("fillRef") {
+                    frame.fill_color = if idx == 0 { None } else { color };
                 }
-                "noFill" => {
-                    fill_color = None;
-                }
-                "ln" => {
-                    let width_emu: i64 = vml_attr(se, "w")
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(12700);
-                    border_width_px = emu_to_px(width_emu);
-                    for ln_child in &se.children {
-                        let ooxml_xml::RawXmlNode::Element(ref le) = ln_child else { continue };
-                        match xml_local_name(&le.name) {
-                            "solidFill" => {
-                                border_color = extract_color_from_fill(le);
-                            }
-                            "noFill" => {
-                                border_color = None;
-                                border_width_px = 0.0;
-                            }
-                            _ => {}
-                        }
-                    }
-                    if border_color.is_none() && border_width_px > 0.0 {
-                        border_color = Some("#000000".to_string());
-                    }
-                }
-                _ => {}
             }
         }
-        break;
+
+        // Outline: the shape's own `ln`, its colour falling back to the
+        // style's line reference, else the reference alone.
+        let ln_ref = style_ref("lnRef");
+        match sp_pr.and_then(|sp| child(sp, "ln")) {
+            Some(ln) => {
+                let width = vml_attr(ln, "w").and_then(|v| v.parse::<i64>().ok());
+                if child(ln, "noFill").is_some() {
+                    // No outline.
+                } else {
+                    let color = child(ln, "solidFill").and_then(|f| dml_color(f, theme))
+                        .or_else(|| child(ln, "gradFill").and_then(|f| fill_color(f, theme)))
+                        .or_else(|| ln_ref.as_ref().filter(|r| r.0 > 0).and_then(|r| r.1.clone()));
+                    if let Some(color) = color {
+                        let fallback = ln_ref.as_ref().map_or(12_700, |r| theme_line_width_emu(r.0));
+                        frame.border_width_px = emu_to_px(width.unwrap_or(fallback));
+                        frame.border_color = Some(color);
+                    }
+                }
+            }
+            None => {
+                if let Some((idx, Some(color))) = ln_ref {
+                    if idx > 0 {
+                        frame.border_width_px = emu_to_px(theme_line_width_emu(idx));
+                        frame.border_color = Some(color);
+                    }
+                }
+            }
+        }
     }
-    (fill_color, border_color, border_width_px)
+
+    if let Some(body) = child(wsp, "bodyPr") {
+        let emu = |name: &str, default: f64| {
+            vml_attr(body, name).and_then(|v| v.parse::<i64>().ok()).map_or(default, emu_to_px)
+        };
+        let d = Insets::default_px();
+        frame.insets = Insets {
+            left: emu("lIns", d.left),
+            top: emu("tIns", d.top),
+            right: emu("rIns", d.right),
+            bottom: emu("bIns", d.bottom),
+        };
+        // `just` and `dist` spread lines vertically; they are drawn centred.
+        frame.anchor = match vml_attr(body, "anchor") {
+            Some("ctr" | "just" | "dist") => TextBoxAnchor::Center,
+            Some("b") => TextBoxAnchor::Bottom,
+            _ => TextBoxAnchor::Top,
+        };
+    }
+    frame
 }
 
-fn extract_color_from_fill(fill_elem: &ooxml_xml::RawXmlElement) -> Option<String> {
-    for child in &fill_elem.children {
-        let ooxml_xml::RawXmlNode::Element(ref e) = child else { continue };
-        match xml_local_name(&e.name) {
-            "srgbClr" => {
-                return vml_attr(e, "val").map(|v| format!("#{}", v));
+/// The default Office theme's line widths, by `lnRef@idx` (its `lnStyleLst`):
+/// 0.5, 1 and 1.5 pt.
+fn theme_line_width_emu(idx: u32) -> i64 {
+    match idx {
+        0 | 1 => 6_350,
+        2 => 12_700,
+        _ => 19_050,
+    }
+}
+
+/// The colour a DrawingML fill draws (`solidFill`, or a `gradFill`'s first
+/// stop), or `None` for `noFill` and fills drawn as nothing here.
+fn fill_color(fill: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> Option<String> {
+    match xml_local_name(&fill.name) {
+        "solidFill" => dml_color(fill, theme),
+        "gradFill" => vml_find_descendant(fill, "gs").and_then(|gs| dml_color(gs, theme)),
+        _ => None,
+    }
+}
+
+/// The colour of the first DrawingML colour element inside `parent`
+/// (§20.1.2.3): `srgbClr`, `schemeClr` (through the theme), `sysClr`,
+/// `prstClr` or `scrgbClr`, with its luminance, saturation, tint, shade and
+/// alpha modifiers applied. A colour with alpha below 1 is returned as
+/// `rgba(…)`.
+pub(crate) fn dml_color(parent: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> Option<String> {
+    for c in &parent.children {
+        let ooxml_xml::RawXmlNode::Element(e) = c else { continue };
+        let base = match xml_local_name(&e.name) {
+            "srgbClr" => vml_attr(e, "val").map(str::to_owned),
+            "schemeClr" => vml_attr(e, "val").and_then(|v| theme.scheme_color(v)).map(str::to_owned),
+            "sysClr" => vml_attr(e, "lastClr").map(str::to_owned).or_else(|| match vml_attr(e, "val") {
+                Some("window") => Some("FFFFFF".into()),
+                Some("windowText") => Some("000000".into()),
+                _ => None,
+            }),
+            "prstClr" => vml_attr(e, "val").and_then(preset_color).map(str::to_owned),
+            "scrgbClr" => {
+                // Linear-light percentages; converted without the sRGB curve.
+                let pct = |n| vml_attr(e, n).and_then(parse_dml_pct).unwrap_or(0.0);
+                let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+                Some(format!("{:02X}{:02X}{:02X}", ch(pct("r")), ch(pct("g")), ch(pct("b"))))
             }
-            "schemeClr" | "sysClr" => {
-                // Simplified: use lastClr if available, else default
-                if let Some((_, v)) = e.attributes.iter().find(|(a, _)| xml_local_name(a) == "lastClr") {
-                    return Some(format!("#{}", v));
-                }
-            }
-            _ => {}
-        }
+            _ => continue,
+        };
+        let base = base?;
+        let transforms: Vec<DmlTransform> = e.children.iter().filter_map(|t| {
+            let ooxml_xml::RawXmlNode::Element(t) = t else { return None };
+            let v = vml_attr(t, "val").and_then(parse_dml_pct)?;
+            Some(match xml_local_name(&t.name) {
+                "lumMod" => DmlTransform::LumMod(v),
+                "lumOff" => DmlTransform::LumOff(v),
+                "satMod" => DmlTransform::SatMod(v),
+                "satOff" => DmlTransform::SatOff(v),
+                "tint" => DmlTransform::Tint(v),
+                "shade" => DmlTransform::Shade(v),
+                "alpha" => DmlTransform::Alpha(v),
+                _ => return None,
+            })
+        }).collect();
+        let (hex, alpha) = apply_color_transforms(&base, &transforms);
+        return Some(if alpha < 1.0 { css_rgba(&hex, alpha) } else { hex });
     }
     None
+}
+
+fn css_rgba(hex: &str, alpha: f64) -> String {
+    let h = hex.trim_start_matches('#');
+    let c = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
+    format!("rgba({},{},{},{:.3})", c(0), c(2), c(4), alpha)
+}
+
+/// `prstClr@val` (ST_PresetColorVal, §20.1.10.47) for the names documents
+/// use in practice. Declared: the rest of the 140-name list is not mapped and
+/// draws as no colour.
+fn preset_color(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "black" => "000000",
+        "white" => "FFFFFF",
+        "red" => "FF0000",
+        "green" => "008000",
+        "lime" => "00FF00",
+        "blue" => "0000FF",
+        "yellow" => "FFFF00",
+        "cyan" | "aqua" => "00FFFF",
+        "magenta" | "fuchsia" => "FF00FF",
+        "gray" | "grey" => "808080",
+        "silver" => "C0C0C0",
+        "ltGray" | "ltGrey" => "D3D3D3",
+        "dkGray" | "dkGrey" => "A9A9A9",
+        "orange" => "FFA500",
+        "navy" => "000080",
+        "purple" => "800080",
+        "maroon" => "800000",
+        "olive" => "808000",
+        "teal" => "008080",
+        _ => return None,
+    })
 }
 
 fn find_txbx_content_in(elem: &ooxml_xml::RawXmlElement) -> Option<CTTxbxContent> {
@@ -408,16 +606,52 @@ pub(crate) fn extract_pict_text_box(pict: &ooxml_wml::types::CTPicture) -> Optio
                 .any(|(a, v)| xml_local_name(a) == "filled" && (v == "f" || v == "false"));
             let no_stroke = elem.attributes.iter()
                 .any(|(a, v)| xml_local_name(a) == "stroked" && (v == "f" || v == "false"));
+            let textbox = vml_find_descendant(elem, "textbox");
             return Some(ExtractedTextBox {
                 content,
                 is_anchored: false,
-                fill_color: if no_fill { None } else { fill_color },
-                border_color: if no_stroke { None } else { stroke_color },
-                border_width_px: if no_stroke { 0.0 } else { 1.0 },
+                frame: TextBoxFrame {
+                    fill_color: if no_fill { None } else { fill_color },
+                    border_color: if no_stroke { None } else { stroke_color },
+                    border_width_px: if no_stroke { 0.0 } else { 1.0 },
+                    insets: textbox.and_then(|t| vml_attr(t, "inset")).map_or_else(Insets::default_px, vml_insets),
+                    anchor: match vml_style_value(elem, "v-text-anchor") {
+                        Some(v) if v.starts_with("middle") => TextBoxAnchor::Center,
+                        Some(v) if v.starts_with("bottom") => TextBoxAnchor::Bottom,
+                        _ => TextBoxAnchor::Top,
+                    },
+                },
             });
         }
     }
     None
+}
+
+/// `v:textbox@inset` (Part 4 §19.1.2.22): left, top, right, bottom, separated
+/// by commas or spaces; a missing value takes its default.
+fn vml_insets(raw: &str) -> Insets {
+    let d = Insets::default_px();
+    // Commas, when present, delimit (an empty slot keeps its default);
+    // otherwise whitespace does.
+    let parts: Vec<&str> = if raw.contains(',') {
+        raw.split(',').map(str::trim).collect()
+    } else {
+        raw.split_whitespace().collect()
+    };
+    let mut parts = parts.into_iter();
+    let mut next = |default: f64| match parts.next() {
+        Some(v) if !v.is_empty() => css_length_to_px(v),
+        _ => default,
+    };
+    Insets { left: next(d.left), top: next(d.top), right: next(d.right), bottom: next(d.bottom) }
+}
+
+/// One property of a VML element's `style` attribute.
+fn vml_style_value<'a>(elem: &'a ooxml_xml::RawXmlElement, key: &str) -> Option<&'a str> {
+    vml_attr(elem, "style")?.split(';').find_map(|part| {
+        let (k, v) = part.split_once(':')?;
+        (k.trim() == key).then(|| v.trim())
+    })
 }
 
 /// Extract width/height from VML shape's CSS style attribute.
@@ -500,5 +734,96 @@ mod dist_tests {
     fn no_inline_or_anchor_yields_all_zero() {
         let d = ooxml_wml::types::CTDrawing::default();
         assert_eq!(inline_dist_px(&d), (0.0, 0.0, 0.0, 0.0));
+    }
+}
+
+#[cfg(test)]
+mod text_box_frame_tests {
+    use super::*;
+
+    /// Parse one element (and its subtree) from markup.
+    fn raw(xml: &str) -> ooxml_xml::RawXmlElement {
+        let mut reader = quick_xml::Reader::from_str(xml);
+        loop {
+            match reader.read_event().expect("xml") {
+                quick_xml::events::Event::Start(e) => {
+                    return ooxml_xml::RawXmlElement::from_reader(&mut reader, &e).expect("element");
+                }
+                quick_xml::events::Event::Eof => panic!("no element"),
+                _ => {}
+            }
+        }
+    }
+
+    fn theme() -> ThemeFonts {
+        ThemeFonts::with_colors(&[("dk1", "000000"), ("lt1", "FFFFFF"), ("accent1", "4472C4")])
+    }
+
+    fn wsp(inner: &str) -> TextBoxFrame {
+        wsp_frame(&raw(&format!("<wps:wsp>{inner}</wps:wsp>")), &theme())
+    }
+
+    #[test]
+    fn no_body_properties_means_the_spec_defaults() {
+        let f = wsp("<wps:spPr/>");
+        assert_eq!(f.insets, Insets::default_px());
+        assert_eq!(f.anchor, TextBoxAnchor::Top);
+        assert!((f.insets.left - 9.6).abs() < 1e-9 && (f.insets.top - 4.8).abs() < 1e-9, "0.1 and 0.05 inch");
+    }
+
+    #[test]
+    fn body_properties_set_margins_and_vertical_position() {
+        let f = wsp(r#"<wps:bodyPr lIns="0" tIns="91440" rIns="182880" anchor="ctr"/>"#);
+        assert_eq!(f.insets.left, 0.0);
+        assert!((f.insets.top - 9.6).abs() < 1e-9);
+        assert!((f.insets.right - 19.2).abs() < 1e-9);
+        assert!((f.insets.bottom - 4.8).abs() < 1e-9, "an omitted margin keeps its default");
+        assert_eq!(f.anchor, TextBoxAnchor::Center);
+        assert_eq!(wsp(r#"<wps:bodyPr anchor="b"/>"#).anchor, TextBoxAnchor::Bottom);
+    }
+
+    #[test]
+    fn word_text_box_colours_come_from_the_theme() {
+        // Word's Insert > Text Box: a white (lt1) fill and a 0.5 pt black outline.
+        let f = wsp(r#"<wps:spPr><a:prstGeom prst="rect"/><a:solidFill><a:schemeClr val="lt1"/></a:solidFill><a:ln w="6350"><a:solidFill><a:prstClr val="black"/></a:solidFill></a:ln></wps:spPr>"#);
+        assert_eq!(f.fill_color.as_deref(), Some("#FFFFFF"));
+        assert_eq!(f.border_color.as_deref(), Some("#000000"));
+        assert!((f.border_width_px - emu_to_px(6350)).abs() < 1e-9);
+        // tx1 maps to dk1; lumMod/lumOff and alpha apply.
+        let tinted = wsp(r#"<wps:spPr><a:solidFill><a:schemeClr val="accent1"><a:lumMod val="20000"/><a:lumOff val="80000"/></a:schemeClr></a:solidFill></wps:spPr>"#);
+        assert_ne!(tinted.fill_color.as_deref(), Some("#4472C4"), "modifiers apply");
+        let clear = wsp(r#"<wps:spPr><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:solidFill></wps:spPr>"#);
+        assert_eq!(clear.fill_color.as_deref(), Some("rgba(255,0,0,0.500)"));
+    }
+
+    #[test]
+    fn a_shape_without_its_own_fill_or_line_uses_its_style() {
+        // Word's Insert > Shapes rectangle: accent1 fill, accent1-shaded line.
+        let f = wsp(r#"<wps:spPr><a:prstGeom prst="rect"/></wps:spPr><wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="0"/><a:fontRef idx="minor"/></wps:style>"#);
+        assert_eq!(f.fill_color.as_deref(), Some("#4472C4"));
+        assert!(f.border_color.is_some());
+        assert!((f.border_width_px - emu_to_px(12_700)).abs() < 1e-9, "lnRef 2 is 1 pt");
+        let none = wsp(r#"<wps:spPr><a:noFill/><a:ln><a:noFill/></a:ln></wps:spPr><wps:style><a:lnRef idx="2"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef></wps:style>"#);
+        assert_eq!((none.fill_color, none.border_color), (None, None), "the shape's own noFill wins");
+    }
+
+    #[test]
+    fn a_shape_that_is_not_a_rectangle_gets_no_frame() {
+        let f = wsp(r#"<wps:spPr><a:prstGeom prst="ellipse"/><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></wps:spPr><wps:bodyPr lIns="0"/>"#);
+        assert_eq!((f.fill_color, f.border_color), (None, None));
+        assert_eq!(f.insets.left, 0.0, "margins still apply to the text");
+    }
+
+    #[test]
+    fn vml_insets_keep_defaults_for_missing_values() {
+        let d = Insets::default_px();
+        assert_eq!(vml_insets("0,0,0,0"), Insets { left: 0.0, top: 0.0, right: 0.0, bottom: 0.0 });
+        let partial = vml_insets("32pt,35pt,,");
+        assert!((partial.left - 32.0 * 4.0 / 3.0).abs() < 1e-9 && (partial.top - 35.0 * 4.0 / 3.0).abs() < 1e-9);
+        assert_eq!((partial.right, partial.bottom), (d.right, d.bottom));
+        let comma_space = vml_insets("20pt, 30pt");
+        assert!((comma_space.top - 40.0).abs() < 1e-9, "a space after a comma is not a separator");
+        let spaced = vml_insets("1mm 2mm 3mm 4mm");
+        assert!((spaced.bottom - 4.0 * 96.0 / 25.4).abs() < 1e-9);
     }
 }

@@ -75,7 +75,6 @@ pub(crate) fn extract_theme_color_hex(xml_fragment: &str) -> Option<String> {
 /// so [`parse_dml_pct`] normalises both. Hue/red/green/blue/gamma/comp/inv are
 /// intentionally omitted (rare on themed fills).
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[cfg(feature = "pml")]
 pub(crate) enum DmlTransform {
     LumMod(f64),
     LumOff(f64),
@@ -91,7 +90,6 @@ pub(crate) enum DmlTransform {
 /// thousandths form (`"60000"` → 0.60) and the trailing-percent form
 /// (`"60%"` → 0.60) and a plain decimal-percent fallback. Returns `None` on a
 /// non-numeric value.
-#[cfg(feature = "pml")]
 pub(crate) fn parse_dml_pct(raw: &str) -> Option<f64> {
     let s = raw.trim();
     if let Some(stripped) = s.strip_suffix('%') {
@@ -111,7 +109,6 @@ pub(crate) fn parse_dml_pct(raw: &str) -> Option<f64> {
 }
 
 /// Convert an `#rrggbb`/`rrggbb` hex string to RGB f64 in 0.0–255.0.
-#[cfg(any(feature = "pml", feature = "sml"))]
 fn hex_to_rgb(hex: &str) -> Option<(f64, f64, f64)> {
     let h = hex.trim_start_matches('#');
     // ASCII-hex gate before the byte slices: `len()` counts BYTES, so a 6-byte
@@ -128,7 +125,6 @@ fn hex_to_rgb(hex: &str) -> Option<(f64, f64, f64)> {
 }
 
 /// RGB (0–255) → HSL with H in 0–360, S/L in 0.0–1.0.
-#[cfg(any(feature = "pml", feature = "sml"))]
 fn rgb_to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let (r, g, b) = (r / 255.0, g / 255.0, b / 255.0);
     let max = r.max(g).max(b);
@@ -158,7 +154,6 @@ fn rgb_to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
 }
 
 /// HSL (H 0–360, S/L 0–1) → RGB 0–255.
-#[cfg(any(feature = "pml", feature = "sml"))]
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
     let s = s.clamp(0.0, 1.0);
     let l = l.clamp(0.0, 1.0);
@@ -189,7 +184,6 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
 /// toward black (`c * amt`) in RGB — deliberately distinct from the WML byte
 /// [`apply_tint_shade`] above. A malformed base hex passes through unchanged
 /// with alpha 1.0.
-#[cfg(feature = "pml")]
 pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String, f64) {
     let Some((mut r, mut g, mut b)) = hex_to_rgb(hex) else {
         return (hex.to_string(), 1.0);

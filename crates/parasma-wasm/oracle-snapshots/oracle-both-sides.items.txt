@@ -126,7 +126,7 @@ L7 p0 f0 l1 segs1
     i2 y0 w28.55 cw24.47 c560+4 "end " sh4g adv28.55 r0 s1
     i3 y0 w16.31 cw12.23 c564+3 "to " sh3g adv16.31 r0 s1
     i4 y0 w32.62 cw28.55 c567+5 "end. " sh5g adv32.62 r0 s1
-B0 96.00x96.00 behind0 fill- border-/0.00 lines1
+B0 96.00x96.00 behind0 fill- border-/0.00 ins9.60,4.80,9.60,4.80 ancTop lines1
   BL0 p4294967295 f0 l0 segs1
     S0 n1
       i0 y0 w13.86 cw13.86 c0+2 "B." sh2g adv13.86 r0 s1

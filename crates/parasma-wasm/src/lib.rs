@@ -3170,7 +3170,7 @@ impl Viewer {
                             if let Some(ref mut tb) = item.text_box {
                                 if let Some(raw) = tb.raw.take() {
                                     tb.lines = layout_text_box(
-                                        &raw, tb.width_px,
+                                        &raw, tb.width_px, tb.height_px, &tb.frame,
                                         &self.font_cache, &w.style_ctx,
                                         w.default_ppr.as_ref(),
                                         w.default_tab_stop_px, &w.theme_fonts,
@@ -4580,7 +4580,7 @@ impl Viewer {
                                     tb.width_px, tb.height_px, &fctx,
                                 );
                                 let tb_lines = layout_text_box(
-                                    &tb.raw, tb.width_px,
+                                    &tb.raw, tb.width_px, tb.height_px, &tb.frame,
                                     &self.font_cache, &w.style_ctx,
                                     w.default_ppr.as_ref(),
                                     w.default_tab_stop_px, &w.theme_fonts,
@@ -4592,9 +4592,7 @@ impl Viewer {
                                     width_px: tb.width_px,
                                     height_px: tb.height_px,
                                     behind_text: tb.behind_text,
-                                    fill_color: tb.fill_color.clone(),
-                                    border_color: tb.border_color.clone(),
-                                    border_width_px: tb.border_width_px,
+                                    frame: tb.frame.clone(),
                                 };
                                 // First discovery — tier-select + FREEZE.
                                 if let Some(af) = build_active_float(
@@ -5046,7 +5044,7 @@ impl Viewer {
                             // only wrapNone (drawn over/under text, no exclusion).
                             if !matches!(tb.wrap.mode, WrapMode::None) { continue; }
                             let tb_lines = layout_text_box(
-                                &tb.raw, tb.width_px,
+                                &tb.raw, tb.width_px, tb.height_px, &tb.frame,
                                 &self.font_cache, &w.style_ctx,
                                 w.default_ppr.as_ref(),
                                 w.default_tab_stop_px, &w.theme_fonts,
@@ -5073,9 +5071,7 @@ impl Viewer {
                                 width_px: tb.width_px,
                                 height_px: tb.height_px,
                                 behind_text: tb.behind_text,
-                                fill_color: tb.fill_color.clone(),
-                                border_color: tb.border_color.clone(),
-                                border_width_px: tb.border_width_px,
+                                frame: tb.frame.clone(),
                             });
                         }
                     }
@@ -5236,16 +5232,14 @@ impl Viewer {
                                             }
                                             CellFloatDraw::TextBox {
                                                 lines, x, y, width_px, height_px, behind_text,
-                                                fill_color, border_color, border_width_px,
+                                                frame,
                                             } => {
                                                 current.positioned_text_boxes.push(PositionedTextBox {
                                                     lines: lines.clone(),
                                                     x: cell_x + x, y: cell_y_origin + y,
                                                     width_px: *width_px, height_px: *height_px,
                                                     behind_text: *behind_text,
-                                                    fill_color: fill_color.clone(),
-                                                    border_color: border_color.clone(),
-                                                    border_width_px: *border_width_px,
+                                                    frame: frame.clone(),
                                                 });
                                             }
                                         }

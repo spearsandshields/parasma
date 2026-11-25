@@ -68,6 +68,31 @@ impl ThemeFonts {
         self.colors.get(key).map(|s| s.as_str())
     }
 
+    /// A theme holding only these scheme colours (`slot`, hex without `#`).
+    #[cfg(test)]
+    pub(crate) fn with_colors(colors: &[(&str, &str)]) -> Self {
+        let mut t = Self::empty();
+        t.colors = colors.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        t
+    }
+
+    /// A DrawingML scheme colour by name (`schemeClr@val`, §20.1.2.3.29),
+    /// through the default colour map: text and background names map to the
+    /// dark and light slots (`tx1` is `dk1`, `bg1` is `lt1`, and so on).
+    ///
+    /// Deviation, declared: a document's own `w:clrSchemeMapping` (§17.15.1.20)
+    /// is not read; the default mapping is the one Word writes.
+    pub(crate) fn scheme_color(&self, name: &str) -> Option<&str> {
+        let slot = match name {
+            "tx1" => "dk1",
+            "bg1" => "lt1",
+            "tx2" => "dk2",
+            "bg2" => "lt2",
+            other => other,
+        };
+        self.colors.get(slot).map(|s| s.as_str())
+    }
+
     pub(crate) fn resolve(&self, theme: &ooxml_wml::types::STTheme) -> Option<&str> {
         use ooxml_wml::types::STTheme::*;
         match theme {

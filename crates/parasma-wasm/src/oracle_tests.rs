@@ -667,9 +667,7 @@ fn geometry_dump(viewer: &Viewer) -> String {
                 width_px,
                 height_px,
                 behind_text: _,
-                fill_color: _,
-                border_color: _,
-                border_width_px: _,
+                frame: _,
             } = tb;
             out.push_str(&format!("B x{x:.2} y{y:.2} w{width_px:.2} h{height_px:.2}\n"));
             for l in lines {
@@ -874,11 +872,9 @@ fn content_dumps(viewer: &Viewer) -> (String, String) {
         // Positioned (anchored) text boxes — a whole content stream that
         // `geometry_dump` drops ENTIRELY, interior lines and all.
         for (bi, tb) in page.positioned_text_boxes.iter().enumerate() {
-            let _ = writeln!(out, "B{bi} {:.2}x{:.2} behind{} fill{} border{}/{:.2} lines{}",
-                tb.width_px, tb.height_px, tb.behind_text as u8,
-                tb.fill_color.as_deref().unwrap_or("-"),
-                tb.border_color.as_deref().unwrap_or("-"), tb.border_width_px,
-                tb.lines.len());
+            let _ = write!(out, "B{bi} {:.2}x{:.2} behind{} ", tb.width_px, tb.height_px, tb.behind_text as u8);
+            tb.frame.dump_into(&mut out);
+            let _ = writeln!(out, " lines{}", tb.lines.len());
             for (li, l) in tb.lines.iter().enumerate() {
                 l.dump_into(&mut out, &format!("BL{li}"), "  ", &mut styles, &mut glyphs);
             }
@@ -8186,7 +8182,12 @@ fn oracle_blocked_band_snapshot() {
     // added lines (`B x96.00 y192.00 w624.00 h144.00` + its interior `BL`)
     // reproduces the prior hash 0x6bc955d63b747506 byte-for-byte. This was the
     // only LINE-pinned fixture carrying a positioned textbox.
-    assert_oracle("oracle-blocked-band", blocked_band_midparagraph_docx(), 1, 0x769303d4dc625162);
+    //
+    // Re-baselined 2026-11-25 for text-box margins (§20.4.2.22 bodyPr): the
+    // box's interior line moved down 4.80 px (b13.28 -> b18.08), the default
+    // 0.05 inch top margin the layout used to omit. Nothing else in the dump
+    // changed (diffed in full, before and after).
+    assert_oracle("oracle-blocked-band", blocked_band_midparagraph_docx(), 1, 0xb4283ad30f4eb401);
 }
 
 // ─── fixture debt: the "attributes" oracle ──────────────────────────────────
@@ -9293,7 +9294,10 @@ fn oracle_both_sides_docx() -> Vec<u8> {
 
 #[test]
 fn oracle_both_sides_snapshot() {
-    assert_oracle("oracle-both-sides", oracle_both_sides_docx(), 1, 0xf6d8dc3b36fd94ba);
+    // Re-baselined 2026-11-25 for text-box margins: the text box's interior
+    // line moved down 4.80 px, the default 0.05 inch top margin; nothing else
+    // in the dump changed.
+    assert_oracle("oracle-both-sides", oracle_both_sides_docx(), 1, 0x7f990f51fb7024e7);
 }
 
 // ─── the memory census ───────────────────────────────────────────────────────
@@ -10010,6 +10014,36 @@ fn a_word_2010_text_box_shows_its_text_once() {
 fn a_text_box_shows_paragraphs_inside_a_content_control() {
     let v = layout(wrapped_text_box_in_content_control_docx("Quotedtext"));
     assert_eq!(occurrences(&v, "Quotedtext"), 1);
+}
+
+/// The first interior line of the first inline text box on page 1:
+/// (x where its text starts, baseline), box-local.
+fn text_box_first_line(viewer: &Viewer) -> (f64, f64) {
+    let tb = body_lines(viewer)
+        .into_iter()
+        .flat_map(|l| l.segments.into_iter().flat_map(|s| s.items))
+        .find_map(|it| it.text_box)
+        .expect("an inline text box");
+    let line = tb.lines.first().expect("a laid-out line");
+    (line.segments[0].x_start, line.baseline_y)
+}
+
+#[test]
+fn a_text_box_places_its_text_by_its_margins_and_anchor() {
+    let with_body = |body_pr: &str| {
+        let docx = unzip_replace(wrapped_text_box_docx("wps", "Inner", "Fallbackbranch"), "word/document.xml", "<wps:bodyPr/>", body_pr);
+        text_box_first_line(&layout(docx))
+    };
+    let (x_default, top) = with_body("<wps:bodyPr/>");
+    assert!((x_default - 9.6).abs() < 1e-9, "default left margin is 0.1 inch: {x_default}");
+    let (x_zero, top_zero) = with_body(r#"<wps:bodyPr lIns="0" tIns="0"/>"#);
+    assert_eq!(x_zero, 0.0);
+    assert!((top - top_zero - 4.8).abs() < 1e-6, "default top margin is 0.05 inch: {top} vs {top_zero}");
+    // The box is 48 px tall; one line sits lower when centred, lowest at the bottom.
+    let (_, centre) = with_body(r#"<wps:bodyPr anchor="ctr"/>"#);
+    let (_, bottom) = with_body(r#"<wps:bodyPr anchor="b"/>"#);
+    assert!(top < centre && centre < bottom, "{top} < {centre} < {bottom}");
+    assert!(((centre - top) * 2.0 - (bottom - top)).abs() < 1e-6, "centre is halfway to bottom");
 }
 
 #[test]

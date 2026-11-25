@@ -71,9 +71,7 @@ pub(crate) struct PositionedTextBox {
     pub(crate) width_px: f64,
     pub(crate) height_px: f64,
     pub(crate) behind_text: bool,
-    pub(crate) fill_color: Option<String>,
-    pub(crate) border_color: Option<String>,
-    pub(crate) border_width_px: f64,
+    pub(crate) frame: crate::wml::drawing::TextBoxFrame,
 }
 
 #[derive(Clone)]

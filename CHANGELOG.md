@@ -31,6 +31,11 @@ are held stable regardless.
   paragraphs in a content control, as Word's built-in quote and sidebar boxes
   do, show their text too. Text boxes inside shape groups and drawing canvases
   are not shown yet.
+- Documents: text boxes use their own inner margins and vertical alignment
+  (top, centre or bottom), and their fill and outline colours, including theme
+  colours with Word's lighter and darker variants, transparency, and shapes
+  coloured by the theme's shape styles. Text in a shape that is not a
+  rectangle shows without a frame until shape outlines are drawn.
 - Documents: tracked deletions keep their line breaks.
 - Fonts: names the font map had silently dropped, such as Consolas, Palatino
   Linotype, Futura and Menlo, now reach their substitute, so monospaced text
