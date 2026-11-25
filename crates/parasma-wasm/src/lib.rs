@@ -8772,6 +8772,39 @@ mod hyperlink_parse_tests {
 // ─── Run-level formatting ────────────────────────────────────────────────────
 
 
+/// Word's ligature setting on one run-properties level: `w14:ligatures`
+/// ([MS-DOCX] 2.6.1.10, Word 2010+). The parser keeps it as an unrecognised
+/// child, so it is read from there. `None` when this level does not set it.
+fn w14_ligatures(rpr: &ooxml_wml::types::RunProperties) -> Option<bool> {
+    rpr.extra_children.iter().find_map(|child| match &child.node {
+        ooxml_xml::RawXmlNode::Element(el) if el.name.rsplit(':').next() == Some("ligatures") => el
+            .attributes
+            .iter()
+            .find(|(k, _)| k.rsplit(':').next() == Some("val"))
+            .and_then(|(_, v)| wml_ligatures_on(v)),
+        _ => None,
+    })
+}
+
+/// Whether a `w14:ligatures` value turns ligatures on, as the canvas can draw
+/// them: standard, contextual and contextual alternates together or not at all.
+///
+/// DEVIATION, declared: canvas text has no per-feature control, only "the
+/// browser's defaults" or "none" (blocked with zero-width non-joiners). Any
+/// value naming standard or contextual ligatures therefore means all three
+/// (`liga`, `clig`, `calt`); historical and discretionary ligatures, which the
+/// canvas cannot turn on, are ignored, so a value naming only those means off.
+pub(crate) fn wml_ligatures_on(val: &str) -> Option<bool> {
+    match val {
+        "none" | "historical" | "discretional" | "historicalDiscretional" => Some(false),
+        "standard" | "contextual" | "standardContextual" | "standardHistorical"
+        | "contextualHistorical" | "standardDiscretional" | "contextualDiscretional"
+        | "standardContextualHistorical" | "standardContextualDiscretional"
+        | "standardHistoricalDiscretional" | "contextualHistoricalDiscretional" | "all" => Some(true),
+        _ => None,
+    }
+}
+
 /// A run's declared `ascii`-slot family (§17.3.2.26) through its style chain
 /// and the theme fonts: the name the document wrote, before any substitution.
 /// `None` when nothing in the chain sets one.
@@ -8917,8 +8950,7 @@ impl RunStyle {
 
         // §17.3.2.19: kern only when a `w:kern` in the style hierarchy applies,
         // and only at or above its size threshold (half-points, compared with
-        // the run's own `w:sz`, before any superscript scaling). Standard
-        // ligatures stay off: Word's default.
+        // the run's own `w:sz`, before any superscript scaling).
         //
         // WORD-BEHAVIOR: the spec calls the threshold "a positive measurement",
         // but Word writes `w:val="0"` to switch kerning off on a run whose style
@@ -8931,7 +8963,13 @@ impl RunStyle {
         .filter(|&min_half_pts| min_half_pts > 0.0)
         .map(|min_half_pts| if font_pt * 2.0 + 1e-9 >= min_half_pts { Kerning::On } else { Kerning::Off })
         .unwrap_or(Kerning::Off);
-        let glyph_features = GlyphFeatures { kerning, ligatures: false };
+        // Ligatures are off unless Word's own setting turns them on; its
+        // blank-document template does, in the document defaults.
+        let ligatures = resolve_run_option(
+            &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx, w14_ligatures,
+        )
+        .unwrap_or(false);
+        let glyph_features = GlyphFeatures { kerning, ligatures };
 
         let font_pt = if vert_align != VertAlign::Baseline {
             font_pt * 0.583

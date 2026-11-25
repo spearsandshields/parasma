@@ -9525,15 +9525,24 @@ fn kerning_docx(rpr: &str, text: &str) -> Vec<u8> {
 
 /// `kerning_docx` with extra `w:style` elements in the styles part.
 fn kerning_docx_with_styles(styles_extra: &str, rpr: &str, text: &str) -> Vec<u8> {
+    glyph_features_docx("", styles_extra, rpr, text)
+}
+
+/// The Word 2010 (`w14`) namespace, where Word writes its ligature setting.
+const W14_NS: &str = r#"xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml""#;
+
+/// One run of `text` with `rpr`, over document defaults that set Arimo 11pt
+/// plus `defaults_extra`, with extra `w:style` elements.
+fn glyph_features_docx(defaults_extra: &str, styles_extra: &str, rpr: &str, text: &str) -> Vec<u8> {
     let styles = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:styles {W_NS}><w:docDefaults><w:rPrDefault><w:rPr>
-  <w:rFonts w:ascii="Arimo" w:hAnsi="Arimo" w:cs="Arimo"/><w:sz w:val="22"/>
+<w:styles {W_NS} {W14_NS}><w:docDefaults><w:rPrDefault><w:rPr>
+  <w:rFonts w:ascii="Arimo" w:hAnsi="Arimo" w:cs="Arimo"/><w:sz w:val="22"/>{defaults_extra}
 </w:rPr></w:rPrDefault></w:docDefaults>{styles_extra}</w:styles>"#
     );
     let document = format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document {W_NS}><w:body>{}<w:sectPr/></w:body></w:document>"#,
+<w:document {W_NS} {W14_NS}><w:body>{}<w:sectPr/></w:body></w:document>"#,
         p("", &r(rpr, text)),
     );
     let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -9630,6 +9639,82 @@ fn word_runs_draw_with_the_measured_features() {
     assert!(texts.iter().any(|t| t.contains("f\u{200C}f\u{200C}i")), "ligatures blocked in {texts:?}");
     let (kerning, _) = draw(r#"<w:kern w:val="2"/>"#);
     assert_eq!(kerning, vec![false, true, true], "page baseline off; each kerned run turns it on for itself");
+}
+
+// Word 2010+ writes its ligature setting as `w14:ligatures` ([MS-DOCX]), and
+// its blank-document template turns standard and contextual ligatures on in
+// the document defaults, beside `w:kern w:val="2"`. A run with ligatures on is
+// shaped with them and drawn without the zero-width non-joiners that block
+// them, which in Safari would also block the kerning it was measured with.
+
+use super::wml::linebreak::Item;
+
+const STANDARD_CONTEXTUAL: &str = r#"<w14:ligatures w14:val="standardContextual"/>"#;
+const CARLITO: &str = r#"<w:rFonts w:ascii="Carlito" w:hAnsi="Carlito"/>"#;
+
+/// Lay out with the test fonts plus Carlito, which has standard ligatures
+/// (Arimo has none to form).
+fn ligature_layout(docx: Vec<u8>) -> Viewer {
+    let mut viewer = Viewer::new().unwrap_or_else(|_| panic!("Viewer::new failed"));
+    load_test_fonts(&mut viewer);
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/test-fonts/Carlito-Regular.ttf");
+    let bytes = std::fs::read(path)
+        .unwrap_or_else(|_| panic!("test font missing: {path}\n  run: ./scripts/fetch-test-fonts.sh"));
+    viewer.load_font("Carlito", bytes, 400, false).expect("load Carlito");
+    if viewer.load_docx(docx).is_err() {
+        panic!("load_docx failed");
+    }
+    viewer.run_layout_native().expect("run_layout_native");
+    viewer
+}
+
+/// The first text item on page 1, and every string the page draws.
+fn first_item_and_drawn_text(viewer: &Viewer) -> (Item, Vec<String>) {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let item = body_lines(viewer)
+        .into_iter()
+        .flat_map(|l| l.segments.into_iter().flat_map(|s| s.items))
+        .find(|it| !it.text.trim().is_empty())
+        .expect("a text item");
+    let rec = RecordingPainter::new();
+    viewer.paint_wml_page(0, &rec, None).expect("paint page");
+    let texts = rec.cmds().iter().filter_map(|c| match c {
+        DrawCmd::FillText { text, .. } => Some(text.clone()),
+        _ => None,
+    }).collect();
+    (item, texts)
+}
+
+#[test]
+fn word_ligature_setting_turns_ligatures_on_for_measuring_and_drawing() {
+    let (off, off_drawn) = first_item_and_drawn_text(&ligature_layout(glyph_features_docx("", "", CARLITO, "office")));
+    assert!(!off.style.glyph_features.ligatures, "control: no w14:ligatures means none");
+    assert!(off_drawn.iter().any(|t| t.contains('\u{200C}')), "control: ligatures blocked in {off_drawn:?}");
+
+    // Set where Word's template sets it: the document defaults.
+    let (on, on_drawn) = first_item_and_drawn_text(&ligature_layout(glyph_features_docx(STANDARD_CONTEXTUAL, "", CARLITO, "office")));
+    assert!(on.style.glyph_features.ligatures, "docDefaults w14:ligatures reaches the run");
+    let glyphs = |it: &Item| it.shaped.as_ref().expect("shaped").glyphs.len();
+    assert!(glyphs(&on) < glyphs(&off), "Carlito forms a ligature: {} vs {} glyphs", glyphs(&on), glyphs(&off));
+    assert!(on_drawn.iter().all(|t| !t.contains('\u{200C}')), "nothing blocks the ligature when drawn: {on_drawn:?}");
+
+    // A closer level's "none" wins.
+    let (none, _) = first_item_and_drawn_text(&ligature_layout(glyph_features_docx(
+        STANDARD_CONTEXTUAL, "", &format!(r#"{CARLITO}<w14:ligatures w14:val="none"/>"#), "office",
+    )));
+    assert!(!none.style.glyph_features.ligatures, "the run's none overrides the defaults");
+}
+
+#[test]
+fn ligature_values_canvas_cannot_draw_map_to_the_nearest() {
+    use super::wml_ligatures_on;
+    for v in ["standard", "contextual", "standardContextual", "all", "standardHistorical", "contextualDiscretional"] {
+        assert_eq!(wml_ligatures_on(v), Some(true), "{v}");
+    }
+    for v in ["none", "historical", "discretional", "historicalDiscretional"] {
+        assert_eq!(wml_ligatures_on(v), Some(false), "{v}");
+    }
+    assert_eq!(wml_ligatures_on("bogus"), None, "an unknown value is ignored");
 }
 
 // ─── the default paragraph style (§17.7.4.17) ───────────────────────────────

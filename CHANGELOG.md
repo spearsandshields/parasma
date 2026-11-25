@@ -15,8 +15,12 @@ are held stable regardless.
   size and spacing. On/off paragraph settings in the document defaults, such
   as widow control, now apply too.
 - Documents: text is kerned only where the document asks for it, as Word does,
-  and is drawn exactly as it was measured. Standard ligatures are off unless a
-  run asks for them. A kerning value of 0 switches kerning off.
+  and is drawn exactly as it was measured. A kerning value of 0 switches
+  kerning off.
+- Documents: Word's ligature setting is read, so documents from current Word,
+  which turn standard ligatures on, show them ("fi", "fl" joined), and Safari
+  now draws their kerning as measured. Without the setting, ligatures stay
+  off.
 - Documents: text in the Symbol, Wingdings, Wingdings 2, Wingdings 3 and
   Webdings fonts draws the character the font means: check boxes, arrows and
   dingbat bullets instead of letters. Symbol characters inserted with Word's
