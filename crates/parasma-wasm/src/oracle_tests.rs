@@ -10156,6 +10156,49 @@ fn block_level_custom_xml_is_laid_out() {
     assert!(text.contains("Wrapped"), "{text}");
 }
 
+/// Content-survival probe: is a given word laid out? The line-geometry oracle
+/// cannot see text, and every fixture here is synthetic, so missing content in
+/// real files is found by picking, per file, a word that occurs only inside a
+/// wrapper under test (a text box, content control, smart tag, …) and looking
+/// for it in the laid-out content. Run on demand:
+///
+///   CONTENT_NEEDLES=/abs/needles.tsv CONTENT_ROOT=/abs/corpus-root \
+///     cargo test --release -p parasma-wasm --features sml,pml,emf \
+///       probe_content_survival -- --ignored --nocapture
+///
+/// Each line of the list is `path<TAB>kind<TAB>word[<TAB>note]`, the path
+/// relative to `CONTENT_ROOT`. Prints one line per entry:
+///   CONTENT <SHOWN|MISSING|PARSEFAIL|LAYOUTFAIL|PANIC> <kind> <word> <path>
+/// Matching is case-sensitive, so a word drawn in all caps reads as MISSING.
+#[test]
+#[ignore]
+fn probe_content_survival() {
+    let list = std::fs::read_to_string(std::env::var("CONTENT_NEEDLES").expect("CONTENT_NEEDLES"))
+        .expect("read the needle list");
+    let root = std::env::var("CONTENT_ROOT").unwrap_or_default();
+    for line in list.lines().filter(|l| !l.trim().is_empty()) {
+        let f: Vec<&str> = line.split('\t').collect();
+        let (path, kind, word) = (f[0], f.get(1).copied().unwrap_or("-"), f.get(2).copied().unwrap_or(""));
+        let bytes = std::fs::read(format!("{root}/{path}")).expect("read the document");
+        let verdict = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Parse through the same passes `load_docx` runs, first: its own
+            // error path needs a browser to report and aborts natively.
+            let resolved = crate::wml::markup_compat::resolve_package(bytes.clone());
+            if crate::repair::load_docx_tolerant(resolved).is_err() {
+                return "PARSEFAIL";
+            }
+            let mut viewer = Viewer::new().unwrap_or_else(|_| panic!("Viewer::new failed"));
+            load_test_fonts(&mut viewer);
+            if viewer.load_docx(bytes).is_err() || viewer.run_layout_native().is_err() {
+                return "LAYOUTFAIL";
+            }
+            if content_dumps(&viewer).0.contains(word) { "SHOWN" } else { "MISSING" }
+        }))
+        .unwrap_or("PANIC");
+        println!("CONTENT\t{verdict}\t{kind}\t{word}\t{path}");
+    }
+}
+
 /// A paragraph run holding a floating text box (`wps`, anchored) with `text`,
 /// positioned `pos_v` EMU below its paragraph and wrapped by `wrap`.
 fn floating_text_box_run(text: &str, wrap: &str, pos_v: i64) -> String {
