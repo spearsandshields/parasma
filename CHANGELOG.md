@@ -25,6 +25,12 @@ are held stable regardless.
   Webdings fonts draws the character the font means: check boxes, arrows and
   dingbat bullets instead of letters. Symbol characters inserted with Word's
   symbol command, and non-breaking hyphens, are no longer dropped.
+- Documents: text boxes from Word 2010 and later now appear with their text.
+  Word writes each one inside a compatibility wrapper that was being skipped,
+  so their text was missing from the page. Text boxes that keep their
+  paragraphs in a content control, as Word's built-in quote and sidebar boxes
+  do, show their text too. Text boxes inside shape groups and drawing canvases
+  are not shown yet.
 - Documents: tracked deletions keep their line breaks.
 - Fonts: names the font map had silently dropped, such as Consolas, Palatino
   Linotype, Futura and Menlo, now reach their substitute, so monospaced text
@@ -35,7 +41,7 @@ are held stable regardless.
 ### Changed
 
 - Fonts: documents that use those symbol fonts download Noto Sans Symbols 2
-  on demand. The WebAssembly engine grows by about 7 KB gzipped.
+  on demand. The WebAssembly engine grows by about 20 KB gzipped in all.
 
 ## [0.1.2] — 2026-11-19
 

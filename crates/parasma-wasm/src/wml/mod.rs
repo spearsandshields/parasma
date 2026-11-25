@@ -24,6 +24,7 @@ pub(crate) mod float_resolve;
 pub(crate) mod hdr_ftr;
 pub(crate) mod linebreak;
 pub(crate) mod loader;
+pub(crate) mod markup_compat;
 pub(crate) mod math;
 pub(crate) mod numbering;
 pub(crate) mod page;

@@ -2118,6 +2118,11 @@ impl Viewer {
         // `<w:pgMar>` from a third-party generator) do we inject the
         // missing pgMar attrs and re-parse. Valid files parse on the first
         // attempt and never reach the repair.
+        // Markup Compatibility (ECMA-376 Part 3): resolve every
+        // `mc:AlternateContent` to the branch the engine can draw before the
+        // parser runs, so the text boxes and shapes Word 2010+ writes inside it
+        // reach every reader as ordinary content.
+        let bytes = wml::markup_compat::resolve_package(bytes);
         let mut doc = repair::load_docx_tolerant(bytes)
             .map_err(|e| JsValue::from_str(&format!("docx parse error: {e}")))?;
         self.page_size = PageGeometry::from_doc(&doc);

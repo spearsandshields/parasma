@@ -27,14 +27,12 @@ debug-probe = []
 # dep (armed by `pml`) and already in the dependency graph via
 # ooxml-sml itself, so this changes no lockfile entry and adds no code to the
 # docx-only build (feature off → crate unlinked, byte-identity preserved).
-# The lazy grid index adds `dep:quick-xml`: the renderer self-parses
-# `xl/sharedStrings.xml` through the fork's GENERATED `SharedStrings::from_xml`
-# (ooxml_sml::parsers — public, the same FromXml machinery `parse_worksheet`
-# drives) because the lazy path never calls `resolved_sheet()` (which was the
-# only SST conduit). quick-xml is ALREADY an optional dep (armed by `pml`) at
-# the exact version the fork's ooxml-xml uses (one lockfile entry, type
-# identity holds); docx-only stays byte-identical (feature off → unlinked).
-sml = ["ooxml-sml/sml-styling", "ooxml-sml/sml-structure", "ooxml-sml/sml-layout", "dep:ooxml-opc", "dep:quick-xml"]
+# The lazy grid index self-parses `xl/sharedStrings.xml` through the fork's
+# GENERATED `SharedStrings::from_xml` (ooxml_sml::parsers — public, the same
+# FromXml machinery `parse_worksheet` drives) because the lazy path never calls
+# `resolved_sheet()` (which was the only SST conduit). It uses the quick-xml
+# dependency below.
+sml = ["ooxml-sml/sml-styling", "ooxml-sml/sml-structure", "ooxml-sml/sml-layout", "dep:ooxml-opc"]
 # PowerPoint (PresentationML) renderer. Gates the parserInfo link
 # probe AND the pml/ renderer module. Slide CONTENT (shapes, text bodies, runs)
 # is DrawingML (ECMA-376 §20/§21); the slide envelope is §19. ALL DML text fields
@@ -85,7 +83,7 @@ sml = ["ooxml-sml/sml-styling", "ooxml-sml/sml-structure", "ooxml-sml/sml-layout
 # they stay unreachable. dml-themes' strict theme parsers (clrScheme/
 # fmtScheme/themeElements) only run on typed theme parts — we self-parse
 # theme1.xml with raw scans, so also unreachable.
-pml = ["dep:ooxml-pml", "dep:ooxml-opc", "dep:quick-xml", "ooxml-dml/dml-text", "ooxml-dml/dml-lines", "ooxml-dml/dml-shapes", "ooxml-dml/dml-themes"]
+pml = ["dep:ooxml-pml", "dep:ooxml-opc", "ooxml-dml/dml-text", "ooxml-dml/dml-lines", "ooxml-dml/dml-shapes", "ooxml-dml/dml-themes"]
 # Enhanced Metafile (EMF, MS-EMF) vector renderer for inline `image/x-emf`
 # picture parts. OFF by default and HAND-ROLLED (no new deps — the DIB decode is
 # a byte loop and the RGBA handoff reuses the existing ImageBitmap pipeline), so
@@ -160,11 +158,13 @@ ooxml-pml = { version = "0.1.1-alpha.2", default-features = false, features = ["
 # in the dependency tree transitively; armed (linked) only by the `pml` feature.
 ooxml-opc = { version = "0.1.1-alpha.2", default-features = false, optional = true }
 
-# quick-xml — only to drive the generated `SlideLayout::from_xml` entry point
-# when self-parsing layout parts (the fork's `FromXml` trait takes a
-# `quick_xml::Reader`). Pinned to the SAME 0.39 the fork uses so the `Reader<R>`
-# type unifies. Armed (linked) only by the `pml` feature.
-quick-xml = { version = "0.39", optional = true }
+# quick-xml — drives the fork's generated `FromXml` entry points when
+# self-parsing parts (`SlideLayout`, `SharedStrings`: the trait takes a
+# `quick_xml::Reader`), and the Markup Compatibility pass every docx goes
+# through (`wml/markup_compat.rs`). Pinned to the SAME 0.39 the fork uses, so
+# the `Reader<R>` type unifies and the lockfile keeps one entry: the fork links
+# it in every build already, so depending on it directly adds no code.
+quick-xml = "0.39"
 
 # Unicode Line Breaking Algorithm (UAX #14). Used to find break opportunities
 # in run text for paragraph wrapping. Latin + basic CJK every-char break out

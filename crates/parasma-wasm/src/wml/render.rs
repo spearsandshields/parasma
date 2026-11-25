@@ -18,7 +18,7 @@ use wasm_bindgen::JsValue;
 use web_sys::ImageBitmap;
 
 use ooxml_wml::ext::StyleContext;
-use ooxml_wml::types::{BlockContent, CTTxbxContent};
+use ooxml_wml::types::CTTxbxContent;
 
 use crate::chart;
 use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
@@ -26,6 +26,7 @@ use crate::engine::images::draw_image_placeholder;
 use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::drawing::is_layout_control;
+use crate::wml::hdr_ftr::{flatten_blocks, FlatBlock};
 use crate::wml::linebreak::{measure_item_text, FieldCode, Item, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::{resolve_numbering_marker, NumberingLevelDef};
 use crate::wml::page::{PagedLine, PagedTableRow, PositionedTextBox, PARA_SENTINEL};
@@ -163,8 +164,13 @@ pub(crate) fn layout_text_box(
 
     let inner_width = (width_px - inset * 2.0).max(10.0);
 
-    for block in &raw.block_content {
-        if let BlockContent::P(p) = block {
+    // Block-level content controls are unwrapped: Word's built-in quote and
+    // sidebar text boxes hold their paragraphs inside one. Tables in a text
+    // box are not laid out yet.
+    let mut blocks = Vec::new();
+    flatten_blocks(&raw.block_content, &mut blocks);
+    for block in blocks {
+        if let FlatBlock::Para(p) = block {
             let marker = resolve_numbering_marker(
                 p, numbering_levels, &mut list_counters, style_ctx,
             );

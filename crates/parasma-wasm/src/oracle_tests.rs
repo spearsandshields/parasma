@@ -9924,3 +9924,97 @@ fn a_non_breaking_hyphen_draws_as_a_hyphen_and_never_breaks() {
     assert_eq!(plain.iter().map(|it| it.text.as_str()).collect::<Vec<_>>(), ["well-", "known"],
         "control: an ordinary hyphen is a break opportunity");
 }
+
+// ─── Markup Compatibility: Word 2010+ text boxes (ECMA-376 Part 3) ──────────
+//
+// Word writes each text box twice inside `mc:AlternateContent`: a `wps` shape
+// in the `Choice` and a VML copy in the `Fallback`. The parser kept the whole
+// element as an unrecognised child, so the text box's text never reached the
+// page. The pin is on content, which the line-geometry oracle cannot see.
+
+/// A paragraph whose run holds a text box written the way Word writes one:
+/// `Choice` (wps, inline) with `choice_text`, `Fallback` (VML) with
+/// `fallback_text`. `requires` is the Choice's `Requires` value.
+fn wrapped_text_box_docx(requires: &str, choice_text: &str, fallback_text: &str) -> Vec<u8> {
+    let txbx = |t: &str| format!(r#"<w:txbxContent><w:p><w:r><w:t>{t}</w:t></w:r></w:p></w:txbxContent>"#);
+    let run = format!(
+        r#"<w:r><mc:AlternateContent><mc:Choice Requires="{requires}"><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="1828800" cy="457200"/><wp:docPr id="1" name="Text Box 1"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="457200"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:txbx>{}</wps:txbx><wps:bodyPr/></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice><mc:Fallback><w:pict><v:shape style="width:144pt;height:36pt"><v:textbox>{}</v:textbox></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>"#,
+        txbx(choice_text),
+        txbx(fallback_text),
+    );
+    let ns = r#"xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:v="urn:schemas-microsoft-com:vml" mc:Ignorable="wps wpg""#;
+    let document = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document {W_NS} {ns}><w:body><w:p><w:r><w:t xml:space="preserve">Before </w:t></w:r>{run}<w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#
+    );
+    let content_types = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>"#.to_string();
+    let root_rels = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>"#.to_string();
+    build_docx(&[
+        ("[Content_Types].xml", content_types),
+        ("_rels/.rels", root_rels),
+        ("word/document.xml", document),
+    ])
+}
+
+/// `wrapped_text_box_docx` whose text-box paragraph sits inside a block-level
+/// content control, the way Word writes its built-in quote and sidebar boxes.
+fn wrapped_text_box_in_content_control_docx(text: &str) -> Vec<u8> {
+    let sdt = format!(r#"<w:sdt><w:sdtPr><w:id w:val="1"/><w:showingPlcHdr/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:sdtContent></w:sdt>"#);
+    let plain = format!(r#"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>"#);
+    unzip_replace(wrapped_text_box_docx("wps", text, "Fallbackbranch"), "word/document.xml", &plain, &sdt)
+}
+
+/// Rebuild `docx` with the first `from` in `part` replaced by `to`.
+fn unzip_replace(docx: Vec<u8>, part: &str, from: &str, to: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(docx)).expect("zip");
+    let mut parts: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).expect("entry");
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).expect("read");
+        let name = entry.name().expect("name").into_owned();
+        if name == part {
+            let xml = String::from_utf8(bytes).expect("utf8");
+            assert!(xml.contains(from), "fixture does not contain {from}");
+            bytes = xml.replacen(from, to, 1).into_bytes();
+        }
+        parts.push((name, bytes));
+    }
+    let refs: Vec<(&str, Vec<u8>)> = parts.iter().map(|(n, b)| (n.as_str(), b.clone())).collect();
+    build_docx(&refs)
+}
+
+/// How many times `word` occurs in the laid-out content.
+fn occurrences(viewer: &Viewer, word: &str) -> usize {
+    content_dumps(viewer).0.matches(word).count()
+}
+
+#[test]
+fn a_word_2010_text_box_shows_its_text_once() {
+    let v = layout(wrapped_text_box_docx("wps", "Chosenbranch", "Fallbackbranch"));
+    assert_eq!(occurrences(&v, "Chosenbranch"), 1, "the understood Choice is laid out");
+    assert_eq!(occurrences(&v, "Fallbackbranch"), 0, "and its Fallback is not, so nothing shows twice");
+    assert_eq!(occurrences(&v, "Before"), 1, "the surrounding text is untouched");
+    assert_eq!(occurrences(&v, "after"), 1);
+}
+
+#[test]
+fn a_text_box_shows_paragraphs_inside_a_content_control() {
+    let v = layout(wrapped_text_box_in_content_control_docx("Quotedtext"));
+    assert_eq!(occurrences(&v, "Quotedtext"), 1);
+}
+
+#[test]
+fn a_choice_the_engine_cannot_draw_falls_back() {
+    let v = layout(wrapped_text_box_docx("wpg", "Chosenbranch", "Fallbackbranch"));
+    assert_eq!(occurrences(&v, "Chosenbranch"), 0);
+    assert_eq!(occurrences(&v, "Fallbackbranch"), 1, "the VML Fallback is laid out instead");
+}
