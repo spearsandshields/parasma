@@ -32,6 +32,7 @@ use crate::wml::drawing::{
     is_layout_control, parse_anchor_position, TextBoxFrame, WrapInfo,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
+use crate::wml::content_walk::{self, Revision, Visit};
 use crate::wml::symbol_font::SymbolFont;
 use crate::{
     collect_char_style_rprs, collect_paragraph_style_rprs, field, PagedLine,
@@ -166,36 +167,6 @@ pub(crate) fn collect_items(
     // NUMPAGES) is tagged with its FieldCode for render-time substitution, and
     // further result runs of that field are suppressed. Unrecognized fields
     // pass their cached result text through unchanged.
-    // Collect runs from a tracked-change wrapper's RunContentChoice list,
-    // tagging each with the change (insertion/deletion). Insertions nested in
-    // deletions (moved text) keep the outer deletion tag — simplification.
-    // `open` is the comment-range snapshot at the wrapper's position; every run
-    // inside the tracked change inherits it (comment ranges that open/close
-    // strictly inside an ins/del are not separately tracked — a v1 simplification
-    // matching the moved-text tag inheritance above).
-    fn collect_tc_runs<'a>(
-        items: &'a [ooxml_wml::types::RunContentChoice],
-        tag: &TrackChange,
-        open: &CommentIds,
-        out: &mut Vec<Pending<'a>>,
-    ) {
-        for it in items {
-            match it {
-                ooxml_wml::types::RunContentChoice::R(r) => {
-                    out.push(Pending::Run(RunEntry {
-                        track_change: Some(tag.clone()),
-                        ..RunEntry::new(r, open.clone())
-                    }));
-                }
-                ooxml_wml::types::RunContentChoice::Ins(c)
-                | ooxml_wml::types::RunContentChoice::Del(c) => {
-                    collect_tc_runs(&c.run_content, tag, open, out);
-                }
-                _ => {}
-            }
-        }
-    }
-
     // Bookmark names declared in this paragraph (internal-link anchor targets).
     // Anchored at paragraph-first-line granularity (see Item::bookmark).
     let mut para_bookmarks: Vec<String> = Vec::new();
@@ -207,6 +178,9 @@ pub(crate) fn collect_items(
     let mut open_comments: CommentIds = OPEN_COMMENT_IDS.with(|c| c.borrow().iter().copied().collect());
     let snapshot = |open: &CommentIds| -> CommentIds { open.clone() };
     let mut field_stack: Vec<FieldFrame> = Vec::new();
+    // The simple field whose document-field value has been emitted, so its
+    // further runs are dropped.
+    let mut simple_field_done: Option<*const ooxml_wml::types::CTSimpleField> = None;
 
     // ── OMML math interleave (§22.1) ──────────────────────────────────────────
     // Math atoms live in `paragraph.extra_children` as PositionedNodes keyed by
@@ -265,12 +239,61 @@ pub(crate) fn collect_items(
                 runs_to_process.push(Pending::Math(mb));
             }
         }
-        match content {
-            ooxml_wml::types::ParagraphContent::BookmarkStart(b)
-                if !b.name.is_empty() && b.name != "_GoBack" => {
+        // Every run and marker at any depth inside this item, with the
+        // context its wrappers give it (hyperlink, simple field, tracked
+        // change): see `wml::content_walk`.
+        content_walk::walk_one(content, content_walk::Context::default(), &mut |visit, ctx| match visit {
+            Visit::BookmarkStart(b) => {
+                if !b.name.is_empty() && b.name != "_GoBack" {
                     para_bookmarks.push(b.name.clone());
                 }
-            ooxml_wml::types::ParagraphContent::R(r) => {
+            }
+            // Comment range start (§17.13.4.4). Stamp a synthetic scroll anchor
+            // (`comment_anchor_name(id)`) onto this paragraph's first line via the
+            // existing bookmark machinery, so `comments()` can resolve each
+            // range's start to a `{page, y}` with the `bookmark_position`
+            // pattern. It also OPENS the range here: its id joins the open set,
+            // so every subsequent run on this and following paragraphs is
+            // stamped with it until the matching `commentRangeEnd`.
+            Visit::CommentRangeStart(id) => {
+                para_bookmarks.push(comment_anchor_name(id));
+                if !open_comments.contains(&id) {
+                    open_comments.push(id);
+                }
+            }
+            // Comment range end (§17.13.4.3) closes the range: drop its id from
+            // the open set so following runs are no longer stamped with it.
+            Visit::CommentRangeEnd(id) => open_comments.retain(|open| *open != id),
+            Visit::Run(r) => {
+                // Hyperlink target (external URL through its relationship, or
+                // internal anchor), carried on each run so the placement pass
+                // can emit clickable rects. Tracked insertions and deletions
+                // (§17.13.5) render with redline styling.
+                let entry = RunEntry {
+                    link: ctx.hyperlink.and_then(hyperlink_target),
+                    track_change: ctx.revision.map(|(kind, author)| match kind {
+                        Revision::Inserted => TrackChange::Inserted(author.to_owned()),
+                        Revision::Deleted => TrackChange::Deleted(author.to_owned()),
+                    }),
+                    ..RunEntry::new(r, snapshot(&open_comments))
+                };
+                // Simple field (§17.16.19): a live PAGE/NUMPAGES code tags each
+                // run; a document field's value replaces the first run's text
+                // and the rest are dropped.
+                if let Some(fld) = ctx.simple_field {
+                    let field = resolve_field_code(&fld.instr);
+                    if field.is_some() {
+                        runs_to_process.push(Pending::Run(RunEntry { field, ..entry }));
+                    } else if let Some(v) = field::resolve_doc_field(&fld.instr, &doc_dates) {
+                        if simple_field_done != Some(fld as *const _) {
+                            simple_field_done = Some(fld as *const _);
+                            runs_to_process.push(Pending::Run(RunEntry { text_override: Some(v), ..entry }));
+                        }
+                    } else {
+                        runs_to_process.push(Pending::Run(entry));
+                    }
+                    return;
+                }
                 // fldChar marker run → drive the state machine, never render.
                 if let Some(fc_type) = run_fld_char_type(r) {
                     match fc_type {
@@ -291,7 +314,7 @@ pub(crate) fn collect_items(
                             field_stack.pop();
                         }
                     }
-                    continue;
+                    return;
                 }
                 // instrText run → accumulate instruction, never render.
                 if let Some(instr) = run_instr_text(r) {
@@ -300,7 +323,7 @@ pub(crate) fn collect_items(
                             frame.instr.push_str(&instr);
                         }
                     }
-                    continue;
+                    return;
                 }
                 // Ordinary run: plain text, or a field's result region.
                 if let Some(frame) = field_stack.last_mut() {
@@ -308,111 +331,23 @@ pub(crate) fn collect_items(
                         if let Some(code) = frame.code {
                             if !frame.emitted {
                                 frame.emitted = true;
-                                runs_to_process.push(Pending::Run(RunEntry {
-                                    field: Some(code),
-                                    ..RunEntry::new(r, snapshot(&open_comments))
-                                }));
+                                runs_to_process.push(Pending::Run(RunEntry { field: Some(code), ..entry }));
                             }
                         } else if let Some(val) = frame.static_value.clone() {
                             if !frame.emitted {
                                 frame.emitted = true;
-                                runs_to_process.push(Pending::Run(RunEntry {
-                                    text_override: Some(val),
-                                    ..RunEntry::new(r, snapshot(&open_comments))
-                                }));
+                                runs_to_process.push(Pending::Run(RunEntry { text_override: Some(val), ..entry }));
                             }
                         } else {
-                            runs_to_process.push(Pending::Run(RunEntry::new(r, snapshot(&open_comments))));
+                            runs_to_process.push(Pending::Run(entry));
                         }
                     }
                     // else: instruction-region run without instrText — suppress
-                    continue;
+                    return;
                 }
-                runs_to_process.push(Pending::Run(RunEntry::new(r, snapshot(&open_comments))));
+                runs_to_process.push(Pending::Run(entry));
             }
-            // Tracked insertion / deletion (§17.13.5.18/.14): render the runs
-            // with redline styling. Inserted text is part of the document and
-            // MUST render; previously these fell through and were dropped.
-            ooxml_wml::types::ParagraphContent::Ins(c) => {
-                collect_tc_runs(&c.run_content, &TrackChange::Inserted(c.author.clone()), &open_comments, &mut runs_to_process);
-            }
-            ooxml_wml::types::ParagraphContent::Del(c) => {
-                collect_tc_runs(&c.run_content, &TrackChange::Deleted(c.author.clone()), &open_comments, &mut runs_to_process);
-            }
-            ooxml_wml::types::ParagraphContent::FldSimple(fld) => {
-                let field = resolve_field_code(&fld.instr);
-                let static_value = if field.is_none() {
-                    field::resolve_doc_field(&fld.instr, &doc_dates)
-                } else {
-                    None
-                };
-                let mut injected = false;
-                for child in &fld.paragraph_content {
-                    if let ooxml_wml::types::ParagraphContent::R(r) = child {
-                        if let Some(ref v) = static_value {
-                            if !injected {
-                                injected = true;
-                                runs_to_process.push(Pending::Run(RunEntry {
-                                    text_override: Some(v.clone()),
-                                    ..RunEntry::new(r, snapshot(&open_comments))
-                                }));
-                            }
-                        } else {
-                            runs_to_process.push(Pending::Run(RunEntry {
-                                field,
-                                ..RunEntry::new(r, snapshot(&open_comments))
-                            }));
-                        }
-                    }
-                }
-            }
-            ooxml_wml::types::ParagraphContent::Hyperlink(h) => {
-                // Resolve the link target: external URL (r:id → relationship)
-                // or internal anchor (w:anchor → bookmark name). Carried on each
-                // run so the placement pass can emit clickable rects.
-                let target = if let Some(ref rid) = h.id {
-                    HYPERLINK_RELS.with(|m| m.borrow().get(rid).map(|u| format!("url:{u}")))
-                } else {
-                    h.anchor.as_ref().map(|a| format!("anchor:{a}"))
-                };
-                for child in &h.paragraph_content {
-                    if let ooxml_wml::types::ParagraphContent::R(r) = child {
-                        runs_to_process.push(Pending::Run(RunEntry {
-                            link: target.clone(),
-                            ..RunEntry::new(r, snapshot(&open_comments))
-                        }));
-                    }
-                }
-            }
-            ooxml_wml::types::ParagraphContent::Sdt(sdt) => {
-                if let Some(ref content) = sdt.sdt_content {
-                    for child in &content.paragraph_content {
-                        if let ooxml_wml::types::ParagraphContent::R(r) = child {
-                            runs_to_process.push(Pending::Run(RunEntry::new(r, snapshot(&open_comments))));
-                        }
-                    }
-                }
-            }
-            // Comment range start (§17.13.4.4). Stamp a synthetic scroll anchor
-            // (`comment_anchor_name(id)`) onto this paragraph's first line via the
-            // existing bookmark machinery, so `comments()` can resolve each
-            // range's start to a `{page, y}` with the `bookmark_position` pattern
-            // pattern. It also OPENS the range here: its id joins the
-            // open set, so every subsequent run on this and following paragraphs
-            // is stamped with it until the matching `commentRangeEnd`.
-            ooxml_wml::types::ParagraphContent::CommentRangeStart(c) => {
-                para_bookmarks.push(comment_anchor_name(c.id));
-                if !open_comments.contains(&c.id) {
-                    open_comments.push(c.id);
-                }
-            }
-            // Comment range end (§17.13.4.3) closes the range: drop its id from
-            // the open set so following runs are no longer stamped with it.
-            ooxml_wml::types::ParagraphContent::CommentRangeEnd(c) => {
-                open_comments.retain(|id| *id != c.id);
-            }
-            _ => {}
-        }
+        });
     }
 
     // Trailing math atoms (position at/after the last content child, or a
@@ -2075,6 +2010,15 @@ pub(crate) fn symbol_face_families(
 fn sym_code(sym: &ooxml_wml::types::CTSym) -> Option<u32> {
     let bytes = sym.char.as_deref().filter(|b| !b.is_empty() && b.len() <= 3)?;
     Some(bytes.iter().fold(0u32, |acc, b| acc << 8 | u32::from(*b)))
+}
+
+/// A hyperlink's target (§17.16.22): its external URL, through the
+/// relationship `r:id` names, or its internal bookmark `w:anchor`.
+fn hyperlink_target(h: &ooxml_wml::types::Hyperlink) -> Option<String> {
+    match h.id {
+        Some(ref rid) => HYPERLINK_RELS.with(|m| m.borrow().get(rid).map(|u| format!("url:{u}"))),
+        None => h.anchor.as_ref().map(|a| format!("anchor:{a}")),
+    }
 }
 
 /// Concatenated `instrText` content of a run, or None if it has none.

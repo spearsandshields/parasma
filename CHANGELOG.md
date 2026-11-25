@@ -36,6 +36,12 @@ are held stable regardless.
   colours with Word's lighter and darker variants, transparency, and shapes
   coloured by the theme's shape styles. Text in a shape that is not a
   rectangle shows without a frame until shape outlines are drawn.
+- Documents: text inside smart tags, custom XML and direction overrides is no
+  longer dropped, and wrappers nested in each other (a hyperlink inside a
+  content control, a smart tag inside a tracked insertion) keep their text and
+  formatting. Tracked moves draw as insertions and deletions. Table rows and
+  cells wrapped in content controls, and tables inside a content control in a
+  cell, are laid out. Fonts used only inside such wrappers are now fetched.
 - Documents: tracked deletions keep their line breaks.
 - Fonts: names the font map had silently dropped, such as Consolas, Palatino
   Linotype, Futura and Menlo, now reach their substitute, so monospaced text

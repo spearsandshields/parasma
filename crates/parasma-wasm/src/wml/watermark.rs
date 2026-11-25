@@ -12,7 +12,6 @@
 
 use std::collections::HashSet;
 
-use ooxml_wml::ext::ParagraphExt;
 
 use crate::engine::color::vml_color_to_css;
 use crate::engine::vml::{
@@ -141,7 +140,7 @@ pub(crate) fn find_watermark_in_blocks(
 ) -> Option<Watermark> {
     for b in blocks {
         if let ooxml_wml::types::BlockContent::P(p) = b {
-            for run in p.runs() {
+            for run in crate::wml::content_walk::paragraph_runs(p) {
                 for rc in &run.run_content {
                     if let ooxml_wml::types::RunContent::Pict(pict) = rc {
                         if let Some(wm) = extract_watermark(pict, part_paths, image_keys) {

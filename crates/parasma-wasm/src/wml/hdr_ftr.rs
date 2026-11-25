@@ -9,6 +9,7 @@
 //! `position_hdr_ftr_lines`; `render_page` (also in `lib.rs`) only reads the
 //! resulting `header_lines`/`footer_lines`.
 
+use crate::wml::content_walk::{flatten_blocks, FlatBlock};
 use std::collections::HashMap;
 
 use wasm_bindgen::JsValue;
@@ -55,52 +56,6 @@ impl LaidOutHdrFtr {
             self.even_footer.as_ref().or(self.default_footer.as_ref())
         } else {
             self.default_footer.as_ref()
-        }
-    }
-}
-
-/// A block resolved to its renderable form, with block-level content controls
-/// (`<w:sdt>`) unwrapped. Word commonly wraps header/footer page-number fields
-/// in an sdt; without unwrapping, the content is silently dropped.
-pub(crate) enum FlatBlock<'a> {
-    Para(&'a ooxml_wml::types::Paragraph),
-    Table(&'a ooxml_wml::types::Table),
-}
-
-/// Flatten `block_content`, descending into block-level `<w:sdt>` content
-/// controls so their inner paragraphs/tables are rendered. Other block markup
-/// (bookmarks, ranges, customXml) is skipped, matching prior behavior.
-pub(crate) fn flatten_blocks<'a>(blocks: &'a [BlockContent], out: &mut Vec<FlatBlock<'a>>) {
-    for b in blocks {
-        match b {
-            BlockContent::P(p) => out.push(FlatBlock::Para(p)),
-            BlockContent::Tbl(t) => out.push(FlatBlock::Table(t)),
-            BlockContent::Sdt(sdt) => {
-                if let Some(content) = &sdt.sdt_content {
-                    flatten_block_choices(&content.block_content, out);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Sdt inner content is a sibling enum (`BlockContentChoice`); same flattening.
-fn flatten_block_choices<'a>(
-    blocks: &'a [ooxml_wml::types::BlockContentChoice],
-    out: &mut Vec<FlatBlock<'a>>,
-) {
-    use ooxml_wml::types::BlockContentChoice as BC;
-    for b in blocks {
-        match b {
-            BC::P(p) => out.push(FlatBlock::Para(p)),
-            BC::Tbl(t) => out.push(FlatBlock::Table(t)),
-            BC::Sdt(sdt) => {
-                if let Some(content) = &sdt.sdt_content {
-                    flatten_block_choices(&content.block_content, out);
-                }
-            }
-            _ => {}
         }
     }
 }

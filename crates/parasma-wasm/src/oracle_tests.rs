@@ -10052,3 +10052,106 @@ fn a_choice_the_engine_cannot_draw_falls_back() {
     assert_eq!(occurrences(&v, "Chosenbranch"), 0);
     assert_eq!(occurrences(&v, "Fallbackbranch"), 1, "the VML Fallback is laid out instead");
 }
+
+// ─── Paragraph content at any depth (wml/content_walk.rs) ───────────────────
+
+/// Lay out one paragraph whose content is `inner`, and return its text items.
+fn walk_items(inner: &str) -> Vec<Item> {
+    text_items(&layout(numbering_docx("", "", &format!("<w:p>{inner}</w:p>"))))
+}
+
+fn run(text: &str) -> String {
+    format!(r#"<w:r><w:t xml:space="preserve">{text}</w:t></w:r>"#)
+}
+
+#[test]
+fn text_inside_smart_tags_and_custom_xml_is_laid_out() {
+    let items = walk_items(&format!(
+        r#"{}<w:smartTag w:uri="urn:schemas-microsoft-com:office:smarttags" w:element="City">{}</w:smartTag><w:customXml w:element="name">{}</w:customXml>"#,
+        run("Visit "), run("Seattle "), run("today")
+    ));
+    let text: String = items.iter().map(|it| it.text.as_str()).collect();
+    assert_eq!(text, "Visit Seattle today");
+}
+
+#[test]
+fn wrappers_nest_and_keep_their_context() {
+    // A hyperlink inside a run-level content control keeps its link.
+    let items = walk_items(&format!(
+        r#"<w:sdt><w:sdtContent><w:hyperlink w:anchor="target">{}</w:hyperlink></w:sdtContent></w:sdt><w:bookmarkStart w:id="0" w:name="target"/>"#,
+        run("Linked")
+    ));
+    assert_eq!(items[0].text, "Linked");
+    assert_eq!(items[0].link.as_deref(), Some("anchor:target"));
+}
+
+#[test]
+fn moves_and_nested_wrappers_inside_revisions_draw_as_revisions() {
+    let items = walk_items(&format!(
+        r#"<w:moveFrom w:id="1" w:author="A">{}</w:moveFrom><w:moveTo w:id="2" w:author="A">{}</w:moveTo><w:ins w:id="3" w:author="B"><w:smartTag w:element="x">{}</w:smartTag></w:ins>"#,
+        run("Gone "), run("Moved "), run("Tagged")
+    ));
+    let by_text = |t: &str| items.iter().find(|it| it.text.trim() == t).unwrap_or_else(|| panic!("{t} missing"));
+    assert!(by_text("Gone").style.strikethrough, "moveFrom draws as deleted");
+    assert_ne!(by_text("Moved").style.underline, crate::engine::paint::Underline::None, "moveTo draws as inserted");
+    assert_ne!(by_text("Tagged").style.underline, crate::engine::paint::Underline::None, "a smart tag inside an insertion is inserted");
+}
+
+#[test]
+fn a_font_used_only_inside_a_smart_tag_reaches_the_font_plan() {
+    let v = layout(numbering_docx("", "", &format!(
+        r#"<w:p><w:smartTag w:element="x"><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Serif</w:t></w:r></w:smartTag></w:p>"#
+    )));
+    assert!(v.families_used_native().iter().any(|f| f == "Tinos"));
+}
+
+/// All text laid out on page 1, body and tables, in dump order.
+fn all_text(v: &Viewer) -> String {
+    content_dumps(v).0.lines().filter_map(|l| {
+        let a = l.find(" \"")? + 2;
+        let b = a + l[a..].find('"')?;
+        Some(l[a..b].to_string())
+    }).collect::<Vec<_>>().join("")
+}
+
+fn tbl(rows: &str) -> String {
+    format!(r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl>"#)
+}
+
+fn tc(inner: &str) -> String {
+    format!(r#"<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>{inner}</w:tc>"#)
+}
+
+fn para(text: &str) -> String {
+    format!("<w:p>{}</w:p>", run(text))
+}
+
+fn sdt(inner: &str) -> String {
+    format!("<w:sdt><w:sdtPr/><w:sdtContent>{inner}</w:sdtContent></w:sdt>")
+}
+
+#[test]
+fn rows_and_cells_inside_content_controls_are_laid_out() {
+    let rows = format!(
+        "<w:tr>{}</w:tr>{}",
+        tc(&para("Plain")),
+        sdt(&sdt(&format!("<w:tr>{}</w:tr>", sdt(&sdt(&tc(&para("Deep")))))))
+    );
+    let text = all_text(&layout(numbering_docx("", "", &(tbl(&rows) + "<w:p/>"))));
+    assert!(text.contains("Plain") && text.contains("Deep"), "{text}");
+}
+
+#[test]
+fn a_table_inside_a_content_control_in_a_cell_is_laid_out() {
+    let inner = tbl(&format!("<w:tr>{}</w:tr>", tc(&para("Nested"))));
+    let outer = tbl(&format!("<w:tr>{}</w:tr>", tc(&(sdt(&inner) + "<w:p/>"))));
+    let text = all_text(&layout(numbering_docx("", "", &(outer + "<w:p/>"))));
+    assert!(text.contains("Nested"), "{text}");
+}
+
+#[test]
+fn block_level_custom_xml_is_laid_out() {
+    let body = format!(r#"<w:customXml w:element="section">{}</w:customXml>"#, para("Wrapped"));
+    let text = all_text(&layout(numbering_docx("", "", &body)));
+    assert!(text.contains("Wrapped"), "{text}");
+}

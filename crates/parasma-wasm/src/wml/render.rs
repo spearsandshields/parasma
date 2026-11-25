@@ -26,7 +26,7 @@ use crate::engine::images::draw_image_placeholder;
 use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::pt_to_px;
 use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
-use crate::wml::hdr_ftr::{flatten_blocks, FlatBlock};
+use crate::wml::content_walk::{flatten_blocks, FlatBlock};
 use crate::wml::linebreak::{measure_item_text, FieldCode, Item, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::{resolve_numbering_marker, NumberingLevelDef};
 use crate::wml::page::{PagedLine, PagedTableRow, PositionedTextBox, PARA_SENTINEL};

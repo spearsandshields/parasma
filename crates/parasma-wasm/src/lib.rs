@@ -124,9 +124,8 @@ use wml::float::{
     ActiveFloat, AnchorVRelFrom, WRAP_EPS,
 };
 use wml::float_resolve::{resolve_anchor_position, FrameCtx};
-use wml::hdr_ftr::{
-    flatten_blocks, layout_section_hdr_ftr, position_hdr_ftr_lines, FlatBlock, LaidOutHdrFtr,
-};
+use wml::content_walk::{flatten_blocks, FlatBlock};
+use wml::hdr_ftr::{layout_section_hdr_ftr, position_hdr_ftr_lines, LaidOutHdrFtr};
 use wml::linebreak::{
     author_color, comment_anchor_name, justify_line, pack_lines, LineSegment, OPEN_COMMENT_IDS,
 };
@@ -161,7 +160,7 @@ pub(crate) use wml::paragraph::{
 use wml::render::{layout_text_box, render_line, render_table_row, render_text_box, substitute_page_fields};
 use wml::section::{PageGeometry, SectionBreakType};
 use wml::table::{
-    collect_cell_paragraphs, collect_row_cells, layout_table, CellFloatDraw, CellVAlign,
+    collect_cell_paragraphs, collect_row_cells, layout_table, table_rows, CellFloatDraw, CellVAlign,
 };
 use wml::watermark::{find_watermark_in_blocks, Watermark};
 use engine::paint::{GlyphFeatures, Kerning, RunStyle, Underline, VertAlign};
@@ -178,7 +177,7 @@ use crate::engine::paint::Painter;
 
 use ooxml_wml::ext::{
     DrawingChartExt, DrawingExt, MathExt, ParagraphExt, RunExt,
-    StyleContext, TableExt,
+    StyleContext,
 };
 // `BodyExt`/`SectionPropertiesExt` are needed only by the `#[cfg(test)]`
 // footer-id probe below (`doc.body().section_properties()`); the section
@@ -2182,7 +2181,7 @@ impl Viewer {
         let rel_ids: Vec<String> = {
             let mut ids: Vec<String> = Vec::new();
             let mut collect_from_para = |p: &ooxml_wml::types::Paragraph| {
-                for run in p.runs() {
+                for run in crate::wml::content_walk::paragraph_runs(p) {
                     for drawing in run.drawings() {
                         for rel_id in drawing.all_image_rel_ids() {
                             ids.push(rel_id.to_string());
@@ -2194,7 +2193,7 @@ impl Viewer {
                 match block {
                     BlockContent::P(p) => collect_from_para(p),
                     BlockContent::Tbl(t) => {
-                        for row in t.rows() {
+                        for row in table_rows(t) {
                             for cell in collect_row_cells(row) {
                                 for para in collect_cell_paragraphs(cell) {
                                     collect_from_para(para);
@@ -2247,7 +2246,7 @@ impl Viewer {
         {
             let mut chart_rel_ids: Vec<String> = Vec::new();
             let mut collect_charts = |p: &ooxml_wml::types::Paragraph| {
-                for run in p.runs() {
+                for run in crate::wml::content_walk::paragraph_runs(p) {
                     for drawing in run.drawings() {
                         for rel_id in drawing.all_chart_rel_ids() {
                             chart_rel_ids.push(rel_id.to_string());
@@ -2259,7 +2258,7 @@ impl Viewer {
                 match block {
                     BlockContent::P(p) => collect_charts(p),
                     BlockContent::Tbl(t) => {
-                        for row in t.rows() {
+                        for row in table_rows(t) {
                             for cell in collect_row_cells(row) {
                                 for para in collect_cell_paragraphs(cell) {
                                     collect_charts(para);
@@ -2631,7 +2630,7 @@ impl Viewer {
                 match block {
                     BlockContent::P(para) => w.collect_para_fonts(para, families, fc),
                     BlockContent::Tbl(table) => {
-                        for row in table.rows() {
+                        for row in table_rows(table) {
                             for cell in collect_row_cells(row) {
                                 for para in collect_cell_paragraphs(cell) {
                                     w.collect_para_fonts(para, families, fc);
@@ -2694,7 +2693,7 @@ impl Viewer {
         let block_has_math = |blocks: &[BlockContent]| -> bool {
             blocks.iter().any(|block| match block {
                 BlockContent::P(para) => crate::wml::math::paragraph_has_math(para),
-                BlockContent::Tbl(table) => table.rows().iter().any(|row| {
+                BlockContent::Tbl(table) => table_rows(table).iter().any(|row| {
                     collect_row_cells(row).into_iter().any(|cell| {
                         collect_cell_paragraphs(cell)
                             .into_iter()
@@ -2733,7 +2732,7 @@ impl Viewer {
                 match block {
                     BlockContent::P(para) => w.collect_para_codepoints(para, fcp),
                     BlockContent::Tbl(table) => {
-                        for row in table.rows() {
+                        for row in table_rows(table) {
                             for cell in collect_row_cells(row) {
                                 for para in collect_cell_paragraphs(cell) {
                                     w.collect_para_codepoints(para, fcp);
@@ -8545,7 +8544,7 @@ impl WmlRenderer {
         family_codepoints: &mut HashMap<String, HashSet<u32>>,
     ) {
         let theme = &self.theme_fonts;
-        for run in paragraph.runs() {
+        for run in crate::wml::content_walk::paragraph_runs(paragraph) {
             let family = declared_ascii_family(
                 run,
                 &collect_char_style_rprs(run, &self.style_ctx),
@@ -8614,7 +8613,7 @@ impl WmlRenderer {
         font_cache: &FontCache,
     ) {
         let theme = &self.theme_fonts;
-        for run in paragraph.runs() {
+        for run in crate::wml::content_walk::paragraph_runs(paragraph) {
             let family = declared_ascii_family(
                 run,
                 &collect_char_style_rprs(run, &self.style_ctx),

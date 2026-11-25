@@ -811,7 +811,7 @@ pub(crate) fn is_display_math_paragraph(paragraph: &ooxml_wml::types::Paragraph)
     if !paragraph.text().trim().is_empty() {
         return false;
     }
-    !paragraph.runs().iter().any(|r| r.has_images())
+    !crate::wml::content_walk::paragraph_runs(paragraph).iter().any(|r| r.has_images())
 }
 
 fn count_display_math(

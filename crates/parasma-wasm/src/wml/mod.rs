@@ -18,6 +18,7 @@
 
 pub(crate) mod bidi;
 pub(crate) mod border;
+pub(crate) mod content_walk;
 pub(crate) mod drawing;
 pub(crate) mod float;
 pub(crate) mod float_resolve;

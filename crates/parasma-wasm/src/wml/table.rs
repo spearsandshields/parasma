@@ -11,12 +11,13 @@
 //! Cell borders (§17.4.42) stay table-domain (paragraph and page borders
 //! live in `wml::border`; cell borders are §17.4).
 
+use crate::wml::content_walk::{flatten_blocks, FlatBlock};
 use std::collections::HashMap;
 
 use wasm_bindgen::prelude::*;
 
 use ooxml_wml::ext::{CellExt, StyleContext, TableExt};
-use ooxml_wml::types::{BlockContent, STBorder, STJcTable, STTblWidth};
+use ooxml_wml::types::{STBorder, STJcTable, STTblWidth};
 
 use crate::engine::color::ooxml_color_to_css;
 use crate::engine::fonts::{FontCache, ThemeFonts, DEFAULT_FONT_PT};
@@ -617,7 +618,7 @@ pub(crate) fn layout_table(
         .map(|s| s.tbl_style_pr.as_slice())
         .unwrap_or(&[]);
 
-    let table_rows = table.rows();
+    let table_rows = table_rows(table);
     let num_rows = table_rows.len();
 
     let mut rows = Vec::new();
@@ -674,9 +675,13 @@ pub(crate) fn layout_table(
 
             let mut cell_blocks: Vec<CellBlock> = Vec::new();
             if !v_merged_away {
-                for block in &cell.block_content {
+                // Content controls and custom XML around a cell's blocks are
+                // unwrapped at any depth, tables included.
+                let mut blocks = Vec::new();
+                flatten_blocks(&cell.block_content, &mut blocks);
+                for block in blocks {
                     match block {
-                        BlockContent::P(p) => {
+                        FlatBlock::Para(p) => {
                             let marker = resolve_numbering_marker(p, numbering_levels, list_counters, style_ctx);
                             if let Some(cap) = capture.as_deref_mut() {
                                 cap.location = cell_para_location(cap.nested, cap_sec, cap_block, row_idx, cell_idx);
@@ -684,7 +689,7 @@ pub(crate) fn layout_table(
                             let cache = layout_paragraph(font_cache, p, cell_content_width, marker.as_ref(), style_ctx, default_ppr, default_tab_stop_px, theme_fonts, tbl_style_id, &cond_rprs, &cond_pprs, None, is_exact_row, capture.as_deref_mut())?;
                             cell_blocks.push(CellBlock::Paragraph(cache));
                         }
-                        BlockContent::Tbl(nested) => {
+                        FlatBlock::Table(nested) => {
                             // Nested-table fix — descend the nested table with `nested` set so its
                             // cell paragraphs capture as BODY fallback (see the v1
                             // LIMITATION note above). Restore the prior flag for the
@@ -695,21 +700,6 @@ pub(crate) fn layout_table(
                             if let Some(cap) = capture.as_deref_mut() { cap.nested = prev_nested; }
                             cell_blocks.push(CellBlock::Table(nested_cache));
                         }
-                        BlockContent::Sdt(sdt) => {
-                            if let Some(ref content) = sdt.sdt_content {
-                                for inner in &content.block_content {
-                                    if let ooxml_wml::types::BlockContentChoice::P(p) = inner {
-                                        let marker = resolve_numbering_marker(p, numbering_levels, list_counters, style_ctx);
-                                        if let Some(cap) = capture.as_deref_mut() {
-                                            cap.location = cell_para_location(cap.nested, cap_sec, cap_block, row_idx, cell_idx);
-                                        }
-                                        let cache = layout_paragraph(font_cache, p, cell_content_width, marker.as_ref(), style_ctx, default_ppr, default_tab_stop_px, theme_fonts, tbl_style_id, &cond_rprs, &cond_pprs, None, is_exact_row, capture.as_deref_mut())?;
-                                        cell_blocks.push(CellBlock::Paragraph(cache));
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
                     }
                 }
             }
@@ -1025,44 +1015,65 @@ fn collect_conditional_run_properties<'a>(
     result
 }
 
-pub(crate) fn collect_row_cells(row: &ooxml_wml::types::CTRow) -> Vec<&ooxml_wml::types::TableCell> {
-    let mut cells = Vec::new();
-    for c in &row.cells {
-        match c {
-            ooxml_wml::types::CellContent::Tc(cell) => cells.push(cell.as_ref()),
-            ooxml_wml::types::CellContent::Sdt(sdt) => {
-                if let Some(ref content) = sdt.sdt_content {
-                    for inner in &content.cells {
-                        if let ooxml_wml::types::CellContent::Tc(cell) = inner {
-                            cells.push(cell.as_ref());
-                        }
+/// A table's rows, at any depth inside row-level content controls
+/// (§17.5.2.30) and custom XML (§17.5.1.5). The parser's `rows()` returns only
+/// direct rows, so rows wrapped in a control were not laid out.
+pub(crate) fn table_rows(table: &ooxml_wml::types::Table) -> Vec<&ooxml_wml::types::CTRow> {
+    fn collect<'a>(rows: &'a [ooxml_wml::types::RowContent], out: &mut Vec<&'a ooxml_wml::types::CTRow>) {
+        use ooxml_wml::types::RowContent as R;
+        for row in rows {
+            match row {
+                R::Tr(tr) => out.push(tr),
+                R::Sdt(sdt) => {
+                    if let Some(content) = &sdt.sdt_content {
+                        collect(&content.rows, out);
                     }
                 }
+                R::CustomXml(c) => collect(&c.rows, out),
+                _ => {}
             }
-            _ => {}
         }
     }
-    cells
+    let mut out = Vec::new();
+    collect(&table.rows, &mut out);
+    out
 }
 
-pub(crate) fn collect_cell_paragraphs(cell: &ooxml_wml::types::TableCell) -> Vec<&ooxml_wml::types::Paragraph> {
-    let mut paras = Vec::new();
-    for block in &cell.block_content {
-        match block {
-            BlockContent::P(p) => paras.push(p.as_ref()),
-            BlockContent::Sdt(sdt) => {
-                if let Some(ref content) = sdt.sdt_content {
-                    for inner in &content.block_content {
-                        if let ooxml_wml::types::BlockContentChoice::P(p) = inner {
-                            paras.push(p.as_ref());
-                        }
+/// A row's cells, at any depth inside cell-level content controls
+/// (§17.5.2.32) and custom XML (§17.5.1.4).
+pub(crate) fn collect_row_cells(row: &ooxml_wml::types::CTRow) -> Vec<&ooxml_wml::types::TableCell> {
+    fn collect<'a>(cells: &'a [ooxml_wml::types::CellContent], out: &mut Vec<&'a ooxml_wml::types::TableCell>) {
+        use ooxml_wml::types::CellContent as C;
+        for cell in cells {
+            match cell {
+                C::Tc(tc) => out.push(tc),
+                C::Sdt(sdt) => {
+                    if let Some(content) = &sdt.sdt_content {
+                        collect(&content.cells, out);
                     }
                 }
+                C::CustomXml(c) => collect(&c.cells, out),
+                _ => {}
             }
-            _ => {}
         }
     }
-    paras
+    let mut out = Vec::new();
+    collect(&row.cells, &mut out);
+    out
+}
+
+/// A cell's paragraphs, through content controls and custom XML at any depth.
+/// Paragraphs of nested tables are not included.
+pub(crate) fn collect_cell_paragraphs(cell: &ooxml_wml::types::TableCell) -> Vec<&ooxml_wml::types::Paragraph> {
+    let mut blocks = Vec::new();
+    flatten_blocks(&cell.block_content, &mut blocks);
+    blocks
+        .into_iter()
+        .filter_map(|b| match b {
+            FlatBlock::Para(p) => Some(p),
+            FlatBlock::Table(_) => None,
+        })
+        .collect()
 }
 
 fn extract_table_border_info(props: &ooxml_wml::types::TableProperties) -> (String, bool) {
