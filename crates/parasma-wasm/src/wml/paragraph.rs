@@ -682,6 +682,9 @@ pub(crate) struct ParagraphLayout {
     pub(crate) border_bottom: Option<Box<BorderEdge>>,
     pub(crate) border_left: Option<Box<BorderEdge>>,
     pub(crate) border_right: Option<Box<BorderEdge>>,
+    /// §17.3.1.24 `between`: the rule between this paragraph and the next
+    /// of the same box.
+    pub(crate) border_between: Option<Box<BorderEdge>>,
     pub(crate) page_break_before: bool,
     pub(crate) keep_next: bool,
     /// §17.3.1.6 bidi — RTL paragraph base direction for UAX#9 reordering.
@@ -731,6 +734,64 @@ impl IndentLayers {
 /// dropped when its own paragraph has contextual spacing and the two share a
 /// style (§17.3.1.9). `prev` is the earlier paragraph's style, its
 /// contextual-spacing flag and its after-spacing.
+impl ParagraphLayout {
+    /// The height a top border takes above the paragraph's first line: its
+    /// distance from the text and its width (§17.3.1.42).
+    pub(crate) fn border_reserve_top(&self) -> f64 {
+        self.border_top.as_ref().map_or(0.0, |b| b.space_px + b.line.band_width())
+    }
+
+    /// The height a bottom border takes below the last line (§17.3.1.7).
+    pub(crate) fn border_reserve_bottom(&self) -> f64 {
+        self.border_bottom.as_ref().map_or(0.0, |b| b.space_px + b.line.band_width())
+    }
+
+    /// Whether `next` continues this paragraph's border box: the same
+    /// borders, between rule included, and the same indents (§17.3.1.24).
+    fn shares_border_box(&self, next: &Self) -> bool {
+        let bordered = self.border_top.is_some() || self.border_bottom.is_some()
+            || self.border_left.is_some() || self.border_right.is_some() || self.border_between.is_some();
+        bordered
+            && self.border_top == next.border_top
+            && self.border_bottom == next.border_bottom
+            && self.border_left == next.border_left
+            && self.border_right == next.border_right
+            && self.border_between == next.border_between
+            && (self.indent_left_px - next.indent_left_px).abs() < 0.01
+            && (self.indent_right_px - next.indent_right_px).abs() < 0.01
+    }
+}
+
+/// §17.3.1.24: consecutive paragraphs with the same borders share one box.
+/// Only the first draws the top border and only the last the bottom;
+/// between them the `between` rule, if any, draws as the top of each
+/// follower; and a follower's side rules reach up across the gap so the
+/// box's sides run unbroken. `layouts` are a run of blocks in order, `None`
+/// for a table, which ends a box. Declared: across a page break the sides
+/// still reach up, and the box is not closed and reopened.
+pub(crate) fn join_border_boxes(mut layouts: Vec<Option<&mut ParagraphLayout>>) {
+    let joins: Vec<bool> = (1..layouts.len())
+        .map(|i| match (&layouts[i - 1], &layouts[i]) {
+            (Some(a), Some(b)) => a.shares_border_box(b),
+            _ => false,
+        })
+        .collect();
+    for i in 1..layouts.len() {
+        if !joins[i - 1] {
+            continue;
+        }
+        let (before, after) = layouts.split_at_mut(i);
+        let (Some(a), Some(b)) = (before[i - 1].as_deref_mut(), after[0].as_deref_mut()) else { continue };
+        a.border_bottom = None;
+        b.border_top = b.border_between.clone();
+        let reach = paragraph_gap(Some((a.style_id.as_deref(), a.contextual_spacing, a.space_after_px)), b)
+            + b.border_reserve_top();
+        for side in [&mut b.border_left, &mut b.border_right].into_iter().flatten() {
+            side.reach_up = reach;
+        }
+    }
+}
+
 pub(crate) fn paragraph_gap(prev: Option<(Option<&str>, bool, f64)>, cur: &ParagraphLayout) -> f64 {
     let Some((prev_style, prev_contextual, prev_after)) = prev else {
         return cur.space_before_px;
@@ -1011,26 +1072,21 @@ impl ParagraphLayout {
             .flatten(),
         };
 
-        let pbdr = paragraph.p_pr.as_ref()
-            .and_then(|ppr| ppr.paragraph_border.as_ref())
-            .or_else(|| {
-                for ppr in &style_pprs {
-                    if ppr.paragraph_border.is_some() {
-                        return ppr.paragraph_border.as_ref();
-                    }
-                }
-                None
-            });
-        let (border_top, border_bottom, border_left, border_right) = if let Some(bdr) = pbdr {
-            (
-                resolve_border_edge(bdr.top.as_deref(), theme_fonts),
-                resolve_border_edge(bdr.bottom.as_deref(), theme_fonts),
-                resolve_border_edge(bdr.left.as_deref(), theme_fonts),
-                resolve_border_edge(bdr.right.as_deref(), theme_fonts),
-            )
-        } else {
-            (None, None, None, None)
+        // §17.3.1.24: each edge inherits on its own, from the paragraph's
+        // pBdr, its style chain, then the document defaults; the first that
+        // sets the edge decides, a nil there removing it.
+        let pbdrs: Vec<&ooxml_wml::types::CTPBdr> = paragraph.p_pr.as_ref()
+            .and_then(|ppr| ppr.paragraph_border.as_deref())
+            .into_iter()
+            .chain(style_pprs.iter().filter_map(|ppr| ppr.paragraph_border.as_deref()))
+            .chain(default_ppr.and_then(|d| d.paragraph_border.as_deref()))
+            .collect();
+        let edge = |get: fn(&ooxml_wml::types::CTPBdr) -> &Option<Box<ooxml_wml::types::CTBorder>>| {
+            pbdrs.iter().find_map(|b| get(b).as_deref()).and_then(|b| resolve_border_edge(Some(b), theme_fonts))
         };
+        let (border_top, border_bottom, border_left, border_right, border_between) = (
+            edge(|b| &b.top), edge(|b| &b.bottom), edge(|b| &b.left), edge(|b| &b.right), edge(|b| &b.between),
+        );
 
         Self {
             alignment,
@@ -1050,6 +1106,7 @@ impl ParagraphLayout {
             border_bottom,
             border_left,
             border_right,
+            border_between,
             page_break_before: resolve_ppr_toggle(
                 direct_ppr.and_then(|p| check_toggle(&p.page_break_before)),
                 |p| &p.page_break_before,
@@ -1260,6 +1317,7 @@ mod line_height_tests {
             border_bottom: None,
             border_left: None,
             border_right: None,
+            border_between: None,
             page_break_before: false,
             keep_next: false,
             keep_lines: false,

@@ -9,10 +9,14 @@ use ooxml_wml::types::STBorder;
 
 /// A paragraph or page border edge: its line, and its distance from the
 /// text (or the page edge) it frames.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub(crate) struct BorderEdge {
     pub(crate) line: Edge,
     pub(crate) space_px: f64,
+    /// A side rule of a paragraph that continues the box of the one above
+    /// (`join_border_boxes`) reaches this far above the paragraph's first
+    /// line, across the gap, so the box's sides run unbroken.
+    pub(crate) reach_up: f64,
 }
 
 /// A WML border's drawn line (§17.18.2 `ST_Border`), or `None` for none and
@@ -76,7 +80,7 @@ pub(crate) fn resolve_border_edge(
 ) -> Option<Box<BorderEdge>> {
     let b = border?;
     let line = border_element_line(b, theme)?;
-    Some(Box::new(BorderEdge { line, space_px: pt_to_px(b.space.unwrap_or(0) as f64) }))
+    Some(Box::new(BorderEdge { line, space_px: pt_to_px(b.space.unwrap_or(0) as f64), reach_up: 0.0 }))
 }
 
 /// §17.6.10 `w:pgBorders` resolved for rendering: up to four edges plus the
@@ -108,7 +112,7 @@ pub(crate) fn page_border_edge(
     space: Option<u64>,
 ) -> Option<BorderEdge> {
     let line = border_line(*value, color, size)?;
-    Some(BorderEdge { line, space_px: pt_to_px(space.unwrap_or(0) as f64) })
+    Some(BorderEdge { line, space_px: pt_to_px(space.unwrap_or(0) as f64), reach_up: 0.0 })
 }
 
 #[cfg(test)]

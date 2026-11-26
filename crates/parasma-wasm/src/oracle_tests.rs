@@ -8381,7 +8381,10 @@ fn oracle_attributes_snapshot() {
     // NEW pin — nothing pre-existing is re-recorded. Its whole job is to make the
     // ITEM stream non-vacuous: the axes below had ZERO occurrences across all 269
     // documents the suite laid out before it.
-    assert_oracle("oracle-attributes", oracle_attributes_docx(), 1, 0xb0b46bc9a53d2147);
+    // Re-baselined for §17.3.1.24 border reserves: the bordered paragraph's
+    // top border (2px + 5.33px space) moves its text down 7.33px, and its
+    // bottom border (1.33px + 2.67px) the lines after it a further 4px.
+    assert_oracle("oracle-attributes", oracle_attributes_docx(), 1, 0xc91bd188f07dd54e);
 }
 
 /// The fixture above is only worth its weight if it really does carry the axes
@@ -11649,4 +11652,35 @@ fn diagonal_cell_borders_are_drawn() {
     let v = layout(bordered_table_docx(GRID, &[&format!("{}{}", bcell(diag, "x"), bcell("", "y"))], ""));
     let rows = table_rows_of(&v);
     assert!(rows[0].cells[0].diagonals.as_ref().is_some_and(|d| d.down.is_some() && d.up.is_none()));
+}
+
+// ── Paragraph border boxes (§17.3.1.24) ─────────────────────────────────────
+
+const BOX: &str = r#"<w:pBdr><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:between w:val="dashed" w:sz="4"/></w:pBdr>"#;
+
+/// Three paragraphs with the same borders share one box: the top on the
+/// first, the bottom on the last, the between rule above each follower, and
+/// the followers' sides reaching up across the gap.
+#[test]
+fn identically_bordered_paragraphs_share_one_box() {
+    let body = format!("{}{}{}", p(BOX, &r("", "one")), p(BOX, &r("", "two")), p(BOX, &r("", "three")));
+    let lines = body_lines(&layout(numbering_docx("", "", &body)));
+    use crate::engine::border::LineStyle;
+    let style = |b: &Option<Box<crate::wml::border::BorderEdge>>| b.as_ref().map(|b| b.line.style);
+    assert_eq!(
+        lines.iter().map(|l| (style(&l.border_top), style(&l.border_bottom))).collect::<Vec<_>>(),
+        [(Some(LineStyle::Single), None), (Some(LineStyle::Dashed), None), (Some(LineStyle::Dashed), Some(LineStyle::Single))],
+    );
+    assert!(lines[1].border_left.as_ref().is_some_and(|b| b.reach_up > 0.0));
+}
+
+/// Each edge inherits on its own: a direct pBdr that sets only the left
+/// keeps the style's top and bottom.
+#[test]
+fn paragraph_border_edges_inherit_one_by_one() {
+    let style = r#"<w:style w:type="paragraph" w:styleId="Boxed"><w:name w:val="Boxed"/><w:pPr><w:pBdr><w:top w:val="single" w:sz="4"/><w:bottom w:val="double" w:sz="4"/></w:pBdr></w:pPr></w:style>"#;
+    let body = p(r#"<w:pStyle w:val="Boxed"/><w:pBdr><w:left w:val="single" w:sz="4"/></w:pBdr>"#, &r("", "x"));
+    let lines = body_lines(&layout(numbering_docx(style, "", &body)));
+    let l = &lines[0];
+    assert!(l.border_top.is_some() && l.border_bottom.is_some() && l.border_left.is_some());
 }

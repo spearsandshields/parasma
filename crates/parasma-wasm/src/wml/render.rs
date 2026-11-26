@@ -421,13 +421,16 @@ pub(crate) fn render_line(
                 stroke_styled(p, &b.line, EdgeSide::Bottom, (left, y), (right, y));
             }
         }
+        // A paragraph continuing the box above reaches its sides up across
+        // the gap from its first line.
+        let reach = |b: &crate::wml::border::BorderEdge| if line.is_first_line { b.reach_up } else { 0.0 };
         if let Some(ref b) = line.border_left {
             let x = left - b.space_px;
-            stroke_styled(p, &b.line, EdgeSide::Left, (x, bdr_top), (x, bdr_top + line.line_height));
+            stroke_styled(p, &b.line, EdgeSide::Left, (x, bdr_top - reach(b)), (x, bdr_top + line.line_height));
         }
         if let Some(ref b) = line.border_right {
             let x = right + b.space_px;
-            stroke_styled(p, &b.line, EdgeSide::Right, (x, bdr_top), (x, bdr_top + line.line_height));
+            stroke_styled(p, &b.line, EdgeSide::Right, (x, bdr_top - reach(b)), (x, bdr_top + line.line_height));
         }
     }
 

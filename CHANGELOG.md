@@ -252,6 +252,12 @@ are held stable regardless.
   table's, then the heavier, then the darker), instead of whichever was
   painted last. Built-in table styles no longer rule lines between header
   cells that Word leaves open, and diagonal cell borders are drawn.
+- Paragraph borders: consecutive paragraphs with the same borders share one
+  box, such as a code block or a callout: the top on the first, the bottom
+  on the last, the "between" rule between them, and unbroken sides. A
+  border's width and distance now take room, so a heading's bottom rule no
+  longer runs into the next line, and a paragraph that sets only some of its
+  borders keeps the rest from its style.
 
 ### Changed
 

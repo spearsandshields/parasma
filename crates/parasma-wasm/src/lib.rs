@@ -3267,6 +3267,12 @@ impl Viewer {
                 }
             }
 
+            // §17.3.1.24: paragraphs with the same borders share one box.
+            wml::paragraph::join_border_boxes(block_caches.iter_mut().map(|b| match b {
+                BlockCache::Paragraph(c) => Some(&mut c.layout),
+                BlockCache::Table(_) => None,
+            }).collect());
+
             // Phase 2: lay out text box content inside items
             for block in &mut block_caches {
                 if let BlockCache::Paragraph(ref mut cache) = block {
@@ -4552,11 +4558,14 @@ impl Viewer {
                                     .map_or((None, false), |(id, flag)| (Some(id.as_str()), *flag));
                                 y_in_page += paragraph_gap(Some((prev.0, prev.1, prev_space_after_px)), &cache.layout);
                             }
+                            // A top border's space and width sit above the text.
+                            y_in_page += cache.layout.border_reserve_top();
                         }
 
                         let para_height: f64 = cache.lines.iter()
                             .map(|l| cache.layout.line_height(l.max_font_pt, l.max_ascent + l.max_descent, l.max_image_height))
-                            .sum();
+                            .sum::<f64>()
+                            + cache.layout.border_reserve_bottom();
 
                         if !skip_spacing_and_break {
                             let need_break = if cache.layout.keep_lines && y_in_page + para_height > content_height {
@@ -5172,6 +5181,8 @@ impl Viewer {
                                 place_float_aware!('relay, cache, block_idx, items, first_batch, true);
                             }
                         }
+                        // A bottom border's space and width sit below the text.
+                        y_in_page += cache.layout.border_reserve_bottom();
                         prev_space_after_px = cache.layout.space_after_px;
                         prev_para_style = cache.layout.style_id.clone()
                             .map(|id| (id, cache.layout.contextual_spacing));
@@ -5649,6 +5660,7 @@ impl Viewer {
                                     let gap = cache.layout.space_before_px;
                                     y_in_page += gap;
                                 }
+                                y_in_page += cache.layout.border_reserve_top();
                                 for (line_idx, line) in cache.lines.iter().enumerate() {
                                     let line_height = cache.layout.line_height(
                                         line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
@@ -5692,7 +5704,7 @@ impl Viewer {
                                     }));
                                     y_in_page += line_height;
                                 }
-                                y_in_page += cache.layout.space_after_px;
+                                y_in_page += cache.layout.border_reserve_bottom() + cache.layout.space_after_px;
                             }
                             BlockCache::Table(table) => {
                                 for row in &table.rows {
