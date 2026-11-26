@@ -8883,6 +8883,17 @@ impl RunStyle {
         )
         .and_then(highlight_color_to_css);
 
+        // §17.3.2.4 `w:bdr`: a box round the run, `space` points out.
+        let border = resolve_run_option(
+            &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
+            |rpr| rpr.bdr.as_deref().map(|b| {
+                crate::wml::border::border_element_line(b, theme_fonts).map(|line| Box::new(
+                    crate::engine::border::RunBorder { line, space_px: pt_to_px(b.space.unwrap_or(0) as f64) },
+                ))
+            }),
+        )
+        .flatten();
+
         let run_shading = if highlight.is_some() {
             None
         } else {
@@ -8931,7 +8942,7 @@ impl RunStyle {
         .map(|half_pts| pt_to_px(half_pts / 2.0))
         .unwrap_or(0.0);
 
-        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, auto_color, underline, underline_color, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None }
+        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, auto_color, underline, underline_color, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None, border }
     }
 
     fn font_css(&self) -> String {

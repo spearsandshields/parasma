@@ -11702,3 +11702,25 @@ fn headers_and_cells_keep_paragraph_borders_and_shading() {
     assert_eq!(line.para_shading.as_deref(), Some("#FFF2CC"));
     assert!(line.border_top.is_some() && line.is_first_line);
 }
+
+/// §17.3.2.4: two neighbouring runs with the same border share one box —
+/// four sides drawn once, in the border's colour.
+#[test]
+fn neighbouring_runs_with_one_border_share_a_box() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let bdr = r#"<w:bdr w:val="single" w:sz="4" w:color="00B0F0"/>"#;
+    let body = p("", &format!("{}{}{}", r(bdr, "boxed "), r(bdr, "words"), r("", " plain")));
+    let v = layout(numbering_docx("", "", &body));
+    let rec = RecordingPainter::new();
+    v.paint_wml_page(0, &rec, None).expect("paint");
+    let mut in_box = false;
+    let mut sides = 0;
+    for c in rec.take() {
+        match c {
+            DrawCmd::SetStrokeStyle(s) => in_box = s == "#00B0F0",
+            DrawCmd::Stroke if in_box => sides += 1,
+            _ => {}
+        }
+    }
+    assert_eq!(sides, 4, "one box of four sides");
+}

@@ -198,6 +198,8 @@ pub(crate) struct RunStyle {
     /// no real font's (a symbol font's re-encoded characters) keeps its base
     /// text face's. `None` means `family`.
     pub(crate) line_metrics_family: Option<String>,
+    /// A box round the run's text (boxed: rare).
+    pub(crate) border: Option<Box<crate::engine::border::RunBorder>>,
 }
 
 impl Default for RunStyle {
@@ -235,6 +237,7 @@ impl Default for RunStyle {
             baseline_shift_px: 0.0,
             glyph_features: GlyphFeatures::HOST_DEFAULT,
             line_metrics_family: None,
+            border: None,
         }
     }
 }
@@ -259,7 +262,7 @@ impl RunStyle {
             run_is_complex, color, underline, strikethrough, double_strike,
             vert_align, highlight, run_shading, char_spacing_px, all_caps,
             small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px,
-            glyph_features, line_metrics_family,
+            glyph_features, line_metrics_family, border,
             // An input to `color`: the page pass has already turned automatic
             // text white where it sits on a dark background, so `col` shows it.
             auto_color: _,
@@ -294,6 +297,9 @@ impl RunStyle {
         }
         if let Some(c) = underline_color {
             let _ = write!(out, " ulc{c:?}");
+        }
+        if let Some(b) = border {
+            let _ = write!(out, " bdr{}/{:.2}/{:?}/{:.2}", b.line.color, b.line.width_px, b.line.style, b.space_px);
         }
     }
 }

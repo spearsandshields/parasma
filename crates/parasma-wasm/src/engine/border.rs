@@ -98,6 +98,14 @@ impl LineStyle {
     }
 }
 
+/// A run's border (§17.3.2.4 `w:bdr`): a box round its text, `space_px`
+/// out from it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RunBorder {
+    pub line: Edge,
+    pub space_px: f64,
+}
+
 /// How light or dark a part of a 3-D border draws against the border colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tone {

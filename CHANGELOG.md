@@ -261,6 +261,8 @@ are held stable regardless.
 - Paragraph borders and shading now show in headers and footers (the rule
   under a header or above a footer that many templates use), in table cells,
   in footnotes and in text boxes. Nested tables inside header cells are drawn.
+- Text borders: boxed words and labels (common in forms and East Asian
+  documents) draw their box, one box round neighbouring runs that share it.
 
 ### Changed
 

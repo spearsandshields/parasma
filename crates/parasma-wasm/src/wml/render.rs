@@ -448,6 +448,40 @@ pub(crate) fn render_line(
     }
 
     for seg in &line.segments {
+      // §17.3.2.4 run borders: one box round each stretch of neighbouring
+      // items with the same border, from a little above the text to a little
+      // below, `space` out on every side. Declared: the box takes no room in
+      // the line, and Word's border box metrics are approximated from the
+      // font size.
+      {
+          use crate::engine::border::{stroke_styled, EdgeSide};
+          let mut x = seg.x_start;
+          let mut i = 0;
+          while i < seg.items.len() {
+              let Some(b) = seg.items[i].style.border.clone() else {
+                  x += seg.items[i].width;
+                  i += 1;
+                  continue;
+              };
+              let start = x;
+              let mut font_px: f64 = 0.0;
+              while i < seg.items.len() && seg.items[i].style.border.as_deref() == Some(&*b) {
+                  font_px = font_px.max(pt_to_px(seg.items[i].style.font_pt));
+                  x += seg.items[i].width;
+                  i += 1;
+              }
+              let (x0, x1) = (start - b.space_px, x + b.space_px);
+              let (y0, y1) = (line.baseline_y - font_px * 0.85 - b.space_px, line.baseline_y + font_px * 0.25 + b.space_px);
+              for (side, a, c) in [
+                  (EdgeSide::Top, (x0, y0), (x1, y0)),
+                  (EdgeSide::Bottom, (x0, y1), (x1, y1)),
+                  (EdgeSide::Left, (x0, y0), (x0, y1)),
+                  (EdgeSide::Right, (x1, y0), (x1, y1)),
+              ] {
+                  stroke_styled(p, &b.line, side, a, c);
+              }
+          }
+      }
       let mut x = seg.x_start;
       for item in &seg.items {
         if let Some(m) = &item.math {
