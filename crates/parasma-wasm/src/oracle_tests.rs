@@ -11500,3 +11500,56 @@ fn the_note_band_draws_the_note_below_a_black_separator() {
     assert!(texts.iter().any(|t| t.contains("Footnote")), "note text drawn: {texts:?}");
     assert!(cmds.iter().any(|c| matches!(c, DrawCmd::SetStrokeStyle(s) if s == "#000000")), "black separator");
 }
+
+// ── Comment anchoring and card text (§17.13.4) ──────────────────────────────
+
+fn comment_docx(body: &str, comments: &str) -> Vec<u8> {
+    let document = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document {W_NS} {R_NS}><w:body>{body}<w:sectPr>{PG}</w:sectPr></w:body></w:document>"#
+    );
+    let comments = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments {W_NS}>{comments}</w:comments>"#);
+    build_docx(&[
+        ("[Content_Types].xml", r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#.to_string()),
+        ("_rels/.rels", r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#.to_string()),
+        ("word/document.xml", document),
+        ("word/_rels/document.xml.rels", r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#.to_string()),
+        ("word/comments.xml", comments),
+    ])
+}
+
+fn comment(id: i64, body: &str) -> String {
+    format!(r#"<w:comment w:id="{id}" w:author="A" w:initials="A">{body}</w:comment>"#)
+}
+
+/// A range start with no end anchors its comment without shading the rest
+/// of the document; a reference alone, or an end alone, still anchors one;
+/// a repeated id is one comment.
+#[test]
+fn comment_anchors_survive_broken_ranges() {
+    let body = format!(
+        "<w:p>{}{}</w:p><w:p>{}</w:p><w:p>{}<w:r><w:commentReference w:id=\"6\"/></w:r></w:p><w:p>{}<w:commentRangeEnd w:id=\"7\"/></w:p>",
+        r#"<w:commentRangeStart w:id="5"/>"#, r("", "opened"), r("", "later text"), r("", "point"), r("", "end only"),
+    );
+    let comments = [comment(5, "<w:p/>"), comment(6, "<w:p/>"), comment(7, "<w:p/>"), comment(7, "<w:p/>")].concat();
+    let v = layout(comment_docx(&body, &comments));
+    let shaded = body_lines(&v).iter().flat_map(|l| l.segments.iter().flat_map(|s| &s.items))
+        .any(|i| !i.comment_ids.is_empty());
+    assert!(!shaded, "an unclosed range shades nothing");
+    let ids: Vec<i64> = v.resolve_comments().iter().map(|(m, ..)| m.id).collect();
+    assert_eq!(ids, [5, 6, 7]);
+}
+
+/// The card's text comes from every paragraph, inside tables too, with the
+/// runs of a hyperlink.
+#[test]
+fn comment_text_reads_wrappers_and_tables() {
+    let body = format!("<w:p>{}{}<w:commentRangeEnd w:id=\"1\"/></w:p>", r#"<w:commentRangeStart w:id="1"/>"#, r("", "x"));
+    let card = format!(
+        r#"<w:p><w:hyperlink w:anchor="a">{}</w:hyperlink></w:p><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p>{}</w:p></w:tc></w:tr></w:tbl><w:p/>"#,
+        r("", "linked words"), r("", "cell words"),
+    );
+    let v = layout(comment_docx(&body, &comment(1, &card)));
+    let text = v.resolve_comments()[0].0.text.clone();
+    assert_eq!(text, "linked words\ncell words\n", "the empty paragraph after the table is a line too");
+}

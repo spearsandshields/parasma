@@ -265,14 +265,31 @@ pub(crate) fn collect_items(
             // stamped with it until the matching `commentRangeEnd`.
             Visit::CommentRangeStart(id) => {
                 para_bookmarks.push(comment_anchor_name(id));
-                if !open_comments.contains(&id) {
+                // A start with no end anchors the comment as a point: an
+                // open range would shade the rest of the document.
+                if comment_range_has(id, true) && !open_comments.contains(&id) {
                     open_comments.push(id);
                 }
             }
             // Comment range end (§17.13.4.3) closes the range: drop its id from
             // the open set so following runs are no longer stamped with it.
-            Visit::CommentRangeEnd(id) => open_comments.retain(|open| *open != id),
+            Visit::CommentRangeEnd(id) => {
+                open_comments.retain(|open| *open != id);
+                // An end with no start is where the comment is anchored.
+                if !comment_range_has(id, false) {
+                    para_bookmarks.push(comment_anchor_name(id));
+                }
+            }
             Visit::Run(r) => {
+                // A comment with no range at all is anchored at its reference
+                // mark (a point comment).
+                for rc in &r.run_content {
+                    if let ooxml_wml::types::RunContent::CommentReference(c) = rc {
+                        if !comment_range_has(c.id, false) && !comment_range_has(c.id, true) {
+                            para_bookmarks.push(comment_anchor_name(c.id));
+                        }
+                    }
+                }
                 // Hyperlink target (external URL through its relationship, or
                 // internal anchor), carried on each run so the placement pass
                 // can emit clickable rects. Tracked insertions and deletions
@@ -1992,6 +2009,54 @@ thread_local! {
     /// stacking; ids are deduped on push.
     pub(crate) static OPEN_COMMENT_IDS: std::cell::RefCell<Vec<i64>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    static COMMENT_RANGES: std::cell::RefCell<Option<CommentRanges>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Which comments' ranges have a start and which an end in the document
+/// body (§17.13.4.3-4), so a start with no end anchors the comment without
+/// opening a range that would never close, and a comment with no start (an
+/// end alone, or only a `commentReference`) still gets an anchor.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CommentRanges {
+    starts: std::collections::HashSet<i64>,
+    ends: std::collections::HashSet<i64>,
+}
+
+impl CommentRanges {
+    pub(crate) fn scan(blocks: &[ooxml_wml::types::BlockContent]) -> Self {
+        let mut out = Self::default();
+        for p in content_walk::all_paragraphs(blocks) {
+            content_walk::walk(&p.paragraph_content, Default::default(), &mut |visit, _| match visit {
+                Visit::CommentRangeStart(id) => {
+                    out.starts.insert(id);
+                }
+                Visit::CommentRangeEnd(id) => {
+                    out.ends.insert(id);
+                }
+                _ => {}
+            });
+        }
+        out
+    }
+
+    pub(crate) fn extend(&mut self, other: Self) {
+        self.starts.extend(other.starts);
+        self.ends.extend(other.ends);
+    }
+
+    /// Make `self` the ranges the layout anchors comments by.
+    pub(crate) fn publish(&self) {
+        COMMENT_RANGES.with(|r| *r.borrow_mut() = Some(self.clone()));
+    }
+}
+
+/// Whether comment `id`'s range has a start / an end. Unpublished (a lone
+/// paragraph laid out outside a document) every range is taken as whole.
+fn comment_range_has(id: i64, end: bool) -> bool {
+    COMMENT_RANGES.with(|r| match &*r.borrow() {
+        Some(ranges) => if end { ranges.ends.contains(&id) } else { ranges.starts.contains(&id) },
+        None => true,
+    })
 }
 
 /// Stable redline color for an author name (Word assigns per-author colors;

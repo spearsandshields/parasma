@@ -234,6 +234,11 @@ are held stable regardless.
   (justified too), spacing and tables, and each note shows its number where
   the note places it rather than in front of every paragraph. The separator
   line is black and Word's length. Notes whose identifier is 0 now appear.
+- Comments: a comment whose marked range never ends no longer highlights
+  the rest of the document. Comments marked only by their reference, or only
+  by the end of their range, as some generators and older Word files write
+  them, appear in the panel. A comment listed twice appears once, and its
+  text includes words inside links, tables and content controls.
 
 ### Changed
 

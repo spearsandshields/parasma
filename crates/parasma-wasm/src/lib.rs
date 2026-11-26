@@ -175,7 +175,7 @@ use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageBitmap};
 use crate::engine::paint::Painter;
 
 use ooxml_wml::ext::{
-    DrawingChartExt, DrawingExt, MathExt, ParagraphExt, RunExt,
+    DrawingChartExt, DrawingExt, MathExt, RunExt,
     StyleContext,
 };
 use ooxml_wml::types::{
@@ -819,6 +819,8 @@ pub(crate) struct WmlRenderer {
     endnotes: HashMap<i64, FootnoteEndnote>,
     /// Every note's mark, numbered in document order at load (§17.11).
     note_marks: wml::notes::NoteMarks,
+    /// Which comment ranges have a start and an end in the body.
+    comment_ranges: wml::linebreak::CommentRanges,
     /// Comment display metadata in document order, parsed from
     /// `word/comments.xml` at load time. Empty when the document has no
     /// comments part. Joined to range-start positions by the `comments()`
@@ -2492,13 +2494,12 @@ impl Viewer {
                 .comment
                 .iter()
                 .map(|c| {
-                    let text = c
-                        .block_content
-                        .iter()
-                        .filter_map(|b| match b {
-                            ooxml_wml::types::BlockContent::P(p) => Some(p.text()),
-                            _ => None,
-                        })
+                    // Every paragraph, inside tables and content controls too,
+                    // with runs inside hyperlinks and other wrappers. Declared:
+                    // the card is plain text (no formatting, lists or images).
+                    let text = wml::content_walk::all_paragraphs(&c.block_content)
+                        .into_iter()
+                        .map(|p| wml::content_walk::paragraph_runs(p).iter().map(|r| r.text()).collect::<String>())
                         .collect::<Vec<_>>()
                         .join("\n");
                     CommentMeta {
@@ -2542,6 +2543,11 @@ impl Viewer {
         let mut sections = build_sections(&mut doc, &theme_fonts);
         let note_marks = wml::notes::NoteMarks::number(sections.iter().map(|s| (s.blocks.as_slice(), s.notes)));
         wml::notes::publish(&note_marks);
+        let mut comment_ranges = wml::linebreak::CommentRanges::default();
+        for s in &sections {
+            comment_ranges.extend(wml::linebreak::CommentRanges::scan(&s.blocks));
+        }
+        comment_ranges.publish();
 
         // Extract images referenced from header/footer parts. Each header/footer
         // has its own .rels namespace, so rIds are prefixed with the part path
@@ -2595,6 +2601,7 @@ impl Viewer {
             footnotes: footnotes_map,
             endnotes: endnotes_map,
             note_marks,
+            comment_ranges,
             comments: comments_meta,
         });
         Ok(())
@@ -3070,6 +3077,7 @@ impl Viewer {
         // and the notes' marks.
         FIELD_DATES.with(|d| d.set(*self.doc_dates.borrow()));
         wml::notes::publish(&w.note_marks);
+        w.comment_ranges.publish();
         RESERVE_TRAILING_BLANKS.with(|c| c.set(w.reserve_trailing_blanks));
         // Reset the cross-paragraph open-comment-range carrier so this layout
         // (a fresh document, or a re-layout after a switch) starts with none open.
@@ -8137,7 +8145,12 @@ impl Viewer {
         }
         let pages = self.pages.borrow();
         let mut out = Vec::new();
+        let mut seen = HashSet::new();
         for meta in &w.comments {
+            // A repeated id is one comment (the first); the parts disagree.
+            if !seen.insert(meta.id) {
+                continue;
+            }
             let anchor = comment_anchor_name(meta.id);
             // Resolve the range-start to {page, y}. A comment whose anchor never
             // laid out (e.g. range start inside skipped/unsupported content) is
