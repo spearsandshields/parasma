@@ -11726,7 +11726,7 @@ fn neighbouring_runs_with_one_border_share_a_box() {
 // ── Table look (§17.4.55): which style regions a table uses ─────────────────
 
 /// A table style with a fill per region, for reading which region won.
-const LOOK_STYLE: &str = r#"<w:style w:type="table" w:styleId="Look"><w:name w:val="Look"/><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="lastRow"><w:rPr><w:b/></w:rPr></w:tblStylePr><w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:val="clear" w:fill="333333"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band2Horz"><w:tcPr><w:shd w:val="clear" w:fill="BBBBBB"/></w:tcPr></w:tblStylePr></w:style>"#;
+const LOOK_STYLE: &str = r#"<w:style w:type="table" w:styleId="Look"><w:name w:val="Look"/><w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="lastRow"><w:rPr><w:b/></w:rPr></w:tblStylePr><w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:val="clear" w:fill="333333"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band2Horz"><w:tcPr><w:shd w:val="clear" w:fill="BBBBBB"/></w:tcPr></w:tblStylePr></w:style>"#;
 
 /// The fill of every cell of a four-row, two-column table that uses
 /// `LOOK_STYLE` with the given tblLook.
@@ -11950,11 +11950,12 @@ fn restart_cant_split_row_taller_than_a_page() {
 
 const ALL_SINGLE: &str = r#"<w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders>"#;
 
-/// `Base` rules a grid, pads the left side, enlarges the text and fills the
-/// header; `Derived` is based on it and adds only a first band.
+/// `Base` rules a grid, pads the left side, enlarges the text, fills the
+/// header and sets the band size; `Derived` is based on it and adds only a
+/// first band.
 fn derived_styles() -> String {
     format!(
-        r#"<w:style w:type="table" w:styleId="Base"><w:name w:val="Base"/><w:pPr><w:spacing w:after="400"/></w:pPr><w:rPr><w:sz w:val="48"/></w:rPr><w:tblPr>{ALL_SINGLE}<w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr></w:style><w:style w:type="table" w:styleId="Derived"><w:name w:val="Derived"/><w:basedOn w:val="Base"/><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr></w:style>"#
+        r#"<w:style w:type="table" w:styleId="Base"><w:name w:val="Base"/><w:pPr><w:spacing w:after="400"/></w:pPr><w:rPr><w:sz w:val="48"/></w:rPr><w:tblPr><w:tblStyleRowBandSize w:val="1"/>{ALL_SINGLE}<w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr></w:style><w:style w:type="table" w:styleId="Derived"><w:name w:val="Derived"/><w:basedOn w:val="Base"/><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr></w:style>"#
     )
 }
 
@@ -11984,7 +11985,7 @@ fn a_table_without_a_style_uses_the_default_table_style() {
     let styles = derived_styles().replace(r#"w:styleId="Derived""#, r#"w:default="1" w:styleId="Derived""#);
     let rows = two_rows("", &styles);
     assert!(rows[0].cells[0].border_top.is_some(), "the default style's grid");
-    assert_eq!(rows[0].cells[0].fill_color, fill("AAAAAA"), "no table look: no header, bands on");
+    assert_eq!(rows[1].cells[0].fill_color, fill("AAAAAA"), "its band");
 }
 
 /// A direct tblBorders that names one edge keeps the style's other edges.
@@ -11997,4 +11998,113 @@ fn direct_table_borders_override_the_style_edge_by_edge() {
     assert!(cell.border_bottom.is_none(), "the direct nil removes the rule between rows");
     assert!(cell.border_left.is_some() && cell.border_right.is_some(), "the style's left and insideV stay");
     assert!(rows[1].cells[0].border_bottom.is_some(), "the style's bottom stays");
+}
+
+// ── Style regions as Word applies them (measured in Word, not §17.7.6) ──────
+
+/// A table style from `regions` (pairs of region type and fill) and the
+/// contents of its tblPr.
+fn region_style(tbl_pr: &str, regions: &[(&str, &str)]) -> String {
+    let regions: String = regions.iter()
+        .map(|(t, f)| format!(r#"<w:tblStylePr w:type="{t}"><w:tcPr><w:shd w:val="clear" w:fill="{f}"/></w:tcPr></w:tblStylePr>"#))
+        .collect();
+    format!(r#"<w:style w:type="table" w:styleId="R"><w:name w:val="R"/><w:tblPr>{tbl_pr}</w:tblPr>{regions}</w:style>"#)
+}
+
+/// Every cell's fill, as the two hex digits its test colour repeats, in a
+/// table of `rows` x 4 one-letter cells that uses style `R`; `--` is no fill.
+/// The first `header_rows` rows are marked tblHeader.
+fn region_map(style: &str, tbl_look: &str, rows: usize, header_rows: usize) -> Vec<String> {
+    let cell = r#"<w:tc><w:tcPr><w:tcW w:w="1000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc>"#.repeat(4);
+    let trs: String = (0..rows)
+        .map(|r| format!("<w:tr>{}{cell}</w:tr>", if r < header_rows { "<w:trPr><w:tblHeader/></w:trPr>" } else { "" }))
+        .collect();
+    let grid = r#"<w:gridCol w:w="1000"/>"#.repeat(4);
+    let body = format!(r#"<w:tbl><w:tblPr><w:tblStyle w:val="R"/><w:tblW w:w="4000" w:type="dxa"/>{tbl_look}</w:tblPr><w:tblGrid>{grid}</w:tblGrid>{trs}</w:tbl><w:p/>"#);
+    let v = layout(numbering_docx(style, "", &body));
+    table_rows_of(&v).iter()
+        .map(|r| r.cells.iter().map(|c| c.fill_color.as_deref().map_or("--".to_string(), |f| f[1..3].to_string())).collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+const BAND_SIZES: &str = r#"<w:tblStyleRowBandSize w:val="1"/><w:tblStyleColBandSize w:val="1"/>"#;
+const BANDS: [(&str, &str); 4] = [("band1Horz", "111111"), ("band2Horz", "222222"), ("band1Vert", "AAAAAA"), ("band2Vert", "BBBBBB")];
+const NO_EDGES: &str = r#"<w:tblLook w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="0" w:noVBand="0"/>"#;
+const ALL_EDGES: &str = r#"<w:tblLook w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="0" w:noVBand="0"/>"#;
+
+/// Bands show only on an axis whose band size the style sets.
+#[test]
+fn bands_need_a_band_size() {
+    assert_eq!(region_map(&region_style("", &BANDS), NO_EDGES, 2, 0), ["-- -- -- --", "-- -- -- --"]);
+    let rows_only = region_style(r#"<w:tblStyleRowBandSize w:val="1"/>"#, &BANDS);
+    assert_eq!(region_map(&rows_only, NO_EDGES, 2, 0), ["11 11 11 11", "22 22 22 22"]);
+}
+
+/// Column bands lie over row bands, and a band is as many rows or columns
+/// wide as its size.
+#[test]
+fn column_bands_lie_over_row_bands() {
+    assert_eq!(region_map(&region_style(BAND_SIZES, &BANDS), NO_EDGES, 2, 0), ["AA BB AA BB", "AA BB AA BB"]);
+    let wide = region_style(r#"<w:tblStyleRowBandSize w:val="2"/><w:tblStyleColBandSize w:val="2"/>"#, &BANDS[..2]);
+    assert_eq!(region_map(&wide, NO_EDGES, 5, 0), ["11 11 11 11", "11 11 11 11", "22 22 22 22", "22 22 22 22", "11 11 11 11"]);
+    let wide_cols = region_style(r#"<w:tblStyleColBandSize w:val="2"/>"#, &BANDS[2..]);
+    assert_eq!(region_map(&wide_cols, NO_EDGES, 1, 0), ["AA AA BB BB"]);
+}
+
+/// Row regions lie over column regions, corner cells over both. A band
+/// skips the edge rows or columns of its own axis that the style formats,
+/// and still shows through the other axis's edges.
+#[test]
+fn edge_regions_and_corners_lie_over_the_bands() {
+    let mut regions = BANDS.to_vec();
+    regions.extend([("firstRow", "F0F0F0"), ("lastRow", "E0E0E0"), ("firstCol", "C0C0C0"), ("lastCol", "D0D0D0")]);
+    assert_eq!(
+        region_map(&region_style(BAND_SIZES, &regions), ALL_EDGES, 4, 0),
+        ["F0 F0 F0 F0", "C0 AA BB D0", "C0 AA BB D0", "E0 E0 E0 E0"],
+    );
+    // With edges that set no fill, the bands show where Word puts them.
+    let mut bare = BANDS.to_vec();
+    bare.extend([("firstRow", ""), ("lastRow", ""), ("firstCol", ""), ("lastCol", "")]);
+    let bare = region_style(BAND_SIZES, &bare).replace(r#"<w:shd w:val="clear" w:fill=""/>"#, "<w:noWrap/>");
+    assert_eq!(
+        region_map(&bare, ALL_EDGES, 4, 0),
+        ["-- AA BB --", "11 AA BB 11", "22 AA BB 22", "-- AA BB --"],
+    );
+    regions.extend([("nwCell", "010101"), ("neCell", "020202"), ("swCell", "030303"), ("seCell", "040404")]);
+    let cornered = region_map(&region_style(BAND_SIZES, &regions), ALL_EDGES, 4, 0);
+    assert_eq!((cornered[0].as_str(), cornered[3].as_str()), ("01 F0 F0 02", "03 E0 E0 04"));
+}
+
+/// A header or total row the style does not format is banded like any row.
+#[test]
+fn an_unformatted_header_row_is_banded() {
+    let style = region_style(BAND_SIZES, &BANDS[..2]);
+    assert_eq!(region_map(&style, ALL_EDGES, 3, 0), ["11 11 11 11", "22 22 22 22", "11 11 11 11"]);
+}
+
+/// Every leading "repeat as header row" row is a header row, and band 1
+/// starts under the last of them.
+#[test]
+fn every_leading_header_row_takes_the_header_region() {
+    let mut regions = BANDS[..2].to_vec();
+    regions.push(("firstRow", "F0F0F0"));
+    let look = r#"<w:tblLook w:firstRow="1" w:noVBand="1"/>"#;
+    assert_eq!(
+        region_map(&region_style(BAND_SIZES, &regions), look, 4, 2),
+        ["F0 F0 F0 F0", "F0 F0 F0 F0", "11 11 11 11", "22 22 22 22"],
+    );
+}
+
+/// A table with no tblLook has a header row and a first column and no
+/// column bands, and a wholeTable region formats nothing.
+#[test]
+fn a_missing_table_look_and_the_whole_table_region() {
+    let mut regions = BANDS.to_vec();
+    regions.extend([("firstRow", "F0F0F0"), ("lastRow", "E0E0E0"), ("firstCol", "C0C0C0"), ("lastCol", "D0D0D0")]);
+    assert_eq!(
+        region_map(&region_style(BAND_SIZES, &regions), "", 3, 0),
+        ["F0 F0 F0 F0", "C0 11 11 11", "C0 22 22 22"],
+    );
+    let whole = region_style("", &[("wholeTable", "999999")]);
+    assert_eq!(region_map(&whole, NO_EDGES, 1, 0), ["-- -- -- --"]);
 }

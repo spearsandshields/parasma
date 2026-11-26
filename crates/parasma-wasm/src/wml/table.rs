@@ -797,10 +797,9 @@ pub(crate) fn layout_table(
         .map(|j| j.value)
         .unwrap_or(STJcTable::Start);
 
-    let look = TableLook::read(props.tbl_look.as_deref());
-
     let table_rows = table_rows(table);
     let num_rows = table_rows.len();
+    let regions = TableRegions::of(TableLook::read(props.tbl_look.as_deref()), &style, props, &table_rows);
 
     let mut rows = Vec::new();
     // Which of each cell's edges its own tcBorders set: a cell border beats
@@ -856,15 +855,15 @@ pub(crate) fn layout_table(
             }
             let cell_content_width = (cell_width - mar.left - mar.right).max(0.0);
 
-            let region_props = style.region_props(&conditional_regions(look, at));
+            let region_props = style.region_props(&regions.at(at));
             // Run and paragraph properties from the style, nearest first:
             // the cell's regions, then the style itself.
             let style_rprs: Vec<&ooxml_wml::types::RunProperties> = region_props.iter()
-                .filter_map(|o| o.r_pr.as_deref())
+                .filter_map(|(o, _)| o.r_pr.as_deref())
                 .chain(style.chain.iter().filter_map(|s| s.r_pr.as_deref()))
                 .collect();
             let style_pprs: Vec<&ooxml_wml::types::CTPPrGeneral> = region_props.iter()
-                .filter_map(|o| o.p_pr.as_deref())
+                .filter_map(|(o, _)| o.p_pr.as_deref())
                 .chain(style.chain.iter().filter_map(|s| s.p_pr.as_deref()))
                 .collect();
 
@@ -912,13 +911,13 @@ pub(crate) fn layout_table(
 
             let fill_color = direct_fill.unwrap_or_else(|| {
                 region_props.iter()
-                    .find_map(|o| o.cell_properties.as_ref()?.shading.as_ref())
+                    .find_map(|(o, _)| o.cell_properties.as_ref()?.shading.as_ref())
                     .and_then(|shd| theme_fonts.wml_shading(shd))
             });
 
             let v_align = cell.properties()
                 .and_then(|p| p.v_align.as_ref())
-                .or_else(|| region_props.iter().find_map(|o| o.cell_properties.as_ref()?.v_align.as_ref()))
+                .or_else(|| region_props.iter().find_map(|(o, _)| o.cell_properties.as_ref()?.v_align.as_ref()))
                 .map_or(CellVAlign::Top, |va| match va.value {
                     ooxml_wml::types::STVerticalJc::Center => CellVAlign::Center,
                     ooxml_wml::types::STVerticalJc::Bottom => CellVAlign::Bottom,
@@ -999,6 +998,10 @@ pub(crate) fn layout_table(
     Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px })
 }
 
+/// One tblStylePr that formats a cell, with the cell's sides (top, bottom,
+/// left, right) that lie on its region's outline.
+type RegionProps<'a> = (&'a ooxml_wml::types::TableStyleProperties, [bool; 4]);
+
 /// A table's style and the styles it is based on, nearest first (§17.7.6).
 /// A table that names no style uses the default table style (§17.7.4.17).
 struct TableStyle<'a> {
@@ -1017,14 +1020,15 @@ impl<'a> TableStyle<'a> {
     }
 
     /// The tblStylePr that format a cell in `regions` (least specific first,
-    /// as `conditional_regions` gives them), most specific first: a more
+    /// as `TableRegions::at` gives them), most specific first: a more
     /// specific region before a less specific one, and within a region the
-    /// nearest style before the ones it is based on.
-    fn region_props(&self, regions: &[ooxml_wml::types::STTblStyleOverrideType]) -> Vec<&'a ooxml_wml::types::TableStyleProperties> {
+    /// nearest style before the ones it is based on. Each comes with the
+    /// cell's sides on its region's outline.
+    fn region_props(&self, regions: &[(ooxml_wml::types::STTblStyleOverrideType, [bool; 4])]) -> Vec<RegionProps<'a>> {
         let mut out = Vec::new();
-        for region in regions.iter().rev() {
+        for (region, outline) in regions.iter().rev() {
             for style in &self.chain {
-                out.extend(style.tbl_style_pr.iter().filter(|o| o.r#type == *region));
+                out.extend(style.tbl_style_pr.iter().filter(|o| o.r#type == *region).map(|o| (o, *outline)));
             }
         }
         out
@@ -1032,34 +1036,43 @@ impl<'a> TableStyle<'a> {
 }
 
 /// §17.4.55 tblLook: which of its style's conditional regions a table uses.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct TableLook {
     first_row: bool,
     last_row: bool,
     first_col: bool,
     last_col: bool,
     no_h_band: bool,
+    no_v_band: bool,
 }
 
 impl TableLook {
     /// Each flag from its named attribute, else from its bit in the hex
     /// `w:val`: the only form Word 2007 writes ([MS-OI29500] §17.4.55:
     /// 0x0020 first row, 0x0040 last row, 0x0080 first column, 0x0100 last
-    /// column, 0x0200 no row bands).
+    /// column, 0x0200 no row bands, 0x0400 no column bands).
+    /// DEVIATION, declared: §17.4.55 reads a missing tblLook as all zero;
+    /// Word reads it as 0x04A0 (a header row and a first column, no column
+    /// bands), measured in Word.
     fn read(look: Option<&ooxml_wml::types::CTTblLook>) -> Self {
-        let Some(l) = look else { return Self::default() };
         // The parser hands the hex digits over as bytes, most significant first.
-        let bits = l.value.as_deref().unwrap_or(&[]).iter().fold(0u16, |acc, b| acc << 8 | u16::from(*b));
-        let flag = |attr: &Option<String>, bit: u16| match attr.as_deref() {
-            Some(v) => crate::on_off(v),
-            None => bits & bit != 0,
+        let bits = match look {
+            Some(l) => l.value.as_deref().unwrap_or(&[]).iter().fold(0u16, |acc, b| acc << 8 | u16::from(*b)),
+            None => 0x04A0,
+        };
+        let flag = |attr: fn(&ooxml_wml::types::CTTblLook) -> &Option<String>, bit: u16| {
+            match look.and_then(|l| attr(l).as_deref()) {
+                Some(v) => crate::on_off(v),
+                None => bits & bit != 0,
+            }
         };
         Self {
-            first_row: flag(&l.first_row, 0x0020),
-            last_row: flag(&l.last_row, 0x0040),
-            first_col: flag(&l.first_column, 0x0080),
-            last_col: flag(&l.last_column, 0x0100),
-            no_h_band: flag(&l.no_h_band, 0x0200),
+            first_row: flag(|l| &l.first_row, 0x0020),
+            last_row: flag(|l| &l.last_row, 0x0040),
+            first_col: flag(|l| &l.first_column, 0x0080),
+            last_col: flag(|l| &l.last_column, 0x0100),
+            no_h_band: flag(|l| &l.no_h_band, 0x0200),
+            no_v_band: flag(|l| &l.no_v_band, 0x0400),
         }
     }
 }
@@ -1073,26 +1086,115 @@ struct CellPlace {
     num_cols: usize,
 }
 
-/// The `tblStylePr` conditional regions that apply to a cell, ordered
-/// least→most specific (banding first, then first/last col, then first/last
-/// row); `TableStyle::region_props` turns them into formatting sources.
-/// The header and total rows are outside the bands, and the first band
-/// starts under the header. DEVIATION, declared: §17.7.6 applies first/last
-/// column after first/last row; here the row regions win a corner cell.
-fn conditional_regions(look: TableLook, at: CellPlace) -> Vec<ooxml_wml::types::STTblStyleOverrideType> {
-    use ooxml_wml::types::STTblStyleOverrideType::*;
-    let header = look.first_row && at.row_idx == 0;
-    let total = look.last_row && at.row_idx + 1 >= at.num_rows;
-    let mut regions = Vec::new();
-    if !look.no_h_band && !header && !total {
-        let band_row = at.row_idx - usize::from(look.first_row);
-        regions.push(if band_row.is_multiple_of(2) { Band1Horz } else { Band2Horz });
+/// One axis of a table's banding: the band size, and how many leading and
+/// trailing rows (or columns) stand outside the bands.
+#[derive(Clone, Copy)]
+struct BandAxis {
+    /// Rows or columns per band; 0 when the axis is not banded.
+    size: usize,
+    skip_start: usize,
+    skip_end: usize,
+}
+
+impl BandAxis {
+    /// The band `idx` falls in, and its place in that band: `None` outside
+    /// the bands. `Some((band, first, last))`.
+    fn band(&self, idx: usize, count: usize) -> Option<(usize, bool, bool)> {
+        let end = count.saturating_sub(self.skip_end);
+        if self.size == 0 || idx < self.skip_start || idx >= end {
+            return None;
+        }
+        let k = idx - self.skip_start;
+        Some((k / self.size, k.is_multiple_of(self.size), (k + 1).is_multiple_of(self.size) || idx + 1 == end))
     }
-    if look.first_col && at.col_idx == 0 { regions.push(FirstCol); }
-    if look.last_col && at.col_idx + 1 >= at.num_cols { regions.push(LastCol); }
-    if header { regions.push(FirstRow); }
-    if total { regions.push(LastRow); }
-    regions
+}
+
+/// Which `tblStylePr` conditional regions each cell of a table is in, as
+/// Word applies them. Measured in Word; DEVIATIONS from §17.7.6, declared:
+/// - row regions lie over column regions (the spec has it the other way);
+/// - column bands lie over row bands;
+/// - a `wholeTable` region formats nothing;
+/// - an axis is banded only if the style hierarchy gives it a band size
+///   (§17.7.6.7, §17.7.6.5 default the size to 1);
+/// - a band skips the header and total rows (or first and last columns)
+///   only where the style formats them, and band 1 starts after them;
+/// - every leading "repeat as header row" row is a header row.
+///
+/// Declared: columns are counted by cell, not by grid column, so a
+/// spanning cell shifts the column bands after it.
+struct TableRegions {
+    look: TableLook,
+    /// The leading rows the firstRow region formats.
+    header_rows: usize,
+    rows: BandAxis,
+    cols: BandAxis,
+}
+
+impl TableRegions {
+    fn of(
+        look: TableLook,
+        style: &TableStyle,
+        props: &ooxml_wml::types::TableProperties,
+        rows: &[&ooxml_wml::types::CTRow],
+    ) -> Self {
+        use ooxml_wml::types::STTblStyleOverrideType as R;
+        // §17.4.49 tblHeader: the run of header rows starts at the first row.
+        let header_rows = rows.iter()
+            .take_while(|r| r.row_properties.as_ref().and_then(|p| crate::check_toggle(&p.tbl_header)).unwrap_or(false))
+            .count()
+            .max(1);
+        let formats = |region: R| style.chain.iter().any(|s| s.tbl_style_pr.iter().any(|o| o.r#type == region));
+        // The nearest band size: the table's own, else its style hierarchy's.
+        let size = |direct: &Option<Box<ooxml_wml::types::CTDecimalNumber>>, of: fn(&ooxml_wml::types::CTTblPrBase) -> &Option<Box<ooxml_wml::types::CTDecimalNumber>>| {
+            direct.as_deref()
+                .or_else(|| style.chain.iter().find_map(|s| of(s.table_properties.as_deref()?).as_deref()))
+                .and_then(|n| usize::try_from(n.value).ok())
+                .unwrap_or(0)
+        };
+        Self {
+            look,
+            header_rows,
+            rows: BandAxis {
+                size: if look.no_h_band { 0 } else { size(&props.tbl_style_row_band_size, |tp| &tp.tbl_style_row_band_size) },
+                skip_start: if look.first_row && formats(R::FirstRow) { header_rows } else { 0 },
+                skip_end: usize::from(look.last_row && formats(R::LastRow)),
+            },
+            cols: BandAxis {
+                size: if look.no_v_band { 0 } else { size(&props.tbl_style_col_band_size, |tp| &tp.tbl_style_col_band_size) },
+                skip_start: usize::from(look.first_col && formats(R::FirstCol)),
+                skip_end: usize::from(look.last_col && formats(R::LastCol)),
+            },
+        }
+    }
+
+    /// The regions a cell is in, least specific first, each with the sides
+    /// of the cell that lie on the region's outline (top, bottom, left,
+    /// right); the other sides are edges between the region's cells.
+    fn at(&self, at: CellPlace) -> Vec<(ooxml_wml::types::STTblStyleOverrideType, [bool; 4])> {
+        use ooxml_wml::types::STTblStyleOverrideType::*;
+        let (top, bottom) = (at.row_idx == 0, at.row_idx + 1 >= at.num_rows);
+        let (left, right) = (at.col_idx == 0, at.col_idx + 1 >= at.num_cols);
+        let header = self.look.first_row && at.row_idx < self.header_rows;
+        let total = self.look.last_row && bottom && !header;
+        let first_col = self.look.first_col && left;
+        let last_col = self.look.last_col && right && !first_col;
+
+        let mut regions = Vec::new();
+        if let Some((band, first, last)) = self.rows.band(at.row_idx, at.num_rows) {
+            regions.push((if band.is_multiple_of(2) { Band1Horz } else { Band2Horz }, [first, last, left, right]));
+        }
+        if let Some((band, first, last)) = self.cols.band(at.col_idx, at.num_cols) {
+            regions.push((if band.is_multiple_of(2) { Band1Vert } else { Band2Vert }, [top, bottom, first, last]));
+        }
+        if first_col { regions.push((FirstCol, [top, bottom, true, true])); }
+        if last_col { regions.push((LastCol, [top, bottom, true, true])); }
+        if header { regions.push((FirstRow, [top, at.row_idx + 1 >= self.header_rows.min(at.num_rows), left, right])); }
+        if total { regions.push((LastRow, [true, true, left, right])); }
+        for (corner, here) in [(NwCell, header && first_col), (NeCell, header && last_col), (SwCell, total && first_col), (SeCell, total && last_col)] {
+            if here { regions.push((corner, [true; 4])); }
+        }
+        regions
+    }
 }
 
 /// Conditional border edges for a cell from `tblStylePr` regions.
@@ -1115,7 +1217,7 @@ type EdgeOverrides = (
 fn resolve_conditional_cell_borders(
     theme: &ThemeFonts,
     at: CellPlace,
-    region_props: &[&ooxml_wml::types::TableStyleProperties],
+    region_props: &[RegionProps],
 ) -> EdgeOverrides {
     let is_top = at.row_idx == 0;
     let is_bottom = at.row_idx + 1 >= at.num_rows;
@@ -1127,15 +1229,7 @@ fn resolve_conditional_cell_borders(
     // A region that specifies an edge — drawn OR explicit-nil — records
     // Some(..) so the cell-resolution short-circuits the table default (a
     // firstRow region can thus explicitly REMOVE the header separator).
-    for ov in region_props.iter().rev() {
-        // Where this cell sits on the region's outline: a row region (the
-        // header and total rows, a band) spans the row; a column region spans
-        // the column.
-        use ooxml_wml::types::STTblStyleOverrideType as R;
-        let (on_top, on_bottom, on_left, on_right) = match ov.r#type {
-            R::FirstCol | R::LastCol => (is_top, is_bottom, true, true),
-            _ => (true, true, is_left, is_right),
-        };
+    for (ov, [on_top, on_bottom, on_left, on_right]) in region_props.iter().rev().copied() {
         // Region cell tcBorders: its top, bottom, left and right draw the
         // region's outline, its insideH and insideV the edges between the
         // region's cells (§17.7.6).

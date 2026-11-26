@@ -283,6 +283,11 @@ are held stable regardless.
   and band formatting and text formatting, instead of showing as a bare
   grid. Tables with no style use the document's default table style, and a
   table that overrides one border keeps the rest of its style's borders.
+- Tables: built-in table styles show their banded columns and their corner
+  cells, bands are as wide as the style says, and every leading header row
+  is formatted as a header. Style regions now layer as Word layers them, so
+  tables without stored look settings get a header row and first column,
+  and styles that set no band size are not striped.
 
 ### Changed
 
