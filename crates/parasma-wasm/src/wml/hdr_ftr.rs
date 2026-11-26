@@ -21,7 +21,7 @@ use crate::engine::fonts::{FontCache, ThemeFonts};
 use crate::wml::linebreak::{justify_line, with_page_fields, BreakAfter, Item, PageFields};
 use crate::wml::loader::SectionHdrFtr;
 use crate::wml::page::{
-    CellBlock, HdrFtrCache, HfBlock, PagedLine, PagedTableCell, PagedTableRow, PARA_SENTINEL,
+    HdrFtrCache, HfBlock, PagedLine, PagedTableCell, PagedTableRow, PARA_SENTINEL,
 };
 use crate::wml::paragraph::layout_paragraph;
 use crate::wml::table::{layout_table, CellVAlign, TableCache};
@@ -114,10 +114,6 @@ pub(crate) fn layout_hdr_ftr_blocks(
     theme_fonts: &ThemeFonts,
 ) -> Result<HdrFtrCache, JsValue> {
     let mut out_blocks = Vec::new();
-    let mut total_height = 0.0;
-    let mut hf_prev_after: f64 = 0.0;
-    // The previous paragraph's style and contextual-spacing flag; none after a table.
-    let mut hf_prev: Option<(Option<String>, bool)> = None;
     let mut flat = Vec::new();
     flatten_blocks(blocks, &mut flat);
     // Header/footer tables don't carry list markers in practice; pass empty
@@ -128,31 +124,46 @@ pub(crate) fn layout_hdr_ftr_blocks(
         match block {
             FlatBlock::Para(p) => {
                 let cache = layout_paragraph(font_cache, p, content_width, None, style_ctx, default_ppr, default_tab_stop_px, theme_fonts, None, &[], &[], None, false, None)?;
-                let prev = hf_prev.as_ref().map_or((None, false), |(id, flag)| (id.as_deref(), *flag));
-                let gap = crate::wml::paragraph::paragraph_gap(Some((prev.0, prev.1, hf_prev_after)), &cache.layout);
-                total_height += gap;
-                for line in &cache.lines {
-                    total_height += cache.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
-                }
-                // Paragraph borders (e.g. the footer's top rule) reserve their own
-                // space + line width above/below the text, which counts toward the
-                // header/footer band height (and thus the content area).
-                total_height += cache.layout.border_reserve_top() + cache.layout.border_reserve_bottom();
-                hf_prev_after = cache.layout.space_after_px;
-                hf_prev = Some((cache.layout.style_id.clone(), cache.layout.contextual_spacing));
                 out_blocks.push(HfBlock::Paragraph(cache));
             }
             FlatBlock::Table(t) => {
                 // §17.10: lay the header/footer table out with the body table
-                // machinery, constrained to the band width. It contributes its
-                // row-sum height to the band; the after-spacing carry resets
-                // (a table has no space_after of its own here).
+                // machinery, constrained to the band width.
                 let cache = layout_table(font_cache, t, content_width, style_ctx, default_ppr, default_tab_stop_px, theme_fonts, &numbering_levels, &mut list_counters, None)?;
-                total_height += hf_prev_after;
-                total_height += hf_table_height(&cache);
+                out_blocks.push(HfBlock::Table(cache));
+            }
+        }
+    }
+    // Identically bordered paragraphs share one box (§17.3.1.24), which
+    // decides their border reserves, so the band's height follows.
+    crate::wml::paragraph::join_border_boxes(out_blocks.iter_mut().map(|b| match b {
+        HfBlock::Paragraph(pc) => Some(&mut pc.layout),
+        HfBlock::Table(_) => None,
+    }).collect());
+    let mut total_height = 0.0;
+    let mut hf_prev_after: f64 = 0.0;
+    // The previous paragraph's style and contextual-spacing flag; none after a table.
+    let mut hf_prev: Option<(Option<String>, bool)> = None;
+    for block in &out_blocks {
+        match block {
+            HfBlock::Paragraph(cache) => {
+                let prev = hf_prev.as_ref().map_or((None, false), |(id, flag)| (id.as_deref(), *flag));
+                total_height += crate::wml::paragraph::paragraph_gap(Some((prev.0, prev.1, hf_prev_after)), &cache.layout);
+                for line in &cache.lines {
+                    total_height += cache.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
+                }
+                // Paragraph borders (e.g. the footer's top rule) reserve their
+                // own space and width, which count toward the band height.
+                total_height += cache.layout.border_reserve_top() + cache.layout.border_reserve_bottom();
+                hf_prev_after = cache.layout.space_after_px;
+                hf_prev = Some((cache.layout.style_id.clone(), cache.layout.contextual_spacing));
+            }
+            HfBlock::Table(cache) => {
+                // A table contributes its row sum; the after-spacing carry
+                // resets (a table has no space_after of its own here).
+                total_height += hf_prev_after + hf_table_height(cache);
                 hf_prev_after = 0.0;
                 hf_prev = None;
-                out_blocks.push(HfBlock::Table(cache));
             }
         }
     }
@@ -231,7 +242,8 @@ pub(crate) fn position_hdr_ftr_lines(
         match block {
             HfBlock::Paragraph(pc) => {
                 let gap = crate::wml::paragraph::paragraph_gap(Some(crate::wml::paragraph::gap_prev(pos_prev, pos_prev_after)), &pc.layout);
-                y += gap;
+                y += gap + pc.layout.border_reserve_top();
+                let n = pc.lines.len();
                 for (li, line) in pc.lines.iter().enumerate() {
                     let indent = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
                     let baseline_y = y + line.max_ascent;
@@ -250,11 +262,16 @@ pub(crate) fn position_hdr_ftr_lines(
                     let line_w: f64 = items.iter().map(|i| i.width).sum();
                     let x_start = pc.layout.x_start(page_w, margin_left, margin_right, line_w, indent);
                     let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
-                    let content_left = margin_left + pc.layout.indent_left_px;
-                    let content_right = page_w - margin_right - pc.layout.indent_right_px;
-                    lines.push(PagedLine { segments: PagedLine::single(items, x_start), para: PARA_SENTINEL, baseline_y, para_shading: None, line_height: lh, content_left, content_right, border_top: None, border_bottom: None, border_left: None, border_right: None, bar_tabs: pc.tab_stops.bar_xs(margin_left + pc.layout.indent_left_px, page_w - margin_right - pc.layout.indent_right_px, pc.layout.base_rtl), is_first_line: false, is_last_line: false });
+                    lines.push(PagedLine {
+                        segments: PagedLine::single(items, x_start), para: PARA_SENTINEL, baseline_y,
+                        para_shading: None, line_height: lh, content_left: 0.0, content_right: 0.0,
+                        border_top: None, border_bottom: None, border_left: None, border_right: None,
+                        bar_tabs: pc.tab_stops.bar_xs(margin_left + pc.layout.indent_left_px, page_w - margin_right - pc.layout.indent_right_px, pc.layout.base_rtl),
+                        is_first_line: false, is_last_line: false,
+                    }.decorated(&pc.layout, li, n, margin_left, page_w - margin_right));
                     y += lh;
                 }
+                y += pc.layout.border_reserve_bottom();
                 pos_prev_after = pc.layout.space_after_px;
                 pos_prev = Some(&pc.layout);
             }
@@ -309,47 +326,14 @@ fn position_hf_table(
                 }
                 CellVAlign::Top => 0.0,
             };
-            let mut cell_y = row_y_top + cell.mar_top + v_offset;
-            let mut cell_prev_after: f64 = 0.0;
-            let mut cell_prev: Option<&crate::wml::paragraph::ParagraphLayout> = None;
-            for block in &cell.blocks {
-                if let CellBlock::Paragraph(pc) = block {
-                    let gap = crate::wml::paragraph::paragraph_gap(Some(crate::wml::paragraph::gap_prev(cell_prev, cell_prev_after)), &pc.layout);
-                    cell_y += gap;
-                    for (li, line) in pc.lines.iter().enumerate() {
-                        let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
-                        let indent_extra = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
-                        let x_start = pc.layout.x_start(
-                            cell_x + cell.width_px,
-                            cell_x + cell.mar_left,
-                            cell.mar_left,
-                            line.width(),
-                            indent_extra,
-                        );
-                        cell_lines.push(PagedLine {
-                            segments: PagedLine::single(line.items.clone(), x_start),
-                            para: PARA_SENTINEL,
-                            baseline_y: cell_y + line.max_ascent,
-                            para_shading: None,
-                            line_height: lh,
-                            content_left: x_start,
-                            content_right: cell_x + cell.width_px - cell.mar_right,
-                            border_top: None, border_bottom: None,
-                            border_left: None, border_right: None,
-                            bar_tabs: pc.tab_stops.bar_xs(
-                                cell_x + cell.mar_left + pc.layout.indent_left_px,
-                                cell_x + cell.width_px - cell.mar_right - pc.layout.indent_right_px,
-                                pc.layout.base_rtl),
-                            is_first_line: false, is_last_line: false,
-                        });
-                        cell_y += lh;
-                    }
-                    cell_prev_after = pc.layout.space_after_px;
-                    cell_prev = Some(&pc.layout);
-                }
-                // Nested tables inside a header/footer cell are not expanded
-                // (out of scope — a header table is a flat grid in practice).
-            }
+            // The shared cell walk (`flatten_cell_lines`), at the cell's
+            // content top.
+            let content_top = row_y_top + cell.mar_top + v_offset;
+            cell_lines.extend(crate::wml::table::flatten_cell_lines(cell, cell_x).into_iter().map(|proto| {
+                let mut line = proto.line;
+                line.baseline_y += content_top;
+                line
+            }));
             paged_cells.push(PagedTableCell {
                 lines: cell_lines,
                 x: cell_x,

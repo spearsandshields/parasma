@@ -217,8 +217,10 @@ pub(crate) fn layout_text_box(
 
             let gap = prev_space_after.max(cache.layout.space_before_px);
             if y > 0.0 { y += gap; }
+            y += cache.layout.border_reserve_top();
 
-            for line in &cache.lines {
+            let n = cache.lines.len();
+            for (li, line) in cache.lines.iter().enumerate() {
                 let lh = cache.layout.line_height(
                     line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height,
                 );
@@ -246,9 +248,10 @@ pub(crate) fn layout_text_box(
                     ),
                     is_first_line: false,
                     is_last_line: false,
-                });
+                }.decorated(&cache.layout, li, n, ins.left, width_px - ins.right));
                 y += lh;
             }
+            y += cache.layout.border_reserve_bottom();
             prev_space_after = cache.layout.space_after_px;
         }
     }
@@ -308,13 +311,13 @@ pub(crate) fn render_text_box(
             line_height: line.line_height,
             content_left: tb.x + line.content_left,
             content_right: tb.x + line.content_right,
-            border_top: None,
-            border_bottom: None,
-            border_left: None,
-            border_right: None,
+            border_top: line.border_top.clone(),
+            border_bottom: line.border_bottom.clone(),
+            border_left: line.border_left.clone(),
+            border_right: line.border_right.clone(),
             bar_tabs: line.bar_tabs.iter().map(|&x| tb.x + x).collect(),
-            is_first_line: false,
-            is_last_line: false,
+            is_first_line: line.is_first_line,
+            is_last_line: line.is_last_line,
         };
         render_line(p, &offset_line, bitmaps, charts, ul_trail_space)?;
     }

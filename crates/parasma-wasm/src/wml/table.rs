@@ -143,6 +143,7 @@ impl TableCellCache {
             match block {
                 CellBlock::Paragraph(pc) => {
                     total += paragraph_gap(Some(gap_prev(prev_para, prev_after)), &pc.layout);
+                    total += pc.layout.border_reserve_top() + pc.layout.border_reserve_bottom();
                     total += pc.lines.iter().map(|l| pc.layout.line_height(l.max_font_pt, l.max_ascent + l.max_descent, l.max_image_height)).sum::<f64>();
                     prev_after = pc.layout.space_after_px;
                     prev_para = Some(&pc.layout);
@@ -162,6 +163,133 @@ impl TableCellCache {
         // visibly shorter than Word's.
         total + prev_after + v_margin_total
     }
+}
+
+/// A single cell line flattened for row-splitting (§17.4.6/§17.4.7,
+/// split at line granularity). `rel_top` is the line's top offset from the cell's
+/// *content* top (i.e. excluding the cell's top margin and any vertical-align
+/// offset); `height` is its line height. `line` is the fully-built `PagedLine`
+/// whose `baseline_y` is stored *relative* to the same content top — a fragment
+/// places it by adding its content-top page position. Flattening lets the
+/// splitter partition a cell's lines into the lines that fit on the current
+/// page and the remainder carried to a continuation fragment.
+pub(crate) struct CellLineProto {
+    pub(crate) rel_top: f64,
+    pub(crate) height: f64,
+    pub(crate) line: PagedLine,
+}
+
+/// Flatten a table cell's blocks into content-relative line protos, mirroring
+/// the whole-row emit walk (paragraphs with before/after gaps + nested tables)
+/// but recording each line's offset from the cell content top instead of an
+/// absolute baseline. `cell_x` is the cell's left edge on the page (constant
+/// across a split, since fragments stay in the same column). Used only on the
+/// split path; the whole-row path keeps its original inline emit byte-for-byte.
+pub(crate) fn flatten_cell_lines(cell: &TableCellCache, cell_x: f64) -> Vec<CellLineProto> {
+    let mut protos = Vec::new();
+    let mut cur: f64 = 0.0; // running offset from cell content top
+    let mut prev_after: f64 = 0.0;
+    let mut prev_para: Option<&ParagraphLayout> = None;
+    for block in &cell.blocks {
+        match block {
+            CellBlock::Paragraph(pc) => {
+                cur += paragraph_gap(Some(gap_prev(prev_para, prev_after)), &pc.layout);
+                cur += pc.layout.border_reserve_top();
+                let n = pc.lines.len();
+                let (box_left, box_right) = (cell_x + cell.mar_left, cell_x + cell.width_px - cell.mar_right);
+                for (li, line) in pc.lines.iter().enumerate() {
+                    let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
+                    let indent_extra = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
+                    let x_start = pc.layout.x_start(
+                        cell_x + cell.width_px,
+                        cell_x + cell.mar_left,
+                        cell.mar_left,
+                        line.width(),
+                        indent_extra,
+                    );
+                    protos.push(CellLineProto {
+                        rel_top: cur,
+                        height: lh,
+                        line: PagedLine {
+                            segments: PagedLine::single(line.items.clone(), x_start),
+                            para: pc.para_id.unwrap_or(PARA_SENTINEL),
+                            baseline_y: cur + line.max_ascent,
+                            para_shading: None,
+                            line_height: lh,
+                            content_left: x_start,
+                            content_right: cell_x + cell.width_px - cell.mar_right,
+                            border_top: None, border_bottom: None,
+                            border_left: None, border_right: None,
+                            bar_tabs: pc.tab_stops.bar_xs(
+                                cell_x + cell.mar_left + pc.layout.indent_left_px,
+                                cell_x + cell.width_px - cell.mar_right - pc.layout.indent_right_px,
+                                pc.layout.base_rtl),
+                            is_first_line: false, is_last_line: false,
+                        }.decorated(&pc.layout, li, n, box_left, box_right),
+                    });
+                    cur += lh;
+                }
+                cur += pc.layout.border_reserve_bottom();
+                prev_after = pc.layout.space_after_px;
+                prev_para = Some(&pc.layout);
+            }
+            CellBlock::Table(nested) => {
+                cur += prev_after;
+                prev_para = None;
+                let nested_x = cell_x + cell.mar_left;
+                for nrow in &nested.rows {
+                    let nrow_top = cur;
+                    for ncell in &nrow.cells {
+                        if ncell.v_merged_away { continue; }
+                        let ncell_x = nested_x + nested.col_widths_px[..ncell.col_start].iter().sum::<f64>();
+                        let mut ny = nrow_top + nested.cell_margin_v;
+                        for nb in &ncell.blocks {
+                            if let CellBlock::Paragraph(npc) = nb {
+                                ny += npc.layout.border_reserve_top();
+                                let nn = npc.lines.len();
+                                let (nleft, nright) = (ncell_x + nested.cell_margin_h, ncell_x + ncell.width_px - nested.cell_margin_h);
+                                for (nli, nline) in npc.lines.iter().enumerate() {
+                                    let nlh = npc.layout.line_height(nline.max_font_pt, nline.max_ascent + nline.max_descent, nline.max_image_height);
+                                    let nindent = if nli == 0 { npc.layout.indent_first_line_px } else { 0.0 };
+                                    let nx = npc.layout.x_start(
+                                        ncell_x + ncell.width_px,
+                                        ncell_x + nested.cell_margin_h,
+                                        nested.cell_margin_h,
+                                        nline.width(), nindent,
+                                    );
+                                    protos.push(CellLineProto {
+                                        rel_top: ny,
+                                        height: nlh,
+                                        line: PagedLine {
+                                            segments: PagedLine::single(nline.items.clone(), nx),
+                                            para: npc.para_id.unwrap_or(PARA_SENTINEL),
+                                            baseline_y: ny + nline.max_ascent,
+                                            para_shading: None,
+                                            line_height: nlh,
+                                            content_left: ncell_x + nested.cell_margin_h,
+                                            content_right: ncell_x + ncell.width_px - nested.cell_margin_h,
+                                            border_top: None, border_bottom: None,
+                                            border_left: None, border_right: None,
+                                            bar_tabs: npc.tab_stops.bar_xs(
+                                                ncell_x + nested.cell_margin_h + npc.layout.indent_left_px,
+                                                ncell_x + ncell.width_px - nested.cell_margin_h - npc.layout.indent_right_px,
+                                                npc.layout.base_rtl),
+                                            is_first_line: false, is_last_line: false,
+                                        }.decorated(&npc.layout, nli, nn, nleft, nright),
+                                    });
+                                    ny += nlh;
+                                }
+                                ny += npc.layout.border_reserve_bottom();
+                            }
+                        }
+                    }
+                    cur += nrow.height_px;
+                }
+                prev_after = 0.0;
+            }
+        }
+    }
+    protos
 }
 
 /// A table cell's drawable edge (§17.4): the shared [`Edge`] (colour + pixel
@@ -725,6 +853,12 @@ pub(crate) fn layout_table(
                     }
                 }
             }
+
+            // Identically bordered paragraphs in the cell share one box.
+            crate::wml::paragraph::join_border_boxes(cell_blocks.iter_mut().map(|b| match b {
+                CellBlock::Paragraph(pc) => Some(&mut pc.layout),
+                CellBlock::Table(_) => None,
+            }).collect());
 
             // A cell's own shading decides, including one that clears.
             let direct_fill = cell.properties()

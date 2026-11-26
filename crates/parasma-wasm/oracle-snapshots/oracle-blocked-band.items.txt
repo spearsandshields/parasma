@@ -256,7 +256,7 @@ L15 p0 f0 l1 segs1
     i9 y0 w12.23 cw8.16 c1323+2 "a " sh2g adv12.23 r0 s1
     i10 y0 w26.07 cw22.00 c1325+6 "list. " sh6g adv26.07 r0 s1
 B0 624.00x144.00 behind0 fill- border-/0.00 ins9.60,4.80,9.60,4.80 ancTop lines1
-  BL0 p4294967295 f0 l0 segs1
+  BL0 p4294967295 f1 l1 segs1
     S0 n2
       i0 y0 w59.51 cw55.44 c0+9 "Blocking " sh9g adv59.51 r0 s1
       i1 y0 w36.70 cw36.70 c9+5 "band." sh5g adv36.70 r0 s1

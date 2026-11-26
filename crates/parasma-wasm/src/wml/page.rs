@@ -192,6 +192,31 @@ impl PagedLine {
     pub(crate) fn single(items: Vec<Item>, x_start: f64) -> Vec<LineSegment> {
         vec![LineSegment { x_start, items }]
     }
+
+    /// Give line `li` of a paragraph's `n` lines its paragraph decoration:
+    /// shading, borders (the top on the first line, the bottom on the last)
+    /// and its border box, the container's text edges `left`..`right` less
+    /// the paragraph's indents. For hosts that place paragraph lines
+    /// themselves: table cells, headers and footers, notes, text boxes.
+    pub(crate) fn decorated(
+        mut self,
+        layout: &crate::wml::paragraph::ParagraphLayout,
+        li: usize,
+        n: usize,
+        left: f64,
+        right: f64,
+    ) -> Self {
+        self.para_shading = layout.shading_color.clone();
+        self.border_top = layout.border_top.clone();
+        self.border_bottom = layout.border_bottom.clone();
+        self.border_left = layout.border_left.clone();
+        self.border_right = layout.border_right.clone();
+        self.is_first_line = li == 0;
+        self.is_last_line = li + 1 == n;
+        self.content_left = left + layout.indent_left_px;
+        self.content_right = right - layout.indent_right_px;
+        self
+    }
 }
 
 #[cfg(test)]

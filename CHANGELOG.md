@@ -258,6 +258,9 @@ are held stable regardless.
   border's width and distance now take room, so a heading's bottom rule no
   longer runs into the next line, and a paragraph that sets only some of its
   borders keeps the rest from its style.
+- Paragraph borders and shading now show in headers and footers (the rule
+  under a header or above a footer that many templates use), in table cells,
+  in footnotes and in text boxes. Nested tables inside header cells are drawn.
 
 ### Changed
 

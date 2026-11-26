@@ -11684,3 +11684,21 @@ fn paragraph_border_edges_inherit_one_by_one() {
     let l = &lines[0];
     assert!(l.border_top.is_some() && l.border_bottom.is_some() && l.border_left.is_some());
 }
+
+/// Paragraph borders and shading draw outside the body too: the rule under
+/// a header, a shaded and boxed paragraph in a table cell.
+#[test]
+fn headers_and_cells_keep_paragraph_borders_and_shading() {
+    let ruled = r#"<w:pBdr><w:bottom w:val="single" w:sz="6"/></w:pBdr>"#;
+    let header = p(ruled, &r("", "Report title"));
+    let v = layout(hf_docx(HF_STYLES_NO_HEADER, &header, "<w:p/>", &p("", &r("", "body"))));
+    assert!(v.pages.borrow()[0].header_lines[0].border_bottom.is_some(), "the header's rule");
+
+    let shaded = r#"<w:pBdr><w:top w:val="single" w:sz="4"/></w:pBdr><w:shd w:val="clear" w:fill="FFF2CC"/>"#;
+    let cell = format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr>{}</w:tc>"#, p(shaded, &r("", "note")));
+    let v = layout(bordered_table_docx("", &[&format!("{cell}{}", bcell("", "plain"))], ""));
+    let rows = table_rows_of(&v);
+    let line = &rows[0].cells[0].lines[0];
+    assert_eq!(line.para_shading.as_deref(), Some("#FFF2CC"));
+    assert!(line.border_top.is_some() && line.is_first_line);
+}
