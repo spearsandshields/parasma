@@ -139,6 +139,11 @@ struct Series {
     marker: Marker,
     marker_px: f64,
     smooth: bool,
+    /// Colours of individually formatted points (§21.2.2.52 `dPt`), by
+    /// point index.
+    point_colors: Vec<(usize, String)>,
+    /// Negative bars draw inverted (§21.2.2.86 `invertIfNegative`).
+    invert_if_negative: bool,
 }
 
 #[derive(Default)]
@@ -180,6 +185,17 @@ struct ChartModel {
     /// is its own colour and the legend lists the categories.
     vary_colors: bool,
     marker_default: bool,
+    /// The chart area's fill and border (chartSpace `spPr`) and the plot
+    /// area's; `None` draws nothing.
+    chart_ground: Ground,
+    plot_ground: Ground,
+}
+
+/// A rectangle's fill and border.
+#[derive(Default)]
+struct Ground {
+    fill: Option<String>,
+    border: Option<(String, f64)>,
 }
 
 const AXIS_LABEL_W: f64 = 40.0;
@@ -197,8 +213,52 @@ const DEFAULT_COLORS: &[&str] = &[
     "#70ad47", "#264478", "#9e480e", "#636363", "#997300",
 ];
 
+thread_local! {
+    /// The theme colours of the document whose chart is being painted
+    /// (scheme slot or mapped name → `#RRGGBB`), set by its host around the
+    /// paint with [`with_scheme`]. Empty outside a paint: charts then use
+    /// Office's default theme.
+    static SCHEME: std::cell::RefCell<std::collections::HashMap<String, String>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The names a chart's `schemeClr` can use (§20.1.10.54).
+const SCHEME_NAMES: [&str; 16] = [
+    "dk1", "lt1", "dk2", "lt2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6",
+    "hlink", "folHlink", "tx1", "bg1", "tx2", "bg2",
+];
+
+/// Run `f` with the host's theme as the chart theme: `lookup` gives each
+/// scheme name's colour (`#rrggbb`) through the host's theme and colour map.
+pub(crate) fn with_scheme<R>(lookup: impl Fn(&str) -> Option<String>, f: impl FnOnce() -> R) -> R {
+    let scheme = SCHEME_NAMES
+        .iter()
+        .filter_map(|n| lookup(n).map(|hex| (n.to_string(), format!("#{}", hex.trim_start_matches('#')))))
+        .collect();
+    let prev = SCHEME.with(|s| s.replace(scheme));
+    let out = f();
+    SCHEME.with(|s| *s.borrow_mut() = prev);
+    out
+}
+
+fn scheme_color(name: &str) -> Option<String> {
+    SCHEME.with(|s| s.borrow().get(name).cloned())
+}
+
+/// The automatic colour of the `idx`th series or point: Office's default
+/// chart style cycles the six accents, then the accents darker (luminance
+/// 60 %), then lighter (80 % plus 20 %), from the document's theme.
 fn palette(idx: usize) -> String {
-    DEFAULT_COLORS[idx % DEFAULT_COLORS.len()].to_string()
+    use crate::engine::color::{apply_color_transforms, DmlTransform};
+    let Some(accent) = scheme_color(&format!("accent{}", idx % 6 + 1)) else {
+        return DEFAULT_COLORS[idx % DEFAULT_COLORS.len()].to_string();
+    };
+    let xs: &[DmlTransform] = match (idx / 6) % 3 {
+        0 => &[],
+        1 => &[DmlTransform::LumMod(0.6)],
+        _ => &[DmlTransform::LumMod(0.8), DmlTransform::LumOff(0.2)],
+    };
+    apply_color_transforms(&accent, xs).0
 }
 
 fn parse_chart_space(xml: &[u8]) -> Option<ooxml_dml::types::ChartSpace> {
@@ -215,13 +275,15 @@ struct RawSeries<'a> {
     val: Option<&'a ooxml_dml::types::NumericDataSource>,
     marker: Option<&'a ooxml_dml::types::ChartMarker>,
     smooth: Option<bool>,
+    d_pt: &'a [ooxml_dml::types::DataPoint],
+    invert_if_negative: bool,
 }
 
 /// The shared parts of each series of a chart group. `$cat` and `$val` name
 /// the category and value fields (scatter series use `x_val`/`y_val`);
 /// `marker` and `smooth` are read where the series type has them.
 macro_rules! raw_series {
-    (@one $s:ident, $cat:ident, $val:ident, $marker:expr, $smooth:expr) => {
+    (@one $s:ident, $cat:ident, $val:ident, $marker:expr, $smooth:expr, $invert:expr) => {
         RawSeries {
             idx: $s.idx.value,
             order: $s.order.value,
@@ -231,7 +293,17 @@ macro_rules! raw_series {
             val: $s.$val.as_deref(),
             marker: $marker,
             smooth: $smooth,
+            d_pt: &$s.d_pt,
+            invert_if_negative: $invert,
         }
+    };
+    (@one $s:ident, $cat:ident, $val:ident, $marker:expr, $smooth:expr) => {
+        raw_series!(@one $s, $cat, $val, $marker, $smooth, false)
+    };
+    ($ser:expr, $cat:ident, $val:ident, invert) => {
+        $ser.iter()
+            .map(|s| raw_series!(@one s, $cat, $val, None, None, chart_bool(s.invert_if_negative.as_deref()).unwrap_or(false)))
+            .collect::<Vec<_>>()
     };
     ($ser:expr, $cat:ident, $val:ident) => {
         $ser.iter().map(|s| raw_series!(@one s, $cat, $val, None, None)).collect::<Vec<_>>()
@@ -265,13 +337,13 @@ impl ChartModel {
         // One chart group per chart: the first one present, in this order.
         let (kind, raw, horizontal, group, gap, overlap, vary, marker_default) =
             if let Some(b) = plot.bar_chart.first() {
-                (ChartType::Bar, raw_series!(b.ser, cat, value),
+                (ChartType::Bar, raw_series!(b.ser, cat, value, invert),
                  b.bar_dir.value == Some(BarDirectionType::Bar), bar_grouping(b.grouping.as_deref()),
                  chart_pct(b.gap_width.as_deref().and_then(|g| g.value.as_deref())),
                  chart_pct(b.overlap.as_deref().and_then(|o| o.value.as_deref())),
                  chart_bool(b.vary_colors.as_deref()), true)
             } else if let Some(b) = plot.bar3_d_chart.first() {
-                (ChartType::Bar, raw_series!(b.ser, cat, value),
+                (ChartType::Bar, raw_series!(b.ser, cat, value, invert),
                  b.bar_dir.value == Some(BarDirectionType::Bar), bar_grouping(b.grouping.as_deref()),
                  chart_pct(b.gap_width.as_deref().and_then(|g| g.value.as_deref())), None,
                  chart_bool(b.vary_colors.as_deref()), true)
@@ -336,8 +408,21 @@ impl ChartModel {
                     _ => 1.0,
                 });
                 let (marker, marker_px) = series_marker(s.marker, marker_default);
-                SeriesBuilder { name: series_name(s.tx, s.idx), values, color, line_color, line_width, marker, marker_px, smooth: s.smooth.unwrap_or(false) }
-                    .build()
+                let point_colors = s.d_pt.iter()
+                    .filter_map(|d| series_fill(d.sp_pr.as_deref()).map(|c| (d.idx.value as usize, c)))
+                    .collect();
+                Series {
+                    name: series_name(s.tx, s.idx),
+                    values,
+                    color,
+                    line_color,
+                    line_width,
+                    marker,
+                    marker_px,
+                    smooth: s.smooth.unwrap_or(false),
+                    point_colors,
+                    invert_if_negative: s.invert_if_negative,
+                }
             })
             .collect::<Vec<_>>();
 
@@ -360,36 +445,18 @@ impl ChartModel {
                 Some(ooxml_dml::types::DisplayBlanksAsType::Zero) => Blanks::Zero,
                 _ => Blanks::Gap,
             },
-            vary_colors: matches!(kind, ChartType::Pie | ChartType::Doughnut)
-                || (vary.unwrap_or(false) && raw.len() == 1 && matches!(kind, ChartType::Bar)),
+            // §21.2.2.227 varyColors: pies vary unless the chart says not;
+            // other charts only when they have one series.
+            vary_colors: match kind {
+                ChartType::Pie | ChartType::Doughnut => vary.unwrap_or(true),
+                _ => vary.unwrap_or(false) && raw.len() == 1 && kind == ChartType::Bar,
+            },
             marker_default,
+            // The chart area is white unless its spPr says otherwise (Office's
+            // automatic chart fill); the plot area is clear.
+            chart_ground: ground(cs.sp_pr.as_deref(), Some("#FFFFFF")),
+            plot_ground: ground(plot.sp_pr.as_deref(), None),
         })
-    }
-}
-
-struct SeriesBuilder {
-    name: String,
-    values: Vec<Option<f64>>,
-    color: String,
-    line_color: String,
-    line_width: f64,
-    marker: Marker,
-    marker_px: f64,
-    smooth: bool,
-}
-
-impl SeriesBuilder {
-    fn build(self) -> Series {
-        Series {
-            name: self.name,
-            values: self.values,
-            color: self.color,
-            line_color: self.line_color,
-            line_width: self.line_width,
-            marker: self.marker,
-            marker_px: self.marker_px,
-            smooth: self.smooth,
-        }
     }
 }
 
@@ -409,8 +476,8 @@ fn series_name(tx: Option<&ooxml_dml::types::SeriesText>, idx: u32) -> String {
     .unwrap_or_else(|| format!("Series{}", idx + 1))
 }
 
-/// A series' solid fill colour (§20.1.2.3).
-/// A `schemeClr` falls back to the palette: charts have no theme here yet.
+/// A series' solid fill colour (§20.1.2.3), theme colours through the host's
+/// theme ([`with_scheme`]).
 fn series_fill(sp_pr: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<String> {
     let fill = sp_pr?.fill_properties.as_deref()?;
     match fill {
@@ -421,6 +488,11 @@ fn series_fill(sp_pr: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<St
 
 /// A series' line colour (`spPr/a:ln/a:solidFill`): where line, scatter and
 /// radar series keep their colour.
+///
+/// Declared: `a:ln` is readable only in builds with DrawingML line properties
+/// (the PowerPoint feature, which the shipped build has); a Word-only build
+/// keeps its parser byte-identical, so its chart lines take the fill colour.
+#[cfg(feature = "pml")]
 fn series_line(sp_pr: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<String> {
     let ln = sp_pr?.line.as_deref()?;
     match ln.line_fill_properties.as_deref()? {
@@ -429,15 +501,43 @@ fn series_line(sp_pr: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<St
     }
 }
 
-/// A series' line width (`a:ln@w`, EMU) in px.
+#[cfg(not(feature = "pml"))]
+fn series_line(_: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<String> {
+    None
+}
+
+/// A series' line width (`a:ln@w`, EMU) in px; see [`series_line`].
+#[cfg(feature = "pml")]
 fn series_line_width(sp_pr: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<f64> {
     let w = sp_pr?.line.as_deref()?.width?;
     Some(crate::engine::units::emu_to_px(i64::from(w)))
 }
 
+#[cfg(not(feature = "pml"))]
+fn series_line_width(_: Option<&ooxml_dml::types::CTShapeProperties>) -> Option<f64> {
+    None
+}
+
 fn resolve(choice: Option<&ooxml_dml::types::EGColorChoice>) -> Option<String> {
-    crate::engine::color::resolve_color_choice(choice?, |_| None)
+    crate::engine::color::resolve_color_choice(choice?, |v| scheme_color(&v.to_string()))
         .map(|(hex, alpha)| crate::engine::color::css_color(&hex, alpha))
+}
+
+/// A chart or plot area's ground from its `spPr`: a solid fill, `noFill`
+/// (none), or `automatic` when the fill is not given; a solid border.
+/// Declared: gradient, pattern and picture fills draw as `automatic`.
+fn ground(sp_pr: Option<&ooxml_dml::types::CTShapeProperties>, automatic: Option<&str>) -> Ground {
+    use ooxml_dml::types::EGFillProperties as F;
+    let fill = match sp_pr.and_then(|s| s.fill_properties.as_deref()) {
+        Some(F::NoFill(_)) => None,
+        Some(F::SolidFill(sf)) => resolve(sf.color_choice.as_deref()),
+        _ => automatic.map(str::to_owned),
+    };
+    let border = sp_pr.and_then(|s| {
+        let colour = series_line(Some(s))?;
+        Some((colour, series_line_width(Some(s)).unwrap_or(1.0)))
+    });
+    Ground { fill, border }
 }
 
 /// A line series' marker (§21.2.2.106): its symbol and size (points), or the
@@ -755,7 +855,7 @@ impl ChartModel {
     /// The legend's entries: (label, colour), without deleted ones.
     fn legend_entries(&self) -> Vec<(String, String)> {
         let all: Vec<(String, String)> = if self.vary_colors {
-            self.categories.iter().enumerate().map(|(i, c)| (c.clone(), palette(i))).collect()
+            self.categories.iter().enumerate().map(|(i, c)| (c.clone(), self.point_color(0, i))).collect()
         } else {
             self.series.iter().map(|s| (s.name.clone(), s.color.clone())).collect()
         };
@@ -763,7 +863,19 @@ impl ChartModel {
         all.into_iter().enumerate().filter(|(i, _)| !hidden.contains(i)).map(|(_, e)| e).collect()
     }
 
+    /// The fill of point `pi` of series `si`: its own `dPt` colour, else
+    /// the palette colour of the point when the chart varies colours by
+    /// point, else the series colour.
+    fn point_color(&self, si: usize, pi: usize) -> String {
+        let Some(ser) = self.series.get(si) else { return palette(pi) };
+        if let Some((_, c)) = ser.point_colors.iter().find(|(i, _)| *i == pi) {
+            return c.clone();
+        }
+        if self.vary_colors { palette(pi) } else { ser.color.clone() }
+    }
+
     fn paint(&self, p: &dyn Painter, x: f64, y: f64, w: f64, h: f64) {
+        paint_ground(p, &self.chart_ground, Rect { x, y, w, h });
         p.set_font(CHART_FONT);
         let mut area = Rect { x: x + MARGIN, y: y + MARGIN, w: (w - 2.0 * MARGIN).max(1.0), h: (h - 2.0 * MARGIN).max(1.0) };
         let entries = self.legend_entries();
@@ -833,6 +945,7 @@ impl ChartModel {
             w: (area.w - if left { AXIS_LABEL_W } else { 0.0 }).max(1.0),
             h: (area.h - if bottom { AXIS_LABEL_H } else { 0.0 }).max(1.0),
         };
+        paint_ground(p, &self.plot_ground, plot);
         let n_cats = self.categories.len().max(1);
         // Value → page coordinate along the value direction.
         let val_pos = |v: f64| {
@@ -922,13 +1035,24 @@ impl ChartModel {
             for (si, slot) in self.plotted(ci).into_iter().enumerate() {
                 let Some((base, top)) = slot else { continue };
                 let offset = if self.stacked() { 0.0 } else { si as f64 * step };
-                let colour = if self.vary_colors { palette(ci) } else { self.series[si].color.clone() };
-                p.set_fill_style_str(&colour);
+                let colour = self.point_color(si, ci);
                 let (a, b) = (val_pos(base), val_pos(top));
-                if self.horizontal {
-                    p.fill_rect(a.min(b), start + offset, (b - a).abs(), bar);
+                let r = if self.horizontal {
+                    Rect { x: a.min(b), y: start + offset, w: (b - a).abs(), h: bar }
                 } else {
-                    p.fill_rect(start + offset, a.min(b), bar, (b - a).abs());
+                    Rect { x: start + offset, y: a.min(b), w: bar, h: (b - a).abs() }
+                };
+                // §21.2.2.86: a negative bar of an inverting series is drawn
+                // white, outlined in its colour.
+                if top < base && self.series[si].invert_if_negative {
+                    p.set_fill_style_str("#FFFFFF");
+                    p.fill_rect(r.x, r.y, r.w, r.h);
+                    p.set_stroke_style_str(&colour);
+                    p.set_line_width(1.0);
+                    p.stroke_rect(r.x, r.y, r.w, r.h);
+                } else {
+                    p.set_fill_style_str(&colour);
+                    p.fill_rect(r.x, r.y, r.w, r.h);
                 }
             }
         }
@@ -1007,7 +1131,7 @@ impl ChartModel {
             let mut start = -std::f64::consts::FRAC_PI_2;
             for (i, v) in values.iter().enumerate() {
                 let sweep = v / total * std::f64::consts::TAU;
-                p.set_fill_style_str(&palette(i));
+                p.set_fill_style_str(&self.point_color(ri, i));
                 p.begin_path();
                 if r_in > 0.0 {
                     let _ = p.arc(cx, cy, r_out, start, start + sweep);
@@ -1070,6 +1194,18 @@ impl ChartModel {
             p.close_path();
             p.stroke();
         }
+    }
+}
+
+fn paint_ground(p: &dyn Painter, g: &Ground, r: Rect) {
+    if let Some(fill) = &g.fill {
+        p.set_fill_style_str(fill);
+        p.fill_rect(r.x, r.y, r.w, r.h);
+    }
+    if let Some((colour, width)) = &g.border {
+        p.set_stroke_style_str(colour);
+        p.set_line_width(*width);
+        p.stroke_rect(r.x, r.y, r.w, r.h);
     }
 }
 

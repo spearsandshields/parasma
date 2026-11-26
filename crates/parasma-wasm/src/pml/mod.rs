@@ -586,6 +586,15 @@ impl PmlRenderer {
         )
     }
 
+    /// The presentation theme as a chart scheme lookup (`chart::with_scheme`),
+    /// text and background names through the master's colour map.
+    pub(crate) fn chart_scheme(&self) -> impl Fn(&str) -> Option<String> + '_ {
+        move |name| {
+            let v = name.parse::<ooxml_dml::types::STSchemeColorVal>().ok()?;
+            shape::resolve_scheme_color(&v, &self.theme)
+        }
+    }
+
     /// Shared slide paint, threaded by `clip` (the windowed paint). `None` = full slide
     /// (byte-identical to the original `render_page`); `Some(win)` = windowed —
     /// each positioned item (picture / shape / table cell / chart) is culled by
@@ -859,7 +868,9 @@ impl PmlRenderer {
                     continue;
                 }
                 if let Some(bytes) = charts.get(&ch.chart_key) {
-                    let _ = crate::chart::render_chart(bytes, p, ch.x, ch.y, ch.w, ch.h);
+                    crate::chart::with_scheme(self.chart_scheme(), || {
+                        crate::chart::render_chart(bytes, p, ch.x, ch.y, ch.w, ch.h)
+                    });
                 }
             }
         }

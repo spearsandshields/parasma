@@ -121,6 +121,7 @@ fn horizontal_bars() {
     let rects: Vec<(f64, f64)> = painted(&chart_xml(&bar("bar", "clustered", &s, ""), ""))
         .into_iter()
         .filter_map(|c| match c { DrawCmd::FillRect { w, h, .. } => Some((w, h)), _ => None })
+        .skip(1) // the chart-area ground
         .collect();
     assert_eq!(rects.len(), 2, "{rects:?}");
     assert!((rects[0].1 - rects[1].1).abs() < 1e-6, "same thickness");
@@ -175,4 +176,42 @@ fn three_d_bars_draw_flat() {
     let s = ser(0, 0, "", "", &[(0, "1")], 1);
     let xml = chart_xml(&format!(r#"<c:bar3DChart><c:barDir val="col"/><c:grouping val="clustered"/>{s}<c:axId val="1"/><c:axId val="2"/></c:bar3DChart>{AXES}"#), "");
     assert_eq!(model(&xml).kind, ChartType::Bar);
+}
+
+/// Theme colours come from the host's theme; automatic colours cycle its
+/// accents; a dPt colours one bar; the chart area is white unless set.
+#[test]
+fn theme_point_and_ground_colours() {
+    let scheme = |n: &str| match n {
+        "accent1" => Some("#112233".to_owned()),
+        "accent2" => Some("#445566".to_owned()),
+        _ => None,
+    };
+    let themed = ser(0, 0, "", "", &[(0, "1"), (1, "2")], 2).replace(
+        "<c:val>",
+        r#"<c:spPr><a:solidFill><a:schemeClr val="accent2"/></a:solidFill></c:spPr><c:dPt><c:idx val="1"/><c:spPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></c:spPr></c:dPt><c:val>"#,
+    );
+    let xml = chart_xml(&bar("col", "clustered", &themed, ""), "");
+    let m = with_scheme(scheme, || model(&xml));
+    assert_eq!(m.series[0].color, "#445566");
+    assert_eq!(m.point_color(0, 1), "#ff0000", "the dPt colours its bar");
+    assert_eq!(m.point_color(0, 0), "#445566");
+    assert_eq!(with_scheme(scheme, || palette(0)), "#112233", "automatic colours from the theme");
+    assert_eq!(m.chart_ground.fill.as_deref(), Some("#FFFFFF"));
+
+    let no_fill = String::from_utf8(chart_xml(&bar("col", "clustered", &ser(0, 0, "", "", &[(0, "1")], 1), ""), "")).unwrap()
+        .replace("</c:chart>", r#"</c:chart><c:spPr><a:noFill/></c:spPr>"#);
+    assert_eq!(model(no_fill.as_bytes()).chart_ground.fill, None, "noFill: no ground");
+}
+
+/// varyColors=0 on a pie draws every slice in the series colour.
+#[test]
+fn a_pie_without_varied_colours_is_one_colour() {
+    let s = ser(0, 0, "", &str_cats(&["a", "b"]), &[(0, "1"), (1, "1")], 2);
+    let xml = chart_xml(&format!(r#"<c:pieChart><c:varyColors val="0"/>{s}</c:pieChart>"#), "");
+    let m = model(&xml);
+    assert_eq!(m.point_color(0, 0), m.point_color(0, 1));
+    let xml = chart_xml(&format!(r#"<c:pieChart><c:varyColors val="1"/>{s}</c:pieChart>"#), "");
+    let m = model(&xml);
+    assert_ne!(m.point_color(0, 0), m.point_color(0, 1));
 }

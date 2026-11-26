@@ -335,11 +335,8 @@ fn paint_page_charts_slice(
     p.clip();
     for ch in page_charts {
         if let Some(xml) = charts.get(&ch.key) {
-            // White chart-area ground first (Excel's default chart fill —
-            // gridlines must not show through the plot; the exact
-            // `renderChartToCanvas` white-ground rationale).
-            p.set_fill_style_str(PAGE_BG);
-            p.fill_rect(origin_x + ch.x, origin_y + ch.y, ch.w, ch.h);
+            // The chart paints its own chart-area ground (white unless the
+            // chart says otherwise), so the grid does not show through.
             let _ = crate::chart::render_chart(xml, p, origin_x + ch.x, origin_y + ch.y, ch.w, ch.h);
         }
     }
@@ -1255,10 +1252,7 @@ fn paint_grid_region(
         }
         if let Some(xml) = charts.get(&ch.key) {
             let (x, y) = (ox + ch.x, oy + ch.y);
-            // White chart-area ground (Excel's default chart fill — the grid
-            // must not show through; the renderChartToCanvas rationale).
-            p.set_fill_style_str(PAGE_BG);
-            p.fill_rect(x, y, ch.w, ch.h);
+            // The chart paints its own chart-area ground (see above).
             let _ = crate::chart::render_chart(xml, p, x, y, ch.w, ch.h);
         }
     }

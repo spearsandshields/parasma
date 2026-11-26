@@ -558,7 +558,7 @@ impl SmlRenderer {
         let pane_ctx = pane_parts
             .as_ref()
             .map(|(bands, band_page)| render::PaneCtx { bands: *bands, band_page: band_page.as_ref() });
-        render::paint_grid_viewport(
+        crate::chart::with_scheme(self.chart_scheme(), || render::paint_grid_viewport(
             p,
             &page,
             (gut_w, gut_h),
@@ -574,7 +574,7 @@ impl SmlRenderer {
             search,
             csp.as_ref(),
             pane_ctx.as_ref(),
-        )
+        ))
     }
 
     /// The frozen-pane PAINT inputs for one viewport frame: the band geometry +
@@ -1414,6 +1414,23 @@ impl SmlRenderer {
         None
     }
 
+    /// The workbook theme as a chart scheme lookup (`chart::with_scheme`):
+    /// `color_ctx.theme` is in Excel's `color@theme` order (§18.8.3: lt1,
+    /// dk1, lt2, dk2, accents, hyperlinks); text and background names take
+    /// the default mapping.
+    pub(crate) fn chart_scheme(&self) -> impl Fn(&str) -> Option<String> + '_ {
+        move |name| {
+            let i = match name {
+                "lt1" | "bg1" => 0, "dk1" | "tx1" => 1, "lt2" | "bg2" => 2, "dk2" | "tx2" => 3,
+                "accent1" => 4, "accent2" => 5, "accent3" => 6, "accent4" => 7, "accent5" => 8,
+                "accent6" => 9, "hlink" => 10, "folHlink" => 11,
+                _ => return None,
+            };
+            let hex = &self.color_ctx.theme[i];
+            (!hex.is_empty()).then(|| format!("#{hex}"))
+        }
+    }
+
     /// Workbook colour-resolution context (theme + indexed palettes) — exposed
     /// for the native tests.
     #[cfg(test)]
@@ -1478,7 +1495,7 @@ impl SmlRenderer {
             .ok_or_else(|| JsValue::from_str("page index out of range"))?;
         let images = bitmaps.borrow();
         let painter = crate::engine::paint::CanvasPainter::new(ctx, &images);
-        render::paint_sheet_page(
+        crate::chart::with_scheme(self.chart_scheme(), || render::paint_sheet_page(
             &painter,
             page,
             origin_x,
@@ -1490,7 +1507,7 @@ impl SmlRenderer {
             &bitmaps.borrow(),
             &charts.borrow(),
             search,
-        )
+        ))
     }
 
     /// Windowed variant of [`Self::render_page`] for the SML PRINT page:
@@ -1528,7 +1545,7 @@ impl SmlRenderer {
         // through the painter (no direct ctx, no translate), so leaf subtraction in
         // the decorator makes them all window-local automatically.
         let off = crate::engine::paint::OffsetPainter::new(&painter, clip.x0, clip.y0);
-        render::paint_sheet_page_clipped(
+        crate::chart::with_scheme(self.chart_scheme(), || render::paint_sheet_page_clipped(
             &off,
             page,
             origin_x,
@@ -1541,7 +1558,7 @@ impl SmlRenderer {
             &charts.borrow(),
             Some(clip),
             search,
-        )
+        ))
     }
 }
 

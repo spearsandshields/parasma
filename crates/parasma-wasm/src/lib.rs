@@ -6119,7 +6119,7 @@ impl Viewer {
         // White ground under the vectors (see doc comment).
         ctx.set_fill_style_str("#ffffff");
         ctx.fill_rect(0.0, 0.0, w_px / scale, h_px / scale);
-        let ok = crate::chart::render_chart(xml, &painter, 0.0, 0.0, w_px / scale, h_px / scale);
+        let ok = self.with_chart_scheme(|| crate::chart::render_chart(xml, &painter, 0.0, 0.0, w_px / scale, h_px / scale));
         ctx.restore();
         ok
     }
@@ -6704,7 +6704,30 @@ impl Viewer {
     /// References NO concrete `ctx` and NO `self.image_bitmaps`: the painter owns
     /// image resolution (`draw_image` resolves keys), so the free fns are passed
     /// an empty bitmap map (a dead arg they no longer read).
+    /// Run `f` with the loaded document's theme as the chart theme
+    /// (`chart::with_scheme`), so a chart's theme colours are its document's.
+    fn with_chart_scheme<R>(&self, f: impl FnOnce() -> R) -> R {
+        match &self.loaded {
+            LoadedDoc::Wml(w) => crate::chart::with_scheme(|n| w.theme_fonts.scheme_color(n).map(str::to_owned), f),
+            #[cfg(feature = "sml")]
+            LoadedDoc::Sml(s) => crate::chart::with_scheme(s.chart_scheme(), f),
+            #[cfg(feature = "pml")]
+            LoadedDoc::Pml(p) => crate::chart::with_scheme(p.chart_scheme(), f),
+            #[allow(unreachable_patterns)]
+            _ => f(),
+        }
+    }
+
     fn paint_wml_page(
+        &self,
+        idx: u32,
+        p: &dyn Painter,
+        clip: Option<&cull::Rect>,
+    ) -> Result<(), JsValue> {
+        self.with_chart_scheme(|| self.paint_wml_page_body(idx, p, clip))
+    }
+
+    fn paint_wml_page_body(
         &self,
         idx: u32,
         p: &dyn Painter,

@@ -126,6 +126,13 @@ are held stable regardless.
   in Office and keep their colours; 3-D bar, line and area charts are drawn
   flat instead of not at all; doughnuts with several series draw every
   ring.
+- Charts (all formats): series, points and chart backgrounds given as theme
+  colours use the document's theme, and series without a colour cycle the
+  theme's accents as Office does, so charts in documents with a non-Office
+  theme get their own colours. Individually coloured bars and pie slices
+  keep their colour, pies set not to vary colours are one colour, negative
+  bars set to invert draw white, and chart and plot area fills and borders
+  are drawn (a chart with no fill is transparent, in every format).
 - Colours: lighter and darker theme colour variants made with a tint or
   shade are mixed with white or black as the standard defines, so the banded
   rows of PowerPoint's table styles and other tinted fills are pale, not
