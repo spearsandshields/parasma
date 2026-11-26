@@ -751,13 +751,7 @@ pub(crate) fn layout_table(
         .map(|j| j.value)
         .unwrap_or(STJcTable::Start);
 
-    let tbl_look = props.tbl_look.as_deref();
-    let on_off = |v: &Option<String>| v.as_deref().map(|s| s == "1" || s == "true").unwrap_or(false);
-    let look_first_row = tbl_look.map(|l| on_off(&l.first_row)).unwrap_or(false);
-    let look_last_row = tbl_look.map(|l| on_off(&l.last_row)).unwrap_or(false);
-    let look_first_col = tbl_look.map(|l| on_off(&l.first_column)).unwrap_or(false);
-    let look_last_col = tbl_look.map(|l| on_off(&l.last_column)).unwrap_or(false);
-    let look_no_h_band = tbl_look.map(|l| on_off(&l.no_h_band)).unwrap_or(false);
+    let look = TableLook::read(props.tbl_look.as_deref());
 
     let style_overrides: &[ooxml_wml::types::TableStyleProperties] = tbl_style_id
         .and_then(|id| style_ctx.style(id))
@@ -787,6 +781,7 @@ pub(crate) fn layout_table(
             .unwrap_or(false);
 
         for (cell_idx, cell) in row_cells.iter().enumerate() {
+            let at = CellPlace { row_idx, col_idx: cell_idx, num_rows, num_cols };
             // §17.4.17 gridSpan. `col_widths_px.len()` is the real grid; `col_idx`
             // never passes it (it is only ever assigned `end`, which is `.min(len)`).
             let col_span = grid_span_columns(
@@ -812,14 +807,12 @@ pub(crate) fn layout_table(
                 .and_then(|id| style_ctx.style(id))
                 .and_then(|s| s.r_pr.as_deref());
             let cond_rprs = collect_conditional_run_properties(
-                row_idx, cell_idx, num_rows, num_cols,
-                look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
+                look, at,
                 style_overrides, table_base_rpr,
             );
 
             let cond_pprs = collect_conditional_para_properties(
-                row_idx, cell_idx, num_rows, num_cols,
-                look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
+                look, at,
                 style_overrides,
             );
 
@@ -868,8 +861,7 @@ pub(crate) fn layout_table(
             let fill_color = direct_fill.unwrap_or_else(|| {
                 resolve_conditional_cell_fill(
                     theme_fonts,
-                    row_idx, cell_idx, num_rows, num_cols,
-                    look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
+                    look, at,
                     style_overrides,
                 )
             });
@@ -882,15 +874,13 @@ pub(crate) fn layout_table(
                 Some(ooxml_wml::types::STVerticalJc::Bottom) => CellVAlign::Bottom,
                 Some(_) => CellVAlign::Top,
                 None => resolve_conditional_cell_valign(
-                    row_idx, cell_idx, num_rows, num_cols,
-                    look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
+                    look, at,
                     style_overrides,
                 ),
             };
 
             let cond_borders = resolve_conditional_cell_borders(
-                theme_fonts, row_idx, cell_idx, num_rows, num_cols,
-                look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
+                theme_fonts, look, at,
                 style_overrides,
             );
             let (cell_bdr_top, cell_bdr_bottom, cell_bdr_left, cell_bdr_right) =
@@ -968,39 +958,76 @@ pub(crate) fn layout_table(
     Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, cell_margin_h, cell_margin_v, indent_px })
 }
 
+/// §17.4.56 tblLook: which of its style's conditional regions a table uses.
+#[derive(Clone, Copy, Default)]
+struct TableLook {
+    first_row: bool,
+    last_row: bool,
+    first_col: bool,
+    last_col: bool,
+    no_h_band: bool,
+}
+
+impl TableLook {
+    /// Each flag from its named attribute, else from its bit in the hex
+    /// `w:val`: the only form Word 2007 writes ([MS-OI29500] §17.4.56:
+    /// 0x0020 first row, 0x0040 last row, 0x0080 first column, 0x0100 last
+    /// column, 0x0200 no row bands).
+    fn read(look: Option<&ooxml_wml::types::CTTblLook>) -> Self {
+        let Some(l) = look else { return Self::default() };
+        // The parser hands the hex digits over as bytes, most significant first.
+        let bits = l.value.as_deref().unwrap_or(&[]).iter().fold(0u16, |acc, b| acc << 8 | u16::from(*b));
+        let flag = |attr: &Option<String>, bit: u16| match attr.as_deref() {
+            Some(v) => crate::on_off(v),
+            None => bits & bit != 0,
+        };
+        Self {
+            first_row: flag(&l.first_row, 0x0020),
+            last_row: flag(&l.last_row, 0x0040),
+            first_col: flag(&l.first_column, 0x0080),
+            last_col: flag(&l.last_column, 0x0100),
+            no_h_band: flag(&l.no_h_band, 0x0200),
+        }
+    }
+}
+
+/// A cell's place in its table, by row and by cell within the row.
+#[derive(Clone, Copy)]
+struct CellPlace {
+    row_idx: usize,
+    col_idx: usize,
+    num_rows: usize,
+    num_cols: usize,
+}
+
 /// The `tblStylePr` conditional regions that apply to a cell, ordered
 /// least→most specific (banding first, then first/last col, then first/last
-/// row). Callers iterate `.rev()` so the most specific region wins. Mirrors
-/// the OOXML §17.7.6 conditional-formatting precedence.
-// Positional orchestrator args; struct-ification deferred to a dedicated pass.
-#[allow(clippy::too_many_arguments)]
-fn conditional_regions(
-    row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
-    first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
-) -> Vec<ooxml_wml::types::STTblStyleOverrideType> {
+/// row). Callers iterate `.rev()` so the most specific region wins.
+/// The header and total rows are outside the bands, and the first band
+/// starts under the header. DEVIATION, declared: §17.7.6 applies first/last
+/// column after first/last row; here the row regions win a corner cell.
+fn conditional_regions(look: TableLook, at: CellPlace) -> Vec<ooxml_wml::types::STTblStyleOverrideType> {
     use ooxml_wml::types::STTblStyleOverrideType::*;
+    let header = look.first_row && at.row_idx == 0;
+    let total = look.last_row && at.row_idx + 1 >= at.num_rows;
     let mut regions = Vec::new();
-    if !no_h_band {
-        let band_row = if first_row { row_idx.saturating_sub(1) } else { row_idx };
-        if band_row % 2 == 0 { regions.push(Band1Horz); } else { regions.push(Band2Horz); }
+    if !look.no_h_band && !header && !total {
+        let band_row = at.row_idx - usize::from(look.first_row);
+        regions.push(if band_row.is_multiple_of(2) { Band1Horz } else { Band2Horz });
     }
-    if first_col && col_idx == 0 { regions.push(FirstCol); }
-    if last_col && col_idx + 1 >= num_cols { regions.push(LastCol); }
-    if first_row && row_idx == 0 { regions.push(FirstRow); }
-    if last_row && row_idx + 1 >= num_rows { regions.push(LastRow); }
+    if look.first_col && at.col_idx == 0 { regions.push(FirstCol); }
+    if look.last_col && at.col_idx + 1 >= at.num_cols { regions.push(LastCol); }
+    if header { regions.push(FirstRow); }
+    if total { regions.push(LastRow); }
     regions
 }
 
-#[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn resolve_conditional_cell_fill(
     theme: &ThemeFonts,
-    row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
-    first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
+    look: TableLook, at: CellPlace,
     overrides: &[ooxml_wml::types::TableStyleProperties],
 ) -> Option<String> {
-    let regions = conditional_regions(
-        row_idx, col_idx, num_rows, num_cols,
-        first_row, last_row, first_col, last_col, no_h_band);
+    let regions = conditional_regions(look, at);
     for region in regions.iter().rev() {
         for ov in overrides {
             if ov.r#type == *region {
@@ -1015,15 +1042,11 @@ fn resolve_conditional_cell_fill(
     None
 }
 
-#[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn resolve_conditional_cell_valign(
-    row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
-    first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
+    look: TableLook, at: CellPlace,
     overrides: &[ooxml_wml::types::TableStyleProperties],
 ) -> CellVAlign {
-    let regions = conditional_regions(
-        row_idx, col_idx, num_rows, num_cols,
-        first_row, last_row, first_col, last_col, no_h_band);
+    let regions = conditional_regions(look, at);
     for region in regions.iter().rev() {
         for ov in overrides {
             if ov.r#type == *region {
@@ -1059,20 +1082,16 @@ type EdgeOverrides = (
     Option<Option<CellBorderEdge>>,
 );
 
-#[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn resolve_conditional_cell_borders(
     theme: &ThemeFonts,
-    row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
-    first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
+    look: TableLook, at: CellPlace,
     overrides: &[ooxml_wml::types::TableStyleProperties],
 ) -> EdgeOverrides {
-    let regions = conditional_regions(
-        row_idx, col_idx, num_rows, num_cols,
-        first_row, last_row, first_col, last_col, no_h_band);
-    let is_top = row_idx == 0;
-    let is_bottom = row_idx + 1 >= num_rows;
-    let is_left = col_idx == 0;
-    let is_right = col_idx + 1 >= num_cols;
+    let regions = conditional_regions(look, at);
+    let is_top = at.row_idx == 0;
+    let is_bottom = at.row_idx + 1 >= at.num_rows;
+    let is_left = at.col_idx == 0;
+    let is_right = at.col_idx + 1 >= at.num_cols;
 
     let (mut top, mut bottom, mut left, mut right): EdgeOverrides = (None, None, None, None);
     // Iterate least→most specific so later (more specific) regions overwrite.
@@ -1124,15 +1143,11 @@ fn resolve_conditional_cell_borders(
     (top, bottom, left, right)
 }
 
-#[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn collect_conditional_para_properties(
-    row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
-    first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
+    look: TableLook, at: CellPlace,
     overrides: &[ooxml_wml::types::TableStyleProperties],
 ) -> Vec<&ooxml_wml::types::CTPPrGeneral> {
-    let regions = conditional_regions(
-        row_idx, col_idx, num_rows, num_cols,
-        first_row, last_row, first_col, last_col, no_h_band);
+    let regions = conditional_regions(look, at);
 
     let mut result = Vec::new();
     for region in regions.iter().rev() {
@@ -1147,16 +1162,12 @@ fn collect_conditional_para_properties(
     result
 }
 
-#[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn collect_conditional_run_properties<'a>(
-    row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
-    first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
+    look: TableLook, at: CellPlace,
     overrides: &'a [ooxml_wml::types::TableStyleProperties],
     table_style_rpr: Option<&'a ooxml_wml::types::RunProperties>,
 ) -> Vec<&'a ooxml_wml::types::RunProperties> {
-    let regions = conditional_regions(
-        row_idx, col_idx, num_rows, num_cols,
-        first_row, last_row, first_col, last_col, no_h_band);
+    let regions = conditional_regions(look, at);
 
     let mut result = Vec::new();
     for region in regions.iter().rev() {

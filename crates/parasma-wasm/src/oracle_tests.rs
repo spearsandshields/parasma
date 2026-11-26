@@ -11724,3 +11724,54 @@ fn neighbouring_runs_with_one_border_share_a_box() {
     }
     assert_eq!(sides, 4, "one box of four sides");
 }
+
+// ── Table look (§17.4.56): which style regions a table uses ─────────────────
+
+/// A table style with a fill per region, for reading which region won.
+const LOOK_STYLE: &str = r#"<w:style w:type="table" w:styleId="Look"><w:name w:val="Look"/><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="lastRow"><w:rPr><w:b/></w:rPr></w:tblStylePr><w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:val="clear" w:fill="333333"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band2Horz"><w:tcPr><w:shd w:val="clear" w:fill="BBBBBB"/></w:tcPr></w:tblStylePr></w:style>"#;
+
+/// The fill of every cell of a four-row, two-column table that uses
+/// `LOOK_STYLE` with the given tblLook.
+fn look_fills(tbl_look: &str) -> Vec<[Option<String>; 2]> {
+    let row = format!("{}{}", bcell("", "a"), bcell("", "b"));
+    let tbl_pr = format!(r#"<w:tblStyle w:val="Look"/>{tbl_look}"#);
+    let v = layout(bordered_table_docx(&tbl_pr, &[&row, &row, &row, &row], LOOK_STYLE));
+    table_rows_of(&v).iter().map(|r| [r.cells[0].fill_color.clone(), r.cells[1].fill_color.clone()]).collect()
+}
+
+fn fill(hex: &str) -> Option<String> {
+    Some(format!("#{hex}"))
+}
+
+/// Word 2007 writes only the hex bitmask: 0x0020 first row, 0x0080 first
+/// column, 0x0400 no column bands.
+#[test]
+fn a_hex_table_look_selects_the_style_regions() {
+    let fills = look_fills(r#"<w:tblLook w:val="04A0"/>"#);
+    assert_eq!(fills[0], [fill("111111"), fill("111111")], "the header row");
+    assert_eq!(fills[1], [fill("333333"), fill("AAAAAA")], "first column, then band 1");
+    assert_eq!(fills[2], [fill("333333"), fill("BBBBBB")], "first column, then band 2");
+}
+
+/// The named attributes decide when both forms are present, and
+/// Transitional's `on` is true.
+#[test]
+fn table_look_attributes_override_the_hex_value() {
+    let fills = look_fills(r#"<w:tblLook w:val="0000" w:firstRow="on" w:firstColumn="0" w:noHBand="1"/>"#);
+    assert_eq!(fills[0], [fill("111111"), fill("111111")]);
+    assert_eq!(fills[1], [None, None], "no first column and no bands");
+}
+
+/// The header and total rows are not banded: a band's fill must not show
+/// through a region that sets no fill of its own, and the first band starts
+/// under the header.
+#[test]
+fn header_and_total_rows_are_left_out_of_the_bands() {
+    let fills = look_fills(r#"<w:tblLook w:firstRow="1" w:lastRow="1"/>"#);
+    assert_eq!(fills[1], [fill("AAAAAA"), fill("AAAAAA")], "band 1 starts under the header");
+    assert_eq!(fills[2], [fill("BBBBBB"), fill("BBBBBB")]);
+    assert_eq!(fills[3], [None, None], "the total row sets no fill and takes none from a band");
+    let plain = look_fills(r#"<w:tblLook w:firstRow="0" w:lastRow="0"/>"#);
+    assert_eq!(plain[0], [fill("AAAAAA"), fill("AAAAAA")], "with no header, band 1 is the first row");
+    assert_eq!(plain[3], [fill("BBBBBB"), fill("BBBBBB")]);
+}

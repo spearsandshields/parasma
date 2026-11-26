@@ -263,6 +263,10 @@ are held stable regardless.
   in footnotes and in text boxes. Nested tables inside header cells are drawn.
 - Text borders: boxed words and labels (common in forms and East Asian
   documents) draw their box, one box round neighbouring runs that share it.
+- Tables: tables saved by Word 2007 get their style's header row, first
+  column and banding back; the look was stored in a form that was not read.
+  Header and total rows no longer pick up the band colour, and banding
+  starts under the header.
 
 ### Changed
 
