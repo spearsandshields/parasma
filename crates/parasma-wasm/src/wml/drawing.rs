@@ -66,7 +66,7 @@ impl WrapInfo {
 }
 
 pub(crate) fn is_layout_control(c: char) -> bool {
-    matches!(c, '\n' | '\r')
+    matches!(c, '\n' | '\r' | crate::wml::linebreak::PAGE_BREAK_CHAR | crate::wml::linebreak::COLUMN_BREAK_CHAR)
 }
 
 pub(crate) fn parse_anchor_position(drawing: &ooxml_wml::types::CTDrawing, obj_w_px: f64, obj_h_px: f64)

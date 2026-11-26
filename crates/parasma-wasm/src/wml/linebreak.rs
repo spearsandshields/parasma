@@ -412,13 +412,12 @@ pub(crate) fn collect_items(
             Some(t) => !t.is_empty(),
             None => RunText::any_in(run, deleted),
         };
-        let has_page_break = run.has_page_break();
         let drawings = run.drawings();
 
         let has_pict = run.run_content.iter().any(|rc| matches!(rc, ooxml_wml::types::RunContent::Pict(_)));
         let has_footnote_ref = run.footnote_ref().is_some();
         let has_endnote_ref = run.endnote_ref().is_some();
-        let has_content = has_text || has_page_break || !drawings.is_empty() || has_pict || has_footnote_ref || has_endnote_ref;
+        let has_content = has_text || !drawings.is_empty() || has_pict || has_footnote_ref || has_endnote_ref;
         if !has_content {
             continue;
         }
@@ -538,9 +537,13 @@ pub(crate) fn collect_items(
             let mut last_emit_idx = 0;
             for (idx, raw_mandatory) in run_text.breaks(chunk, base) {
                 let segment = &chunk[last_emit_idx..idx];
-                let last_char = segment.chars().last();
-                let ends_with_newline = matches!(last_char, Some('\n') | Some('\r'));
-                let real_mandatory = raw_mandatory && ends_with_newline;
+                let hard_break = match segment.chars().last() {
+                    _ if !raw_mandatory => BreakAfter::Allowed,
+                    Some('\n' | '\r') => BreakAfter::Mandatory,
+                    Some(PAGE_BREAK_CHAR) => BreakAfter::PageBreak,
+                    Some(COLUMN_BREAK_CHAR) => BreakAfter::ColumnBreak,
+                    _ => BreakAfter::Allowed,
+                };
 
                 // Emit an item at EVERY Unicode line-break opportunity (UAX #14),
                 // not only whitespace ones — OOXML defers line breaking to the
@@ -605,21 +608,21 @@ pub(crate) fn collect_items(
                     let estimated = char_count * pt_to_px(seg_style.font_pt) * 0.5 + char_count * seg_style.char_spacing_px;
                     (estimated, estimated, None)
                 };
+                // A page or column break is not paragraph text: it splits
+                // the run but stays out of the item's text and byte span,
+                // as the text-less break item it replaced did.
+                let segment = segment.trim_end_matches([PAGE_BREAK_CHAR, COLUMN_BREAK_CHAR]);
                 items.push(Item {
                     text: segment.to_string(),
                     style: seg_style,
                     width,
                     content_width,
-                    break_after: if real_mandatory {
-                        BreakAfter::Mandatory
-                    } else {
-                        BreakAfter::Allowed
-                    },
+                    break_after: hard_break,
                     shaped,
                     field: *field_code,
                     // Logical span = this segment's OWN byte length at stamp
                     // time (robust to later PAGE/NUMPAGES mutation).
-                    char_start: byte_cursor,
+                    char_start: if segment.is_empty() { CHAR_START_SENTINEL } else { byte_cursor },
                     char_len: segment.len() as u32,
                     ..Default::default()
                 });
@@ -884,15 +887,6 @@ pub(crate) fn collect_items(
                     ..Default::default()
                 });
             }
-        }
-
-        if has_page_break {
-            items.push(Item {
-                style: style.clone(),
-                break_after: BreakAfter::PageBreak,
-                // Not born of paragraph text — sentinel.
-                ..Default::default()
-            });
         }
 
         // Stamp the hyperlink target onto every item produced for this run.
@@ -1418,8 +1412,8 @@ pub(crate) fn pack_lines(items: Vec<Item>, available_width: f64, first_line_inde
     // distinct on purpose (always-accept-first vs accept-when-it-fits).
     #[allow(clippy::if_same_then_else)]
     for (i, mut item) in items.into_iter().enumerate() {
-        let mandatory_after = item.break_after == BreakAfter::Mandatory;
-        let page_break_after = item.break_after == BreakAfter::PageBreak;
+        let hard_break = item.break_after;
+        let mandatory_after = item.break_after != BreakAfter::Allowed;
 
         // Tab advances resolve HERE, against the line being filled, because
         // §17.3.1.37 measures stops from the line's leading edge — see
@@ -1457,10 +1451,8 @@ pub(crate) fn pack_lines(items: Vec<Item>, available_width: f64, first_line_inde
             current.push(item, font_cache);
         }
 
-        if mandatory_after || page_break_after {
-            if page_break_after {
-                current.ends_with_page_break = true;
-            }
+        if mandatory_after {
+            current.ends_with = hard_break;
             lines.push(std::mem::replace(&mut current, LayoutLine::new()));
         }
     }
@@ -1544,7 +1536,16 @@ pub(crate) enum BreakAfter {
     Mandatory,
     /// `<w:br w:type="page"/>` — force a new line *and* close the page.
     PageBreak,
+    /// `<w:br w:type="column"/>` — force a new line and move to the next
+    /// column, or the next page past the last column (§17.18.4).
+    ColumnBreak,
 }
+
+/// The characters a run's text carries for its page and column breaks, at
+/// the breaks' own positions: Unicode's own mandatory breaks (UAX #14 class
+/// BK), so text after a break in the same run follows it.
+pub(crate) const PAGE_BREAK_CHAR: char = '\u{000C}';
+pub(crate) const COLUMN_BREAK_CHAR: char = '\u{000B}';
 
 #[derive(Clone)]
 pub(crate) struct Item {
@@ -1736,6 +1737,7 @@ impl Item {
             BreakAfter::Allowed => {}
             BreakAfter::Mandatory => out.push_str(" brk=M"),
             BreakAfter::PageBreak => out.push_str(" brk=P"),
+            BreakAfter::ColumnBreak => out.push_str(" brk=C"),
         }
         if *rtl {
             out.push_str(" rtl");
@@ -2037,12 +2039,11 @@ impl RunText {
     /// Whether `of` would produce any text — the cheap test run before the
     /// style chain is resolved.
     fn any_in(run: &ooxml_wml::types::Run, deleted: bool) -> bool {
-        use ooxml_wml::types::{RunContent, STBrType};
+        use ooxml_wml::types::RunContent;
         run.run_content.iter().any(|rc| match rc {
             RunContent::T(t) => t.text.as_ref().is_some_and(|s| !s.is_empty()),
             RunContent::DelText(t) => deleted && t.text.as_ref().is_some_and(|s| !s.is_empty()),
-            RunContent::Br(br) => !matches!(br.r#type, Some(STBrType::Page) | Some(STBrType::Column)),
-            RunContent::Tab(_) | RunContent::Cr(_) | RunContent::NoBreakHyphen(_) => true,
+            RunContent::Br(_) | RunContent::Tab(_) | RunContent::Cr(_) | RunContent::NoBreakHyphen(_) => true,
             RunContent::Sym(sym) => sym_code(sym).is_some(),
             _ => false,
         })
@@ -2077,11 +2078,13 @@ impl RunText {
                 RunContent::DelText(t) if deleted => push_text(&mut out, t.text.as_deref().unwrap_or("")),
                 RunContent::Tab(_) => out.push('\t', None),
                 RunContent::Cr(_) => out.push('\n', None),
-                RunContent::Br(br)
-                    if !matches!(br.r#type, Some(STBrType::Page) | Some(STBrType::Column)) =>
-                {
-                    out.push('\n', None)
-                }
+                // FLOOR: `w:clear` is not read, so text after a clearing
+                // break keeps wrapping beside a float.
+                RunContent::Br(br) => out.push(match br.r#type {
+                    Some(STBrType::Page) => PAGE_BREAK_CHAR,
+                    Some(STBrType::Column) => COLUMN_BREAK_CHAR,
+                    _ => '\n',
+                }, None),
                 RunContent::NoBreakHyphen(_) => {
                     out.push('-', None);
                     out.no_break.push(out.text.len());
@@ -2316,9 +2319,9 @@ pub(crate) struct LayoutLine {
     /// Kept separate from text metrics so Auto line spacing can scale text
     /// without shrinking images.
     pub(crate) max_image_height: f64,
-    /// Set when the line ends with a `<w:br w:type="page"/>` — pagination
-    /// closes the current page after placing this line.
-    pub(crate) ends_with_page_break: bool,
+    /// The break that ends the line: `PageBreak` closes the page after it,
+    /// `ColumnBreak` the column; `Allowed` when the line simply filled.
+    pub(crate) ends_with: BreakAfter,
 }
 
 impl LayoutLine {
@@ -2330,7 +2333,7 @@ impl LayoutLine {
             max_descent: 0.0,
             max_font_pt: DEFAULT_FONT_PT,
             max_image_height: 0.0,
-            ends_with_page_break: false,
+            ends_with: BreakAfter::Allowed,
         }
     }
     fn is_empty(&self) -> bool {

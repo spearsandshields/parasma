@@ -205,6 +205,10 @@ are held stable regardless.
   them when needed, judged by the page number shown, and odd and even
   headers follow the page number shown rather than the page's position in
   its section.
+- Breaks: text after a page break in the same run of text starts the next
+  page, and several breaks in a row each start a page. Column breaks move
+  to the next column (a new page when there is none), and a page break in a
+  multi-column section starts a new page instead of the next column.
 
 ### Changed
 

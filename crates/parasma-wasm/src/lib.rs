@@ -127,7 +127,7 @@ use wml::float_resolve::{resolve_anchor_position, FrameCtx};
 use wml::content_walk::{all_paragraphs, flatten_blocks, FlatBlock};
 use wml::hdr_ftr::{layout_section_hdr_ftr, position_hdr_ftr_lines, LaidOutHdrFtr};
 use wml::linebreak::{
-    author_color, comment_anchor_name, justify_line, pack_lines, LineSegment, OPEN_COMMENT_IDS,
+    author_color, comment_anchor_name, justify_line, pack_lines, BreakAfter, LineSegment, OPEN_COMMENT_IDS,
 };
 use wml::loader::{
     build_numbering_lookup, build_sections, extract_core_date, extract_hdr_ftr_images,
@@ -3857,6 +3857,9 @@ impl Viewer {
                         let n = wrapped.len();
                         let mut overflowed = false;
                         let mut trailing_pb = false;
+                        // The overflow came from a page break, which starts a
+                        // new page even with columns left.
+                        let mut to_page = false;
                         for (i, wl) in wrapped.into_iter().enumerate() {
                             // A band-walk line states its own advance: it stands for a
                             // RUN of fully-blocked bands collapsed into one line, so its
@@ -3875,7 +3878,8 @@ impl Viewer {
                                 continue;
                             }
                             let baseline_y = margin_top + y_in_page + wl.max_ascent;
-                            let pb = wl.ends_with_page_break;
+                            let hard = wl.ends_with;
+                            let pb = matches!(hard, BreakAfter::PageBreak | BreakAfter::ColumnBreak);
                             // UAX#9 L2 — the last moment before paint, and the first
                             // at which this line is final. DEVIATION, declared: the
                             // algorithm reorders a LINE, and a float splits one
@@ -3909,6 +3913,7 @@ impl Viewer {
                             }));
                             y_in_page += lh;
                             if pb {
+                                to_page = hard == BreakAfter::PageBreak;
                                 if i + 1 < n { overflowed = true; } else { trailing_pb = true; }
                             }
                         }
@@ -3920,6 +3925,7 @@ impl Viewer {
                             // that re-enters the arm, not BlockBoundary{+1} (which
                             // would skip the epilogue on replay).
                             if trailing_pb {
+                                if to_page { col_idx = geo.columns.len() - 1; }
                                 // `remaining` is empty here — passed anyway so
                                 // the capture's remainder/cursor totality
                                 // debug_assert stays total.
@@ -3931,6 +3937,7 @@ impl Viewer {
                                 }, remainder = remaining);
                             }
                         } else {
+                            if to_page { col_idx = geo.columns.len() - 1; }
                             overflow_col!($relay, $block_idx, ResumeAt::ParaItems {
                                 block: $block_idx,
                                 items_remaining: remaining.len(),
@@ -5035,7 +5042,7 @@ impl Viewer {
                                 0.0
                             };
                             let is_last_line = line_idx == cache.lines.len() - 1
-                                || line.ends_with_page_break;
+                                || matches!(line.ends_with, BreakAfter::PageBreak | BreakAfter::ColumnBreak);
                             let mut items = line.items.clone();
                             let avail = cache.layout.available_width(
                                 page_w, col_ml, col_mr, line_indent_extra,
@@ -5070,9 +5077,13 @@ impl Viewer {
                             }));
                             y_in_page += line_height;
 
-                            if line.ends_with_page_break {
+                            if matches!(line.ends_with, BreakAfter::PageBreak | BreakAfter::ColumnBreak) {
                                 // Explicit break AFTER placing line_idx; next_line ==
                                 // lines.len() when it was the last line (block done).
+                                // A page break skips any columns left (§17.18.4).
+                                if line.ends_with == BreakAfter::PageBreak {
+                                    col_idx = geo.columns.len() - 1;
+                                }
                                 overflow_col!('relay, block_idx,
                                     ResumeAt::ParaLines { block: block_idx, next_line: line_idx + 1,
                                         src: ParaLineSrc::ExplicitBreak });

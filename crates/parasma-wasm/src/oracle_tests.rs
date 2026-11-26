@@ -11199,3 +11199,56 @@ fn section_fields_and_dashed_page_numbers() {
     let v = layout(numbered_docx(&footer, &body, ""));
     assert_eq!(footer_texts(&v), ["S1 of 2 - 1 -", "S1 of 2 - 2 -", "S2 of 1 - 3 -"]);
 }
+
+// ── Breaks: position inside a run, column breaks, breaks in columns ─────────
+
+/// Each page's body text, item texts joined.
+fn page_texts(v: &Viewer) -> Vec<String> {
+    v.pages.borrow().iter()
+        .map(|p| p.elements.iter().filter_map(|e| match e {
+            PageElement::Line(l) => Some(l.segments.iter().flat_map(|s| &s.items).map(|i| i.text.as_str()).collect::<String>()),
+            _ => None,
+        }).collect::<Vec<_>>().join("|"))
+        .collect()
+}
+
+/// A body of `runs` in one paragraph, in `cols` columns.
+fn breaks_docx(runs: &str, cols: u32) -> Vec<u8> {
+    let docx = numbering_docx("", "", &format!("<w:p>{runs}</w:p>"));
+    if cols < 2 {
+        return docx;
+    }
+    unzip_replace(docx, "word/document.xml", r#"<w:pgSz w:w="12240" w:h="15840"/>"#,
+        &format!(r#"<w:pgSz w:w="12240" w:h="15840"/><w:cols w:num="{cols}" w:space="720"/>"#))
+}
+
+/// Text after a page break in the same run starts the next page; two breaks
+/// make two pages (§17.3.3.1).
+#[test]
+fn a_page_break_inside_a_run_splits_it_where_it_stands() {
+    let v = layout(breaks_docx(r#"<w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r>"#, 1));
+    assert_eq!(page_texts(&v), ["before", "after"]);
+    let v = layout(breaks_docx(r#"<w:r><w:t>a</w:t><w:br w:type="page"/><w:br w:type="page"/><w:t>c</w:t></w:r>"#, 1));
+    assert_eq!(page_texts(&v).len(), 3, "two breaks, three pages: {:?}", page_texts(&v));
+}
+
+/// §17.18.4: a column break moves to the next column; in a single-column
+/// section it starts a new page. A page break in a multi-column section
+/// starts a new page, not the next column.
+#[test]
+fn column_and_page_breaks_in_columns() {
+    let two_col = |br: &str| layout(breaks_docx(&format!(r#"<w:r><w:t>left</w:t><w:br w:type="{br}"/><w:t>right</w:t></w:r>"#), 2));
+    let v = two_col("column");
+    assert_eq!(page_texts(&v), ["left|right"], "both columns on one page");
+    {
+        let pages = v.pages.borrow();
+        let xs: Vec<f64> = pages[0].elements.iter().filter_map(|e| match e {
+            PageElement::Line(l) => Some(l.segments[0].x_start),
+            _ => None,
+        }).collect();
+        assert!(xs[1] > xs[0] + 200.0, "the text after the break is in column 2: {xs:?}");
+    }
+    assert_eq!(page_texts(&two_col("page")), ["left", "right"]);
+    let one_col = layout(breaks_docx(r#"<w:r><w:t>one</w:t><w:br w:type="column"/><w:t>two</w:t></w:r>"#, 1));
+    assert_eq!(page_texts(&one_col), ["one", "two"]);
+}

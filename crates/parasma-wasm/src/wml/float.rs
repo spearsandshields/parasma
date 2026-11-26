@@ -309,7 +309,8 @@ pub(crate) struct WrappedLine {
     pub(crate) max_descent: f64,
     pub(crate) max_font_pt: f64,
     pub(crate) max_image_height: f64,
-    pub(crate) ends_with_page_break: bool,
+    /// The break that ends the line (see `LayoutLine::ends_with`).
+    pub(crate) ends_with: BreakAfter,
     /// Explicit vertical advance for a BAND-WALK line, overriding the height the
     /// caller would otherwise derive from this line's metrics.
     ///
@@ -471,12 +472,12 @@ pub(crate) fn pack_lines_around_floats(
         seg_w = 0.0;
     }}; }
 
-    macro_rules! finish_line { ($page_break:expr) => {{
+    macro_rules! finish_line { ($ends_with:expr) => {{
         flush_segment!();
         out.push(WrappedLine {
             segments: std::mem::take(&mut line_segs),
             max_ascent: asc, max_descent: desc, max_font_pt: fpt, max_image_height: imgh,
-            ends_with_page_break: $page_break,
+            ends_with: $ends_with,
             walk_height: pending_walk.take(),
         });
         line_idx += 1;
@@ -488,8 +489,7 @@ pub(crate) fn pack_lines_around_floats(
     }}; }
 
     for (i, mut item) in items.into_iter().enumerate() {
-        let mandatory = item.break_after == BreakAfter::Mandatory;
-        let page_break = item.break_after == BreakAfter::PageBreak;
+        let hard_break = item.break_after;
 
         loop {
             match intervals.get(seg_idx).copied() {
@@ -513,7 +513,7 @@ pub(crate) fn pack_lines_around_floats(
                             line_idx = next - 1;
                         }
                     }
-                    finish_line!(false)
+                    finish_line!(BreakAfter::Allowed)
                 }
                 Some((s, e)) => {
                     let avail = e - s;
@@ -563,7 +563,7 @@ pub(crate) fn pack_lines_around_floats(
                                 if item.is_only_whitespace() { dropped_ws += 1; break; } // drop ws at segment edge
                             }
                             None => {
-                                finish_line!(false);
+                                finish_line!(BreakAfter::Allowed);
                                 if item.is_only_whitespace() { dropped_ws += 1; break; } // drop ws at line edge
                             }
                         }
@@ -572,8 +572,8 @@ pub(crate) fn pack_lines_around_floats(
             }
         }
 
-        if mandatory || page_break {
-            finish_line!(page_break);
+        if hard_break != BreakAfter::Allowed {
+            finish_line!(hard_break);
         }
     }
     if !seg_items.is_empty() || !line_segs.is_empty() {
@@ -581,7 +581,7 @@ pub(crate) fn pack_lines_around_floats(
         out.push(WrappedLine {
             segments: std::mem::take(&mut line_segs),
             max_ascent: asc, max_descent: desc, max_font_pt: fpt, max_image_height: imgh,
-            ends_with_page_break: false,
+            ends_with: BreakAfter::Allowed,
             // The trailing flush closes a line that HELD items, so it is never a
             // band-walk line; any pending walk was consumed by finish_line! above.
             walk_height: pending_walk.take(),
@@ -1041,7 +1041,7 @@ mod packer_conservation_tests {
         let out = pack_lines_around_floats(
             items, &[], 0.0, 100.0, 0.0, 16.0, 0.0, STJc::Start, &fc, &no_tabs());
         assert_eq!(out.len(), 2);
-        assert!(out[0].ends_with_page_break, "break carrier line must flag the page break");
+        assert!(out[0].ends_with == BreakAfter::PageBreak, "break carrier line must flag the page break");
         assert_eq!(placed_count(&out), 3, "all 3 items must reach segments");
     }
 
