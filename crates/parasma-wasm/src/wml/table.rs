@@ -596,7 +596,7 @@ pub(crate) fn layout_table(
     };
 
     let (border_color, has_borders) = extract_table_border_info(props);
-    let table_border_edges = extract_table_border_edges(props, tbl_style_id, style_ctx);
+    let table_border_edges = extract_table_border_edges(theme_fonts, props, tbl_style_id, style_ctx);
     let alignment = props.justification.as_ref()
         .map(|j| j.value)
         .unwrap_or(STJcTable::Start);
@@ -700,13 +700,14 @@ pub(crate) fn layout_table(
                 }
             }
 
+            // A cell's own shading decides, including one that clears.
             let direct_fill = cell.properties()
                 .and_then(|p| p.shading.as_ref())
-                .and_then(|s| s.fill.as_deref())
-                .and_then(ooxml_color_to_css);
+                .map(|s| theme_fonts.wml_shading(s));
 
-            let fill_color = direct_fill.or_else(|| {
+            let fill_color = direct_fill.unwrap_or_else(|| {
                 resolve_conditional_cell_fill(
+                    theme_fonts,
                     row_idx, cell_idx, num_rows, num_cols,
                     look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
                     style_overrides,
@@ -728,12 +729,12 @@ pub(crate) fn layout_table(
             };
 
             let cond_borders = resolve_conditional_cell_borders(
-                row_idx, cell_idx, num_rows, num_cols,
+                theme_fonts, row_idx, cell_idx, num_rows, num_cols,
                 look_first_row, look_last_row, look_first_col, look_last_col, look_no_h_band,
                 style_overrides,
             );
             let (cell_bdr_top, cell_bdr_bottom, cell_bdr_left, cell_bdr_right) =
-                extract_cell_borders(cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, col_count);
+                extract_cell_borders(theme_fonts, cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, col_count);
 
             // Pre-resolve a cell-hosted wrapping float (None = fast path). Built
             // before `cell_blocks` is moved into the cache.
@@ -828,6 +829,7 @@ fn conditional_regions(
 
 #[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn resolve_conditional_cell_fill(
+    theme: &ThemeFonts,
     row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
     first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
     overrides: &[ooxml_wml::types::TableStyleProperties],
@@ -840,8 +842,7 @@ fn resolve_conditional_cell_fill(
             if ov.r#type == *region {
                 if let Some(ref tcp) = ov.cell_properties {
                     if let Some(ref shd) = tcp.shading {
-                        let fill = shd.fill.as_deref().and_then(ooxml_color_to_css)?;
-                        return Some(fill);
+                        return theme.wml_shading(shd);
                     }
                 }
             }
@@ -896,6 +897,7 @@ type EdgeOverrides = (
 
 #[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn resolve_conditional_cell_borders(
+    theme: &ThemeFonts,
     row_idx: usize, col_idx: usize, num_rows: usize, num_cols: usize,
     first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
     overrides: &[ooxml_wml::types::TableStyleProperties],
@@ -919,23 +921,23 @@ fn resolve_conditional_cell_borders(
             // Region cell tcBorders → outer edges of cells in the region.
             if let Some(ref tcp) = ov.cell_properties {
                 if let Some(ref b) = tcp.tc_borders {
-                    if let Some(v) = edge_override(&b.top) { top = Some(v); }
-                    if let Some(v) = edge_override(&b.bottom) { bottom = Some(v); }
-                    if let Some(v) = edge_override(&b.left).or_else(|| edge_override(&b.start)) { left = Some(v); }
-                    if let Some(v) = edge_override(&b.right).or_else(|| edge_override(&b.end)) { right = Some(v); }
+                    if let Some(v) = edge_override(theme, &b.top) { top = Some(v); }
+                    if let Some(v) = edge_override(theme, &b.bottom) { bottom = Some(v); }
+                    if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { left = Some(v); }
+                    if let Some(v) = edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end)) { right = Some(v); }
                 }
             }
             // Region tblPr tblBorders → outer edges + insideH/V for the region.
             if let Some(ref tp) = ov.table_properties {
                 if let Some(ref b) = tp.tbl_borders {
-                    if is_top { if let Some(v) = edge_override(&b.top) { top = Some(v); } }
-                    else if let Some(v) = edge_override(&b.inside_h) { top = Some(v); }
-                    if is_bottom { if let Some(v) = edge_override(&b.bottom) { bottom = Some(v); } }
-                    else if let Some(v) = edge_override(&b.inside_h) { bottom = Some(v); }
-                    if is_left { if let Some(v) = edge_override(&b.left).or_else(|| edge_override(&b.start)) { left = Some(v); } }
-                    else if let Some(v) = edge_override(&b.inside_v) { left = Some(v); }
-                    if is_right { if let Some(v) = edge_override(&b.right).or_else(|| edge_override(&b.end)) { right = Some(v); } }
-                    else if let Some(v) = edge_override(&b.inside_v) { right = Some(v); }
+                    if is_top { if let Some(v) = edge_override(theme, &b.top) { top = Some(v); } }
+                    else if let Some(v) = edge_override(theme, &b.inside_h) { top = Some(v); }
+                    if is_bottom { if let Some(v) = edge_override(theme, &b.bottom) { bottom = Some(v); } }
+                    else if let Some(v) = edge_override(theme, &b.inside_h) { bottom = Some(v); }
+                    if is_left { if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { left = Some(v); } }
+                    else if let Some(v) = edge_override(theme, &b.inside_v) { left = Some(v); }
+                    if is_right { if let Some(v) = edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end)) { right = Some(v); } }
+                    else if let Some(v) = edge_override(theme, &b.inside_v) { right = Some(v); }
                 }
             }
         }
@@ -1087,11 +1089,9 @@ struct TableBorderEdges {
 
 // `Some(edge)` for a real border, `None` for an explicit nil/none. Operates
 // on a PRESENT element — the caller decides presence.
-fn border_value(b: &ooxml_wml::types::CTBorder) -> Option<CellBorderEdge> {
+fn border_value(theme: &ThemeFonts, b: &ooxml_wml::types::CTBorder) -> Option<CellBorderEdge> {
     if matches!(b.value, STBorder::None | STBorder::Nil) { return None; }
-    let color = b.color.as_deref()
-        .and_then(ooxml_color_to_css)
-        .unwrap_or_else(|| "#000000".to_string());
+    let color = theme.wml_border_color(b.color.as_deref(), b.theme_color.as_ref(), b.theme_tint.as_deref(), b.theme_shade.as_deref());
     let sz = b.size.unwrap_or(4) as f64;
     // `sz` is in eighths of a point (ST_EighthPointMeasure). Clamp the rendered
     // width to a 1px floor so very thin borders (e.g. sz=1, ~0.125px) don't
@@ -1101,8 +1101,8 @@ fn border_value(b: &ooxml_wml::types::CTBorder) -> Option<CellBorderEdge> {
 
 // Two-state (absent OR nil BOTH collapse to None). Correct for TABLE-level
 // edges, where there is no further per-edge fallback below them.
-fn border_to_edge(b: &Option<Box<ooxml_wml::types::CTBorder>>) -> Option<CellBorderEdge> {
-    b.as_ref().and_then(|bd| border_value(bd))
+fn border_to_edge(theme: &ThemeFonts, b: &Option<Box<ooxml_wml::types::CTBorder>>) -> Option<CellBorderEdge> {
+    b.as_ref().and_then(|bd| border_value(theme, bd))
 }
 
 // Three-state edge resolution keyed on element PRESENCE (§17.4.66 tcBorders
@@ -1112,11 +1112,12 @@ fn border_to_edge(b: &Option<Box<ooxml_wml::types::CTBorder>>) -> Option<CellBor
 //   None            → element absent      : inherit
 //   Some(None)      → present but nil/none : explicit suppression wins
 //   Some(Some(edge))→ a real drawn border
-fn edge_override(b: &Option<Box<ooxml_wml::types::CTBorder>>) -> Option<Option<CellBorderEdge>> {
-    b.as_ref().map(|bd| border_value(bd))
+fn edge_override(theme: &ThemeFonts, b: &Option<Box<ooxml_wml::types::CTBorder>>) -> Option<Option<CellBorderEdge>> {
+    b.as_ref().map(|bd| border_value(theme, bd))
 }
 
 fn extract_table_border_edges(
+    theme: &ThemeFonts,
     props: &ooxml_wml::types::TableProperties,
     tbl_style_id: Option<&str>,
     style_ctx: &StyleContext,
@@ -1130,12 +1131,12 @@ fn extract_table_border_edges(
         });
     match borders {
         Some(b) => TableBorderEdges {
-            top: border_to_edge(&b.top),
-            bottom: border_to_edge(&b.bottom),
-            left: border_to_edge(&b.left).or_else(|| border_to_edge(&b.start)),
-            right: border_to_edge(&b.right).or_else(|| border_to_edge(&b.end)),
-            inside_h: border_to_edge(&b.inside_h),
-            inside_v: border_to_edge(&b.inside_v),
+            top: border_to_edge(theme, &b.top),
+            bottom: border_to_edge(theme, &b.bottom),
+            left: border_to_edge(theme, &b.left).or_else(|| border_to_edge(theme, &b.start)),
+            right: border_to_edge(theme, &b.right).or_else(|| border_to_edge(theme, &b.end)),
+            inside_h: border_to_edge(theme, &b.inside_h),
+            inside_v: border_to_edge(theme, &b.inside_v),
         },
         None => TableBorderEdges {
             top: None, bottom: None, left: None, right: None,
@@ -1144,7 +1145,9 @@ fn extract_table_border_edges(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
 fn extract_cell_borders(
+    theme: &ThemeFonts,
     cell: &ooxml_wml::types::TableCell,
     table_borders: &TableBorderEdges,
     cond: &EdgeOverrides,
@@ -1173,7 +1176,7 @@ fn extract_cell_borders(
     };
 
     let top = resolve(
-        tcb.and_then(|b| edge_override(&b.top)), &cond.0,
+        tcb.and_then(|b| edge_override(theme, &b.top)), &cond.0,
         if row_idx == 0 { table_borders.top.clone() } else { table_borders.inside_h.clone() });
     // saturating_sub: a malformed table can declare ZERO grid columns while
     // still carrying cells (corpus: tdf104713_undefinedStyles.docx ships an
@@ -1181,13 +1184,13 @@ fn extract_cell_borders(
     // The degenerate read "index 0 is also last" yields the OUTER border,
     // which is the sane rendering for a sole cell.
     let bottom = resolve(
-        tcb.and_then(|b| edge_override(&b.bottom)), &cond.1,
+        tcb.and_then(|b| edge_override(theme, &b.bottom)), &cond.1,
         if row_idx == num_rows.saturating_sub(1) { table_borders.bottom.clone() } else { table_borders.inside_h.clone() });
     let left = resolve(
-        tcb.and_then(|b| edge_override(&b.left).or_else(|| edge_override(&b.start))), &cond.2,
+        tcb.and_then(|b| edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start))), &cond.2,
         if cell_idx == 0 { table_borders.left.clone() } else { table_borders.inside_v.clone() });
     let right = resolve(
-        tcb.and_then(|b| edge_override(&b.right).or_else(|| edge_override(&b.end))), &cond.3,
+        tcb.and_then(|b| edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end))), &cond.3,
         if cell_idx == num_cols.saturating_sub(1) { table_borders.right.clone() } else { table_borders.inside_v.clone() });
 
     (top, bottom, left, right)

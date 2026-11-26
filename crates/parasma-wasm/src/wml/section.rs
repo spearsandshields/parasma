@@ -115,7 +115,7 @@ impl PageGeometry {
         }
     }
 
-    pub(crate) fn from_sect_pr(sect_pr: &ooxml_wml::types::SectionProperties) -> Self {
+    pub(crate) fn from_sect_pr(sect_pr: &ooxml_wml::types::SectionProperties, theme: &crate::engine::fonts::ThemeFonts) -> Self {
         // Clamp BEFORE the i64 cast — see `MAX_PAGE_DIMENSION_TWIPS` for the
         // §22.9.2.14 no-spec-maximum grounding and the clamp-vs-reject call.
         //
@@ -179,19 +179,19 @@ impl PageGeometry {
             let top = pgb
                 .top
                 .as_deref()
-                .and_then(|b| page_border_edge(&b.value, b.color.as_deref(), b.size, b.space));
+                .and_then(|b| page_border_edge(&b.value, theme.wml_border_color(b.color.as_deref(), b.theme_color.as_ref(), b.theme_tint.as_deref(), b.theme_shade.as_deref()), b.size, b.space));
             let bottom = pgb
                 .bottom
                 .as_deref()
-                .and_then(|b| page_border_edge(&b.value, b.color.as_deref(), b.size, b.space));
+                .and_then(|b| page_border_edge(&b.value, theme.wml_border_color(b.color.as_deref(), b.theme_color.as_ref(), b.theme_tint.as_deref(), b.theme_shade.as_deref()), b.size, b.space));
             let left = pgb
                 .left
                 .as_deref()
-                .and_then(|b| page_border_edge(&b.value, b.color.as_deref(), b.size, b.space));
+                .and_then(|b| page_border_edge(&b.value, theme.wml_border_color(b.color.as_deref(), b.theme_color.as_ref(), b.theme_tint.as_deref(), b.theme_shade.as_deref()), b.size, b.space));
             let right = pgb
                 .right
                 .as_deref()
-                .and_then(|b| page_border_edge(&b.value, b.color.as_deref(), b.size, b.space));
+                .and_then(|b| page_border_edge(&b.value, theme.wml_border_color(b.color.as_deref(), b.theme_color.as_ref(), b.theme_tint.as_deref(), b.theme_shade.as_deref()), b.size, b.space));
             if top.is_none() && bottom.is_none() && left.is_none() && right.is_none() {
                 return None;
             }
@@ -233,7 +233,7 @@ impl PageGeometry {
 
     pub(crate) fn from_doc<R: std::io::Read + std::io::Seek>(doc: &ooxml_wml::Document<R>) -> Self {
         match doc.body().section_properties() {
-            Some(sect_pr) => Self::from_sect_pr(sect_pr),
+            Some(sect_pr) => Self::from_sect_pr(sect_pr, &crate::engine::fonts::ThemeFonts::empty()),
             None => Self::us_letter(),
         }
     }
@@ -490,18 +490,18 @@ mod tests {
         // The measured bomb's page size, and u64 extremes: `u64::MAX` would
         // wrap negative through the `as i64` cast without the pre-cast clamp.
         for w in ["10000000000", "18446744073709551615"] {
-            let g = PageGeometry::from_sect_pr(&pg_sz_sect_pr(w, w, None));
+            let g = PageGeometry::from_sect_pr(&pg_sz_sect_pr(w, w, None), &crate::engine::fonts::ThemeFonts::empty());
             assert_eq!(g.width_px, max_px, "w={w}");
             assert_eq!(g.height_px, max_px, "h={w}");
         }
         // The floor: a schema-valid zero page stays positive (1 twip).
-        let g = PageGeometry::from_sect_pr(&pg_sz_sect_pr("0", "0", None));
+        let g = PageGeometry::from_sect_pr(&pg_sz_sect_pr("0", "0", None), &crate::engine::fonts::ThemeFonts::empty());
         assert_eq!(g.width_px, twips_to_px(1));
         assert_eq!(g.height_px, twips_to_px(1));
         // Byte-identity for legitimate pages: Letter, A4 portrait, and the 22"
         // ceiling itself all pass through exactly.
         for (w, h) in [(12240i64, 15840i64), (11907, 16839), (31680, 31680)] {
-            let g = PageGeometry::from_sect_pr(&pg_sz_sect_pr(&w.to_string(), &h.to_string(), None));
+            let g = PageGeometry::from_sect_pr(&pg_sz_sect_pr(&w.to_string(), &h.to_string(), None), &crate::engine::fonts::ThemeFonts::empty());
             assert_eq!(g.width_px, twips_to_px(w), "w={w}");
             assert_eq!(g.height_px, twips_to_px(h), "h={h}");
         }
@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn pg_sz_column_bomb_is_refused_not_materialised() {
         let sp = pg_sz_sect_pr("10000000000", "10000000000", Some((600_000_000, "0")));
-        let g = PageGeometry::from_sect_pr(&sp);
+        let g = PageGeometry::from_sect_pr(&sp, &crate::engine::fonts::ThemeFonts::empty());
         assert_eq!(g.columns.len(), 1, "6e8 columns on a clamped page degrade to one");
         assert_eq!(g.width_px, twips_to_px(MAX_PAGE_DIMENSION_TWIPS as i64));
     }

@@ -109,7 +109,7 @@ static ALLOC_CENSUS: alloc_census::Counting = alloc_census::Counting;
 #[cfg(test)]
 mod ground_truth;
 
-use engine::color::{highlight_color_to_css, ooxml_color_to_css};
+use engine::color::highlight_color_to_css;
 use engine::fonts::{
     parse_theme_fonts, resolve_font_with_fallbacks,
     text_has_complex, text_has_east_asia, DEFAULT_COMPLEX_FAMILY, DEFAULT_EAST_ASIA_FAMILY,
@@ -2372,10 +2372,13 @@ impl Viewer {
             }
         }
 
-        let theme_fonts = doc.package_mut()
+        let mut theme_fonts = doc.package_mut()
             .read_part_string("word/theme/theme1.xml")
             .map(|xml| parse_theme_fonts(&xml))
             .unwrap_or_else(|_| ThemeFonts::empty());
+        if let Ok(settings) = doc.package_mut().read_part_string("word/settings.xml") {
+            theme_fonts.read_color_mapping(&settings);
+        }
 
         // Core properties: created / modified dates for CREATEDATE / SAVEDATE.
         if let Ok(core_xml) = doc.package_mut().read_part_string("docProps/core.xml") {
@@ -2471,7 +2474,7 @@ impl Viewer {
             HYPERLINK_RELS.with(|h| *h.borrow_mut() = map);
         }
 
-        let mut sections = build_sections(&mut doc);
+        let mut sections = build_sections(&mut doc, &theme_fonts);
 
         // Extract images referenced from header/footer parts. Each header/footer
         // has its own .rels namespace, so rIds are prefixed with the part path
@@ -9009,10 +9012,9 @@ impl RunStyle {
         } else {
             resolve_run_option(
                 &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
-                |rpr| rpr.shading.as_ref()
-                    .and_then(|shd| shd.fill.as_deref())
-                    .and_then(ooxml_color_to_css),
+                |rpr| rpr.shading.as_ref().map(|shd| theme_fonts.wml_shading(shd)),
             )
+            .flatten()
         };
 
         let all_caps = resolve_run_toggle(

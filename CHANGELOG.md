@@ -55,6 +55,13 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: shading draws its pattern: "solid" shading in its foreground
+  colour (it was missing), percentage shading as the right shade of grey or
+  colour, and stripes and crosses as their average tone. Shading, borders
+  and page borders given as theme colours use the theme, and documents that
+  remap the theme's text and background colours, as dark templates do, are
+  drawn with that mapping. Shading set to clear hides shading inherited from
+  a style.
 - Documents: text with automatic colour is black, as in Word, and turns
   white on a dark background (cell, paragraph or text shading, or a dark
   page colour), so dark table headers and callouts are readable. It was a

@@ -41,28 +41,89 @@ pub(crate) struct ThemeFonts {
     pub(crate) major_latin: Option<String>,
     pub(crate) minor_latin: Option<String>,
     colors: HashMap<String, String>,
+    /// The document's colour mapping (§17.15.1.20 `w:clrSchemeMapping`):
+    /// mapped name (`tx1`, `bg1`, `accent1`, `hlink`, …) to scheme slot.
+    /// Absent names map as Word's default does (see [`ThemeFonts::slot`]).
+    mapping: HashMap<String, String>,
 }
 
 impl ThemeFonts {
     pub(crate) fn empty() -> Self {
-        Self { major_latin: None, minor_latin: None, colors: HashMap::new() }
+        Self { major_latin: None, minor_latin: None, colors: HashMap::new(), mapping: HashMap::new() }
     }
 
+    /// The scheme slot a mapped colour name uses: the document's
+    /// `w:clrSchemeMapping`, else the default (`tx1` is `dk1`, `bg1` is `lt1`,
+    /// `tx2` is `dk2`, `bg2` is `lt2`, the rest map to themselves).
+    fn slot<'a>(&'a self, name: &'a str) -> &'a str {
+        if let Some(slot) = self.mapping.get(name) {
+            return slot;
+        }
+        match name {
+            "tx1" => "dk1",
+            "bg1" => "lt1",
+            "tx2" => "dk2",
+            "bg2" => "lt2",
+            other => other,
+        }
+    }
+
+    /// Read `w:clrSchemeMapping` from `word/settings.xml` (§17.15.1.20).
+    pub(crate) fn read_color_mapping(&mut self, settings_xml: &str) {
+        use quick_xml::events::Event;
+        let mut reader = quick_xml::Reader::from_str(settings_xml);
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(e) | Event::Empty(e)) if e.local_name().as_ref() == b"clrSchemeMapping" => {
+                    for a in e.attributes().flatten() {
+                        let key = match a.key.local_name().as_ref() {
+                            b"bg1" => "bg1", b"t1" => "tx1", b"bg2" => "bg2", b"t2" => "tx2",
+                            b"accent1" => "accent1", b"accent2" => "accent2", b"accent3" => "accent3",
+                            b"accent4" => "accent4", b"accent5" => "accent5", b"accent6" => "accent6",
+                            b"hyperlink" => "hlink", b"followedHyperlink" => "folHlink",
+                            _ => continue,
+                        };
+                        let slot = match a.unescape_value().ok().as_deref() {
+                            Some("dark1") => "dk1", Some("light1") => "lt1",
+                            Some("dark2") => "dk2", Some("light2") => "lt2",
+                            Some("accent1") => "accent1", Some("accent2") => "accent2",
+                            Some("accent3") => "accent3", Some("accent4") => "accent4",
+                            Some("accent5") => "accent5", Some("accent6") => "accent6",
+                            Some("hyperlink") => "hlink", Some("followedHyperlink") => "folHlink",
+                            _ => continue,
+                        };
+                        self.mapping.insert(key.to_owned(), slot.to_owned());
+                    }
+                    return;
+                }
+                Ok(Event::Eof) | Err(_) => return,
+                _ => {}
+            }
+        }
+    }
+
+    /// A WML theme colour (§17.18.97 `ST_ThemeColor`): the dark and light
+    /// names are scheme slots; the text, background, accent and hyperlink
+    /// names go through the colour mapping.
     pub(crate) fn resolve_color(&self, theme_color: &ooxml_wml::types::STThemeColor) -> Option<&str> {
         use ooxml_wml::types::STThemeColor::*;
         let key = match theme_color {
-            Dark1 | Text1 => "dk1",
-            Light1 | Background1 => "lt1",
-            Dark2 | Text2 => "dk2",
-            Light2 | Background2 => "lt2",
-            Accent1 => "accent1",
-            Accent2 => "accent2",
-            Accent3 => "accent3",
-            Accent4 => "accent4",
-            Accent5 => "accent5",
-            Accent6 => "accent6",
-            Hyperlink => "hlink",
-            FollowedHyperlink => "folHlink",
+            Dark1 => "dk1",
+            Light1 => "lt1",
+            Dark2 => "dk2",
+            Light2 => "lt2",
+            Text1 => self.slot("tx1"),
+            Background1 => self.slot("bg1"),
+            Text2 => self.slot("tx2"),
+            Background2 => self.slot("bg2"),
+            Accent1 => self.slot("accent1"),
+            Accent2 => self.slot("accent2"),
+            Accent3 => self.slot("accent3"),
+            Accent4 => self.slot("accent4"),
+            Accent5 => self.slot("accent5"),
+            Accent6 => self.slot("accent6"),
+            Hyperlink => self.slot("hlink"),
+            FollowedHyperlink => self.slot("folHlink"),
             None => return Option::None,
         };
         self.colors.get(key).map(|s| s.as_str())
@@ -86,6 +147,58 @@ impl ThemeFonts {
         (hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| format!("#{hex}"))
     }
 
+    /// A border's colour (§17.3.4 `CT_Border`): its theme colour, else its
+    /// literal colour; `auto` and an absent colour draw black.
+    pub(crate) fn wml_border_color(
+        &self,
+        value: Option<&str>,
+        theme_color: Option<&ooxml_wml::types::STThemeColor>,
+        tint: Option<&[u8]>,
+        shade: Option<&[u8]>,
+    ) -> String {
+        self.wml_color(value, theme_color, tint, shade).unwrap_or_else(|| "#000000".to_owned())
+    }
+
+    /// The colour a shading element (§17.3.5 `CT_Shd`) paints, or `None` for
+    /// no shading. The pattern (§17.18.78 `ST_Shd`) lays its foreground colour
+    /// (`color`, else black for `auto`) over the background (`fill`, else
+    /// white): `clear` is the background alone, `solid` the foreground,
+    /// `pctN` N % of the foreground. Theme colours win over the literal ones.
+    /// `clear` over an `auto` fill is no shading, which hides an inherited one.
+    ///
+    /// Declared: the stripe and cross patterns are drawn as their average tone
+    /// (half for a stripe, three quarters for a cross, less for the thin
+    /// ones), not as lines.
+    pub(crate) fn wml_shading(&self, shd: &ooxml_wml::types::CTShd) -> Option<String> {
+        use ooxml_wml::types::STShd as S;
+        let share = match shd.value {
+            S::Nil => return None,
+            S::Clear => 0.0,
+            S::Solid => 1.0,
+            S::HorzStripe | S::VertStripe | S::ReverseDiagStripe | S::DiagStripe => 0.5,
+            S::ThinHorzStripe | S::ThinVertStripe | S::ThinReverseDiagStripe | S::ThinDiagStripe => 0.25,
+            S::HorzCross | S::DiagCross => 0.75,
+            S::ThinHorzCross | S::ThinDiagCross => 0.4375,
+            S::Pct5 => 0.05, S::Pct10 => 0.10, S::Pct12 => 0.125, S::Pct15 => 0.15,
+            S::Pct20 => 0.20, S::Pct25 => 0.25, S::Pct30 => 0.30, S::Pct35 => 0.35,
+            S::Pct37 => 0.375, S::Pct40 => 0.40, S::Pct45 => 0.45, S::Pct50 => 0.50,
+            S::Pct55 => 0.55, S::Pct60 => 0.60, S::Pct62 => 0.625, S::Pct65 => 0.65,
+            S::Pct70 => 0.70, S::Pct75 => 0.75, S::Pct80 => 0.80, S::Pct85 => 0.85,
+            S::Pct87 => 0.875, S::Pct90 => 0.90, S::Pct95 => 0.95,
+        };
+        let background = self.wml_color(
+            shd.fill.as_deref(), shd.theme_fill.as_ref(),
+            shd.theme_fill_tint.as_deref(), shd.theme_fill_shade.as_deref(),
+        );
+        if share == 0.0 {
+            return background;
+        }
+        let foreground = self
+            .wml_color(shd.color.as_deref(), shd.theme_color.as_ref(), shd.theme_tint.as_deref(), shd.theme_shade.as_deref())
+            .unwrap_or_else(|| "#000000".to_owned());
+        Some(crate::engine::color::mix_hex(background.as_deref().unwrap_or("#FFFFFF"), &foreground, share))
+    }
+
     /// A theme holding only these scheme colours (`slot`, hex without `#`).
     #[cfg(test)]
     pub(crate) fn with_colors(colors: &[(&str, &str)]) -> Self {
@@ -95,20 +208,9 @@ impl ThemeFonts {
     }
 
     /// A DrawingML scheme colour by name (`schemeClr@val`, §20.1.2.3.29),
-    /// through the default colour map: text and background names map to the
-    /// dark and light slots (`tx1` is `dk1`, `bg1` is `lt1`, and so on).
-    ///
-    /// Deviation, declared: a document's own `w:clrSchemeMapping` (§17.15.1.20)
-    /// is not read; the default mapping is the one Word writes.
+    /// through the document's colour mapping (see [`ThemeFonts::slot`]).
     pub(crate) fn scheme_color(&self, name: &str) -> Option<&str> {
-        let slot = match name {
-            "tx1" => "dk1",
-            "bg1" => "lt1",
-            "tx2" => "dk2",
-            "bg2" => "lt2",
-            other => other,
-        };
-        self.colors.get(slot).map(|s| s.as_str())
+        self.colors.get(self.slot(name)).map(|s| s.as_str())
     }
 
     pub(crate) fn resolve(&self, theme: &ooxml_wml::types::STTheme) -> Option<&str> {
@@ -167,7 +269,7 @@ pub(crate) fn parse_theme_fonts(xml: &str) -> ThemeFonts {
             }
         }
     }
-    ThemeFonts { major_latin: major, minor_latin: minor, colors }
+    ThemeFonts { major_latin: major, minor_latin: minor, colors, mapping: HashMap::new() }
 }
 
 // ─── Font storage ───────────────────────────────────────────────────────────
@@ -1157,5 +1259,24 @@ mod shaped_glyph_tests {
     fn glyph_gid_is_free_of_charge() {
         assert_eq!(std::mem::size_of::<ShapedGlyph>(), 32);
         assert_eq!(std::mem::size_of::<(u32, f64, f64, f64)>(), 32);
+    }
+}
+
+#[cfg(test)]
+mod color_mapping_tests {
+    use super::ThemeFonts;
+    use ooxml_wml::types::STThemeColor;
+
+    /// §17.15.1.20: a document can map text 1 and background 1 to other
+    /// slots, as dark templates do; theme colours and scheme names follow it.
+    #[test]
+    fn the_documents_colour_mapping_is_applied() {
+        let mut t = ThemeFonts::with_colors(&[("dk1", "000000"), ("lt1", "FFFFFF"), ("accent1", "4472C4")]);
+        assert_eq!(t.resolve_color(&STThemeColor::Text1), Some("000000"), "default: text 1 is dark 1");
+        t.read_color_mapping(r#"<w:settings xmlns:w="w"><w:clrSchemeMapping w:bg1="dark1" w:t1="light1" w:accent1="accent1"/></w:settings>"#);
+        assert_eq!(t.resolve_color(&STThemeColor::Text1), Some("FFFFFF"));
+        assert_eq!(t.resolve_color(&STThemeColor::Background1), Some("000000"));
+        assert_eq!(t.resolve_color(&STThemeColor::Dark1), Some("000000"), "dark 1 is never remapped");
+        assert_eq!(t.scheme_color("tx1"), Some("FFFFFF"));
     }
 }

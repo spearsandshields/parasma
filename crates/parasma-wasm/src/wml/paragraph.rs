@@ -33,7 +33,6 @@ use crate::engine::fonts::{
     font_metrics, resolve_font_with_fallbacks, try_resolve_font, FaceCache, FontCache,
     ThemeFonts, DEFAULT_FONT_FAMILY, DEFAULT_FONT_PT,
 };
-use crate::engine::color::ooxml_color_to_css;
 use crate::engine::paint::{RunStyle, Underline};
 use crate::engine::units::{pt_to_px, twips_to_px};
 use crate::wml::bidi::rtl_swap_jc;
@@ -191,7 +190,7 @@ pub(crate) fn layout_paragraph(
     // numbering marker reuse whatever faces they build. `collect_items` holds
     // its own (its run walk is the bulk of the shaping).
     let faces = FaceCache::new();
-    let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, table_style_id, table_cond_pprs, grid_pitch_px, exact_row);
+    let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, table_style_id, table_cond_pprs, grid_pitch_px, exact_row, theme_fonts);
 
     if let Some(m) = marker {
         // Only inherit the numbering level's indent when the paragraph did not
@@ -638,6 +637,7 @@ pub(crate) struct ParagraphLayout {
 }
 
 impl ParagraphLayout {
+    #[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
     fn from_resolved(
         paragraph: &ooxml_wml::types::Paragraph,
         style_ctx: &StyleContext,
@@ -646,6 +646,7 @@ impl ParagraphLayout {
         table_cond_pprs: &[&ooxml_wml::types::CTPPrGeneral],
         section_grid_pitch_px: Option<f64>,
         exact_row: bool,
+        theme_fonts: &ThemeFonts,
     ) -> Self {
         let mut style_pprs = collect_paragraph_style_chain(paragraph, style_ctx);
         // Conditional pPr (firstRow, firstCol, etc.) overrides base table style pPr
@@ -862,17 +863,14 @@ impl ParagraphLayout {
             .and_then(|ppr| ppr.paragraph_style.as_ref())
             .map(|ps| ps.value.clone());
 
-        let shading_color = paragraph.p_pr.as_ref()
-            .and_then(|ppr| ppr.shading.as_ref())
-            .and_then(|shd| shd.fill.as_deref())
-            .and_then(ooxml_color_to_css)
-            .or_else(|| {
-                resolve_ppr_option(&style_pprs, default_ppr, |ppr| {
-                    ppr.shading.as_ref()
-                        .and_then(|shd| shd.fill.as_deref())
-                        .and_then(ooxml_color_to_css)
-                })
-            });
+        // The nearest shading element decides, including one that clears.
+        let shading_color = match paragraph.p_pr.as_ref().and_then(|ppr| ppr.shading.as_ref()) {
+            Some(shd) => theme_fonts.wml_shading(shd),
+            None => resolve_ppr_option(&style_pprs, default_ppr, |ppr| {
+                ppr.shading.as_ref().map(|shd| theme_fonts.wml_shading(shd))
+            })
+            .flatten(),
+        };
 
         let pbdr = paragraph.p_pr.as_ref()
             .and_then(|ppr| ppr.paragraph_border.as_ref())
@@ -886,10 +884,10 @@ impl ParagraphLayout {
             });
         let (border_top, border_bottom, border_left, border_right) = if let Some(bdr) = pbdr {
             (
-                resolve_border_edge(bdr.top.as_deref()),
-                resolve_border_edge(bdr.bottom.as_deref()),
-                resolve_border_edge(bdr.left.as_deref()),
-                resolve_border_edge(bdr.right.as_deref()),
+                resolve_border_edge(bdr.top.as_deref(), theme_fonts),
+                resolve_border_edge(bdr.bottom.as_deref(), theme_fonts),
+                resolve_border_edge(bdr.left.as_deref(), theme_fonts),
+                resolve_border_edge(bdr.right.as_deref(), theme_fonts),
             )
         } else {
             (None, None, None, None)
@@ -1074,12 +1072,12 @@ mod doc_default_toggle_tests {
             ..Default::default()
         };
         let ctx = StyleContext::default();
-        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, &[], None, false);
+        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, &[], None, false, &ThemeFonts::empty());
         assert!(!layout.widow_control, "pPrDefault widowControl val=0");
         assert!(layout.keep_next, "pPrDefault keepNext");
         assert!(layout.keep_lines, "pPrDefault keepLines");
 
-        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, &[], None, false);
+        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, &[], None, false, &ThemeFonts::empty());
         assert!(none.widow_control && !none.keep_next, "absent everywhere: the site defaults");
     }
 }

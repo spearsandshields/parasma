@@ -383,6 +383,19 @@ pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String,
     (rgb_hex(c[0] * 255.0, c[1] * 255.0, c[2] * 255.0), alpha)
 }
 
+/// `share` of `top` over `base` (both `#rrggbb`), mixed per sRGB channel.
+/// Returns `#RRGGBB`; a malformed colour returns `base` unchanged.
+pub(crate) fn mix_hex(base: &str, top: &str, share: f64) -> String {
+    match (hex_to_rgb(base), hex_to_rgb(top)) {
+        (Some(a), Some(b)) => {
+            let t = share.clamp(0.0, 1.0);
+            let m = |x: f64, y: f64| x + (y - x) * t;
+            rgb_hex(m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
+        }
+        _ => base.to_string(),
+    }
+}
+
 /// Whether a `#rrggbb` background is dark enough that Word draws automatic
 /// text on it in white: ITU-R BT.601 luma at most 0.61.
 ///

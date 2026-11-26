@@ -370,6 +370,7 @@ fn unwrap_section_breaks(blocks: Vec<BlockContent>) -> Vec<BlockContent> {
 
 pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
     doc: &mut ooxml_wml::Document<R>,
+    theme: &crate::engine::fonts::ThemeFonts,
 ) -> Vec<Section> {
     let even_odd = doc.package_mut().read_part("word/settings.xml")
         .is_ok_and(|xml| {
@@ -396,7 +397,7 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
                 _ => None,
             };
             if let Some(sect_pr) = sect_pr {
-                let geometry = PageGeometry::from_sect_pr(sect_pr);
+                let geometry = PageGeometry::from_sect_pr(sect_pr, theme);
                 let break_type = sect_pr.r#type.as_ref()
                     .and_then(|t| t.value.as_ref())
                     .map(|v| match v {
@@ -422,7 +423,7 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
     // relative to the previous one — so a body-level `continuous` must be
     // honored (it was previously hardcoded to NextPage, dropping that type).
     let (geometry, hdr_ftr, break_type) = if let Some(ref sect_pr) = body_sect_pr {
-        let geo = PageGeometry::from_sect_pr(sect_pr);
+        let geo = PageGeometry::from_sect_pr(sect_pr, theme);
         let hf = load_section_hdr_ftr(doc, &sect_pr.header_footer_refs, sect_pr.has_title_page(), even_odd);
         let bt = sect_pr.r#type.as_ref()
             .and_then(|t| t.value.as_ref())
@@ -716,7 +717,7 @@ mod inherit_tests {
     fn section_omitting_refs_inherits_previous_hdr_ftr() {
         let mut doc =
             ooxml_wml::Document::from_reader(Cursor::new(two_section_omitted_ref_docx())).expect("parse");
-        let sections = build_sections(&mut doc);
+        let sections = build_sections(&mut doc, &crate::engine::fonts::ThemeFonts::empty());
         assert_eq!(sections.len(), 2, "two sections expected");
 
         let hf1 = &sections[1].hdr_ftr;

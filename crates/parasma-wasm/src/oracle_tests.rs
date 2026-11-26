@@ -9996,6 +9996,21 @@ fn unzip_replace(docx: Vec<u8>, part: &str, from: &str, to: &str) -> Vec<u8> {
     build_docx(&refs)
 }
 
+/// `docx` with one more part.
+fn unzip_add(docx: Vec<u8>, part: &str, content: &str) -> Vec<u8> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(docx)).expect("zip");
+    let mut parts: Vec<(String, Vec<u8>)> = Vec::new();
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).expect("entry");
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).expect("read");
+        parts.push((entry.name().expect("name").into_owned(), bytes));
+    }
+    parts.push((part.to_owned(), content.as_bytes().to_vec()));
+    let refs: Vec<(&str, Vec<u8>)> = parts.iter().map(|(n, b)| (n.as_str(), b.clone())).collect();
+    build_docx(&refs)
+}
+
 /// How many times `word` occurs in the laid-out content.
 fn occurrences(viewer: &Viewer, word: &str) -> usize {
     content_dumps(viewer).0.matches(word).count()
@@ -10393,6 +10408,35 @@ fn automatic_text_turns_white_on_dark_backgrounds() {
     // A dark page colour turns the plain paragraph white too.
     let dark_page = unzip_replace(numbering_docx("", "", &para("Plain")), "word/document.xml", "<w:body>", r#"<w:background w:color="202020"/><w:body>"#);
     assert_eq!(colours(dark_page)[0].1, "#FFFFFF");
+}
+
+/// §17.3.5 shading: the pattern lays its foreground over the fill, theme
+/// colours win, and an explicit clear shading hides the style's. §17.3.4:
+/// borders take their theme colour.
+#[test]
+fn shading_patterns_and_theme_colours() {
+    let theme = r#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T"><a:themeElements><a:clrScheme name="T"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="T"><a:majorFont><a:latin typeface="Arimo"/></a:majorFont><a:minorFont><a:latin typeface="Arimo"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>"#;
+    let p = |ppr: &str, text: &str| format!("<w:p><w:pPr>{ppr}</w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>");
+    let shaded_style = r#"<w:style w:type="paragraph" w:styleId="Shaded"><w:name w:val="Shaded"/><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="FF0000"/></w:pPr></w:style>"#;
+    let body = [
+        p(r#"<w:shd w:val="solid" w:color="00B050" w:fill="auto"/>"#, "Solid"),
+        p(r#"<w:shd w:val="pct25" w:color="auto" w:fill="auto"/>"#, "Pct25"),
+        p(r#"<w:shd w:val="clear" w:color="auto" w:fill="FF0000" w:themeFill="accent1"/>"#, "ThemeFill"),
+        p(r#"<w:pStyle w:val="Shaded"/><w:shd w:val="clear" w:color="auto" w:fill="auto"/>"#, "Cleared"),
+        p(r#"<w:pStyle w:val="Shaded"/>"#, "Inherited"),
+        p(r#"<w:pBdr><w:top w:val="single" w:sz="8" w:space="1" w:themeColor="accent2"/></w:pBdr>"#, "Border"),
+    ].concat();
+    let docx = numbering_docx(shaded_style, "", &body);
+    let docx = unzip_add(docx, "word/theme/theme1.xml", theme);
+    let v = layout(docx);
+    let lines = body_lines(&v);
+    let line = |t: &str| lines.iter().find(|l| l.segments.iter().flat_map(|s| &s.items).any(|i| i.text.contains(t))).unwrap_or_else(|| panic!("{t}"));
+    assert_eq!(line("Solid").para_shading.as_deref(), Some("#00B050"), "solid is the foreground");
+    assert_eq!(line("Pct25").para_shading.as_deref(), Some("#BFBFBF"), "25 % black over white");
+    assert_eq!(line("ThemeFill").para_shading.as_deref(), Some("#4472C4"), "the theme fill wins");
+    assert_eq!(line("Cleared").para_shading, None, "clear over auto hides the style's shading");
+    assert_eq!(line("Inherited").para_shading.as_deref(), Some("#FF0000"));
+    assert_eq!(line("Border").border_top.as_ref().map(|b| b.color.as_str()), Some("#ED7D31"));
 }
 
 #[test]
