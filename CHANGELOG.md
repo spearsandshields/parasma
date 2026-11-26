@@ -55,6 +55,9 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: DATE, TIME, CREATEDATE and SAVEDATE fields show the viewer's
+  local time instead of UTC, so header times are right and dates no longer
+  change a day early or late near midnight.
 - Documents: columns are balanced only where Word balances them, before a
   continuous section break; at the end of a document or before a page break
   they fill one after another, and the "don't balance columns" setting is

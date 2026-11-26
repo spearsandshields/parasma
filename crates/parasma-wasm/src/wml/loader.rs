@@ -45,15 +45,26 @@ pub(crate) struct Section {
 
 /// Extract a core-property date (`dcterms:created`/`dcterms:modified`) from
 /// `docProps/core.xml` by local element name, parsing the ISO-8601 value.
-/// Minimal substring scan — avoids pulling in a namespaced XML model.
+/// Minimal substring scan — avoids pulling in a namespaced XML model. A value
+/// that names its zone (Word writes `Z`) is shown in the viewer's local time,
+/// as the field examples of §17.16.5.11 do; one that names none is taken as
+/// wall-clock time.
 pub(crate) fn extract_core_date(xml: &str, local_name: &str) -> Option<field::DateTime> {
+    let raw = core_date_text(xml, local_name)?;
+    match field::DateTime::parse_iso8601_instant(raw) {
+        Some(millis) => Some(field::DateTime::local_at(millis, crate::local_utc_offset_minutes(millis))),
+        None => field::DateTime::parse_iso8601(raw),
+    }
+}
+
+fn core_date_text<'a>(xml: &'a str, local_name: &str) -> Option<&'a str> {
     // Match `:created>` or `<created>` to be namespace-agnostic.
     let needle_ns = format!(":{local_name}>");
     let open_end = xml.find(&needle_ns).map(|i| i + needle_ns.len())
         .or_else(|| xml.find(&format!("<{local_name}>")).map(|i| i + local_name.len() + 2))?;
     let rest = &xml[open_end..];
     let close = rest.find("</")?;
-    field::DateTime::parse_iso8601(rest[..close].trim())
+    Some(rest[..close].trim())
 }
 
 // ─── Numbering helpers ──────────────────────────────────────────────────────

@@ -42,6 +42,46 @@ impl DateTime {
         (((y + y / 4 - y / 100 + y / 400 + t[m - 1] as i32 + d) % 7) + 7) as u32 % 7
     }
 
+    /// Unix epoch milliseconds for this date and time read as UTC (the
+    /// inverse of [`DateTime::from_epoch_millis`]; days-from-civil per
+    /// Howard Hinnant).
+    pub fn to_epoch_millis(self) -> i64 {
+        let y = i64::from(self.year) - i64::from(self.month <= 2);
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = y - era * 400;
+        let m = i64::from(self.month);
+        let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + i64::from(self.day) - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        let days = era * 146_097 + doe - 719_468;
+        ((days * 86_400) + i64::from(self.hour) * 3600 + i64::from(self.minute) * 60 + i64::from(self.second)) * 1000
+    }
+
+    /// The wall-clock time at UTC instant `millis` in a zone whose offset is
+    /// `utc_minus_local_minutes` (JavaScript's `getTimezoneOffset`: 300 for
+    /// UTC-5).
+    pub fn local_at(millis: i64, utc_minus_local_minutes: i64) -> DateTime {
+        DateTime::from_epoch_millis(millis - utc_minus_local_minutes * 60_000)
+    }
+
+    /// Parse an ISO-8601 date-time that names its zone (`Z` or `±hh:mm`) as a
+    /// UTC instant in epoch milliseconds. `None` when it names no zone.
+    pub fn parse_iso8601_instant(s: &str) -> Option<i64> {
+        let s = s.trim();
+        let (_, time) = s.split_once('T')?;
+        let zone_minutes = if time.ends_with('Z') {
+            0
+        } else {
+            let at = time.rfind(['+', '-'])?;
+            let sign = if time.as_bytes()[at] == b'-' { -1 } else { 1 };
+            let mut hm = time[at + 1..].split(':');
+            let h: i64 = hm.next()?.parse().ok()?;
+            let m: i64 = hm.next().map_or(Some(0), |x| x.parse().ok())?;
+            sign * (h * 60 + m)
+        };
+        let wall = DateTime::parse_iso8601(s)?;
+        Some(wall.to_epoch_millis() - zone_minutes * 60_000)
+    }
+
     /// Convert Unix epoch milliseconds (UTC) to a `DateTime`. Used for the
     /// JS-supplied `now` value for DATE/TIME fields. Civil-from-days per
     /// Howard Hinnant's algorithm; no leap seconds, proleptic Gregorian.
@@ -939,5 +979,27 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod local_time_tests {
+    use super::DateTime;
 
+    /// §17.16.5.11's example: 2006-01-05T03:31:00Z seen at UTC-5 is
+    /// 1/4/2006 10:31 PM, the day before.
+    #[test]
+    fn a_utc_instant_shows_in_local_time() {
+        let millis = DateTime::parse_iso8601_instant("2006-01-05T03:31:00Z").expect("instant");
+        let local = DateTime::local_at(millis, 300);
+        assert_eq!((local.year, local.month, local.day, local.hour, local.minute), (2006, 1, 4, 22, 31));
+        // A zone offset in the value is honoured.
+        let east = DateTime::parse_iso8601_instant("2006-01-05T08:31:00+05:00").expect("instant");
+        assert_eq!(east, millis);
+        assert_eq!(DateTime::parse_iso8601_instant("2006-01-05T03:31:00"), None, "no zone, no instant");
+    }
 
+    #[test]
+    fn epoch_round_trips() {
+        for ms in [0_i64, 951_782_400_000, 1_700_000_000_000, -86_400_000] {
+            assert_eq!(DateTime::from_epoch_millis(ms).to_epoch_millis(), ms);
+        }
+    }
+}

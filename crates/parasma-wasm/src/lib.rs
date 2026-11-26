@@ -195,6 +195,21 @@ const CSS_FONT_FALLBACK: &str = "-apple-system, BlinkMacSystemFont, sans-serif";
 /// `memory_budget_bytes` field doc for the derivation and why the value
 /// may still change.
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+/// The viewer's offset from UTC at instant `millis`, as JavaScript's
+/// `Date.getTimezoneOffset` gives it (minutes, UTC minus local, so it follows
+/// daylight saving). Native builds have no zone and use UTC.
+pub(crate) fn local_utc_offset_minutes(millis: i64) -> i64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        js_sys::Date::new(&JsValue::from_f64(millis as f64)).get_timezone_offset() as i64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = millis;
+        0
+    }
+}
+
 /// Word's automatic text colour (§17.3.2.6 `auto`, and a run with no
 /// `w:color`) on a light background. See `resolve_auto_text_colour` for the
 /// dark case.
@@ -2885,9 +2900,11 @@ impl Viewer {
     /// Set the "current time" for DATE/TIME fields, as Unix epoch milliseconds
     /// (UTC). JS passes `Date.now()`; tests pass a fixed value for determinism.
     /// Call before `runLayout`. Without it, DATE/TIME fall back to cached text.
+    /// DATE and TIME show the viewer's local time (§17.16.5.13).
     #[wasm_bindgen(js_name = setNow)]
     pub fn set_now(&self, millis: f64) {
-        self.doc_dates.borrow_mut().now = Some(field::DateTime::from_epoch_millis(millis as i64));
+        let millis = millis as i64;
+        self.doc_dates.borrow_mut().now = Some(field::DateTime::local_at(millis, local_utc_offset_minutes(millis)));
     }
 
     #[wasm_bindgen(js_name = runLayout)]
