@@ -178,11 +178,6 @@ use ooxml_wml::ext::{
     DrawingChartExt, DrawingExt, MathExt, ParagraphExt, RunExt,
     StyleContext,
 };
-// `BodyExt`/`SectionPropertiesExt` are needed only by the `#[cfg(test)]`
-// footer-id probe below (`doc.body().section_properties()`); the section
-// loader that used them in non-test code moved to `wml::loader`.
-#[cfg(test)]
-use ooxml_wml::ext::{BodyExt, SectionPropertiesExt};
 use ooxml_wml::types::{
     BlockContent, FootnoteEndnote, STJc,
     STJcTable,

@@ -288,13 +288,6 @@ impl SmlRenderer {
         std::mem::take(&mut self.chart_parts)
     }
 
-    /// Sheet `sheet_idx`'s anchored-chart placements (empty slice when none).
-    pub(crate) fn chart_anchors(&self, sheet_idx: usize) -> &[drawings::SheetDrawing] {
-        self.indexes
-            .get(sheet_idx)
-            .and_then(|idx| self.charts.get(&idx.name))
-            .map_or(&[], |v| v.as_slice())
-    }
 
     /// Resolved normal-style font family.
     /// Hit-test a page-content coordinate to its cell (formula-bar readout).

@@ -538,7 +538,7 @@ mod tests {
         p.save();
         p.set_fill_style_str("#FFE066");
         p.fill_rect(1.0, 2.0, 3.0, 4.0);
-        p.draw_image("rId7", 10.0, 20.0, 30.0, 40.0);
+        p.draw_image("rId7", 10.0, 20.0, 30.0, 40.0).unwrap();
         p.restore();
 
         assert_eq!(

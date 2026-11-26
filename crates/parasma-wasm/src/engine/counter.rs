@@ -9,8 +9,9 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CounterStyle {
     Decimal,
-    /// Two digits at least: 01, 02, …, 10.
-    DecimalZero,
+    /// At least this many digits, padded with zeros: `decimalZero` is 2
+    /// (01, 02, …, 10), Word's custom "001, 002, 003, ..." is 3.
+    DecimalPadded(u8),
     UpperRoman,
     LowerRoman,
     /// A, B, …, Z, then AA, BB, …: the letter repeated (§17.18.59).
@@ -78,7 +79,8 @@ pub(crate) fn format(n: i64, style: CounterStyle) -> String {
     match style {
         S::None => String::new(),
         S::Decimal => n.to_string(),
-        S::DecimalZero => if (0..10).contains(&n) { format!("0{n}") } else { n.to_string() },
+        S::DecimalPadded(width) if n >= 0 => format!("{n:0width$}", width = usize::from(width)),
+        S::DecimalPadded(_) => n.to_string(),
         S::UpperRoman => roman(n).unwrap_or_else(|| n.to_string()),
         S::LowerRoman => roman(n).map_or_else(|| n.to_string(), |r| r.to_lowercase()),
         S::UpperLetter => repeated(n, &LATIN_UPPER),
@@ -345,8 +347,10 @@ mod tests {
         assert_eq!(format(14, S::LowerRoman), "xiv");
         assert_eq!(format(27, S::LowerLetter), "aa", "§17.18.59: the letter repeats");
         assert_eq!(format(28, S::UpperLetter), "BB");
-        assert_eq!(format(7, S::DecimalZero), "07");
-        assert_eq!(format(12, S::DecimalZero), "12");
+        assert_eq!(format(7, S::DecimalPadded(2)), "07");
+        assert_eq!(format(12, S::DecimalPadded(2)), "12");
+        assert_eq!(format(7, S::DecimalPadded(3)), "007");
+        assert_eq!(format(1234, S::DecimalPadded(3)), "1234");
         assert_eq!(format(3, S::None), "");
     }
 

@@ -343,10 +343,6 @@ pub(crate) struct TableItem {
     /// Frame box top-left in EMU (`p:graphicFrame/p:xfrm/a:off`).
     pub off_x: i64,
     pub off_y: i64,
-    /// Frame box size in EMU (`.../a:ext`). Unused for the cell grid (the grid
-    /// is sized by gridCol/tr sums) but kept for a future fit/clip pass.
-    pub ext_cx: i64,
-    pub ext_cy: i64,
     /// The parsed DML table.
     pub table: CTTable,
 }
@@ -659,8 +655,6 @@ mod tests {
         let item = TableItem {
             off_x: 100_000,
             off_y: 200_000,
-            ext_cx: 3_000_000,
-            ext_cy: 1_200_000,
             table: build_test_table(
                 &[1_000_000, 2_000_000],
                 &[(500_000, 2), (700_000, 2)],
@@ -692,8 +686,6 @@ mod tests {
         let item = TableItem {
             off_x: 0,
             off_y: 0,
-            ext_cx: 1_000_000,
-            ext_cy: 500_000,
             table: build_test_table(&[1_000_000], &[(500_000, 1)]),
         };
         let st = build_slide_table(&item, &TableStyles::default(), &SlideTheme::default(), &FontCache::new());
@@ -718,8 +710,6 @@ mod tests {
         let item = TableItem {
             off_x: 0,
             off_y: 0,
-            ext_cx: 2_000_000,
-            ext_cy: 500_000,
             table,
         };
         let st = build_slide_table(&item, &TableStyles::default(), &SlideTheme::default(), &FontCache::new());
@@ -741,8 +731,6 @@ mod tests {
         let item = TableItem {
             off_x: 0,
             off_y: 0,
-            ext_cx: 1_000_000,
-            ext_cy: 1_200_000,
             table,
         };
         let st = build_slide_table(
@@ -760,7 +748,7 @@ mod tests {
         // A rowSpan overshooting the grid clamps to the last row rail.
         let mut over = build_test_table(&[1_000_000], &[(500_000, 1)]);
         over.tr[0].tc[0].row_span = Some(9);
-        let item = TableItem { off_x: 0, off_y: 0, ext_cx: 1_000_000, ext_cy: 500_000, table: over };
+        let item = TableItem { off_x: 0, off_y: 0, table: over };
         let st = build_slide_table(
             &item,
             &TableStyles::default(),

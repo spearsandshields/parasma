@@ -204,16 +204,8 @@ pub(crate) fn layout_paragraph(
     // numbering marker reuse whatever faces they build. `collect_items` holds
     // its own (its run walk is the bulk of the shaping).
     let faces = FaceCache::new();
-    let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, table_style_id, table_cond_pprs, grid_pitch_px, exact_row, theme_fonts);
-
-    if let Some(m) = marker {
-        // The list level's indents take their place in the hierarchy; a direct
-        // `<w:ind w:left="0"/>` (common on numbered headings) still cancels
-        // the list's left indent.
-        let (left, first) = layout.indent_layers.with_list(Some((m.indent_left_twips, m.indent_first_twips)), m.direct);
-        layout.indent_left_px = twips_to_px(left.unwrap_or(0));
-        layout.indent_first_line_px = twips_to_px(first.unwrap_or(0));
-    }
+    let list = marker.and_then(|m| m.p_pr.as_deref().map(|ppr| ListPpr { ppr, direct: m.direct }));
+    let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, list, table_style_id, table_cond_pprs, grid_pitch_px, exact_row, theme_fonts);
 
     let (mut items, anchored_images, anchored_text_boxes, footnote_ids, endnote_ids) = collect_items(font_cache, paragraph, style_ctx, theme_fonts, table_style_rprs)?;
 
@@ -255,7 +247,7 @@ pub(crate) fn layout_paragraph(
         None
     };
 
-    let list_tabs = marker.and_then(|m| m.tabs.as_ref());
+    let list_tabs = list.and_then(|l| l.ppr.tabs.as_deref());
     let mut tab_stops = resolve_paragraph_tab_stops(paragraph, style_ctx, default_ppr, list_tabs, default_tab_stop_px);
     // §17.3.1.37 — a custom tab-stop `pos` is measured from the current PAGE
     // (leading text) MARGIN, but the advance/fit walk in `pack_lines` runs in the
@@ -389,7 +381,14 @@ pub(crate) fn layout_paragraph(
             let estimated = marker_text.chars().count() as f64 * pt_to_px(style.font_pt) * 0.5;
             (estimated, estimated, None)
         };
-        let marker_width = marker_slot_width(m.text.is_empty() && !m.suffix_only, m.suffix, layout.indent_first_line_px, marker_cw, marker_advance, &tab_stops);
+        // §17.9.7 lvlJc: a centred or end-aligned number begins before the
+        // first line's position, so the line does (the tab stops above were
+        // resolved from the unshifted position).
+        let marker_empty = m.text.is_empty() && !m.suffix_only;
+        if !marker_empty {
+            layout.indent_first_line_px -= m.jc.lead(marker_cw);
+        }
+        let marker_width = marker_slot_width(marker_empty, m.suffix, layout.indent_first_line_px, marker_cw, marker_advance, &tab_stops);
         // §17.9.24 scopes the level rPr to the lvlText; the §17.9.28 suff
         // separator is not lvlText and the slot pad is not text at all. When
         // the OVERLAID style decorates the marker, clamp the decoration extent
@@ -601,10 +600,6 @@ fn resolve_paragraph_tab_stops(
 pub(crate) struct ParagraphLayout {
     pub(crate) alignment: STJc,
     pub(crate) indent_left_px: f64,
-    /// Where the left indent and the first line's offset came from: direct
-    /// formatting, the style chain, the document defaults. A list level's
-    /// indents slot in between them (see `IndentLayers::with_list`).
-    indent_layers: IndentLayers,
     pub(crate) indent_right_px: f64,
     pub(crate) indent_first_line_px: f64,
     pub(crate) space_before_px: f64,
@@ -639,6 +634,14 @@ pub(crate) struct ParagraphLayout {
 
 /// A paragraph's left indent and first-line offset (twips) by source:
 /// `[direct, style chain, document defaults]`.
+/// A list paragraph's level pPr (§17.9.22), and whether the paragraph names
+/// its list itself (a direct `numPr`) rather than through its style.
+#[derive(Clone, Copy)]
+pub(crate) struct ListPpr<'a> {
+    pub(crate) ppr: &'a ooxml_wml::types::CTPPrGeneral,
+    pub(crate) direct: bool,
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct IndentLayers {
     left: [Option<i64>; 3],
@@ -693,24 +696,27 @@ impl ParagraphLayout {
         paragraph: &ooxml_wml::types::Paragraph,
         style_ctx: &StyleContext,
         default_ppr: Option<&ooxml_wml::types::CTPPrGeneral>,
+        list: Option<ListPpr>,
         table_style_id: Option<&str>,
         table_cond_pprs: &[&ooxml_wml::types::CTPPrGeneral],
         section_grid_pitch_px: Option<f64>,
         exact_row: bool,
         theme_fonts: &ThemeFonts,
     ) -> Self {
-        let mut style_pprs = collect_paragraph_style_chain(paragraph, style_ctx);
-        // Conditional pPr (firstRow, firstCol, etc.) overrides base table style pPr
-        for cond_ppr in table_cond_pprs {
-            style_pprs.push(cond_ppr);
-        }
-        if let Some(tbl_id) = table_style_id {
-            if let Some(tbl_style) = style_ctx.style(tbl_id) {
-                if let Some(ref ppr) = tbl_style.p_pr {
-                    style_pprs.push(ppr.as_ref());
-                }
-            }
-        }
+        // Below direct formatting, nearest first (§17.7.2): the paragraph's
+        // style chain, its list level's pPr (§17.9.22), the table's
+        // conditional pPr (firstRow, firstCol, ...), the table style's.
+        let chain = collect_paragraph_style_chain(paragraph, style_ctx);
+        let table_style_ppr = table_style_id
+            .and_then(|id| style_ctx.style(id))
+            .and_then(|s| s.p_pr.as_deref());
+        let tables = || table_cond_pprs.iter().copied().chain(table_style_ppr);
+        let style_pprs: Vec<&ooxml_wml::types::CTPPrGeneral> =
+            chain.iter().copied().chain(list.map(|l| l.ppr)).chain(tables()).collect();
+        // The left and first-line indents keep the list out of the chain: its
+        // place among them depends on how the paragraph names its list.
+        let indent_pprs: Vec<&ooxml_wml::types::CTPPrGeneral> =
+            chain.iter().copied().chain(tables()).collect();
 
         // East Asian refinement toggles: direct pPr → style chain (first
         // hit, derived-first) → docDefaults → spec default TRUE (§17.3.1.2/.3
@@ -817,16 +823,22 @@ impl ParagraphLayout {
         let indent_layers = IndentLayers {
             left: [
                 direct_ind.and_then(left_of),
-                resolve_ppr_indent(&style_pprs, None, left_of),
+                resolve_ppr_indent(&indent_pprs, None, left_of),
                 default_ind.and_then(left_of),
             ],
             first: [
                 direct_ind.and_then(first_line_offset),
-                resolve_ppr_indent(&style_pprs, None, first_line_offset),
+                resolve_ppr_indent(&indent_pprs, None, first_line_offset),
                 default_ind.and_then(first_line_offset),
             ],
         };
-        let (indent_left, first_line) = indent_layers.with_list(None, false);
+        // A direct `<w:ind w:left="0"/>` (common on numbered headings) still
+        // cancels the list's left indent.
+        let list_ind = list.and_then(|l| l.ppr.indentation.as_deref());
+        let (indent_left, first_line) = indent_layers.with_list(
+            list_ind.map(|ind| (left_of(ind), first_line_offset(ind))),
+            list.is_some_and(|l| l.direct),
+        );
         let (indent_left, first_line) = (indent_left.unwrap_or(0), first_line.unwrap_or(0));
 
         // Each w:spacing attribute inherits *independently*: a direct pPr that
@@ -962,7 +974,6 @@ impl ParagraphLayout {
         Self {
             alignment,
             indent_left_px: twips_to_px(indent_left),
-            indent_layers,
             indent_right_px: twips_to_px(indent_right),
             indent_first_line_px: twips_to_px(first_line),
             space_before_px: twips_to_px(space_before),
@@ -1151,12 +1162,12 @@ mod doc_default_toggle_tests {
             ..Default::default()
         };
         let ctx = StyleContext::default();
-        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, &[], None, false, &ThemeFonts::empty());
+        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, None, &[], None, false, &ThemeFonts::empty());
         assert!(!layout.widow_control, "pPrDefault widowControl val=0");
         assert!(layout.keep_next, "pPrDefault keepNext");
         assert!(layout.keep_lines, "pPrDefault keepLines");
 
-        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, &[], None, false, &ThemeFonts::empty());
+        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, None, &[], None, false, &ThemeFonts::empty());
         assert!(none.widow_control && !none.keep_next, "absent everywhere: the site defaults");
     }
 }
@@ -1172,7 +1183,6 @@ mod line_height_tests {
             alignment: STJc::Start,
             base_rtl: false,
             indent_left_px: 0.0,
-            indent_layers: IndentLayers::default(),
             indent_right_px: 0.0,
             indent_first_line_px: 0.0,
             space_before_px: 0.0,

@@ -188,6 +188,10 @@ are held stable regardless.
   stays off; and heading styles that name a list but no level are numbered,
   or not, as in Word. Tab stops a list level defines now position the text
   after its number.
+- Lists: spacing, alignment and right indent set on a list level apply to its
+  paragraphs, and numbers aligned right or centred (common for roman
+  numerals) sit where Word puts them. Word's custom 001, 002, 003 format is
+  shown instead of 1, 2, 3.
 
 ### Changed
 

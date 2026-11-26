@@ -1508,15 +1508,9 @@ fn slide_table_items(slide: &ooxml_pml::Slide) -> Vec<table::TableItem> {
                 .and_then(|x| x.offset.as_deref())
                 .map(|o| (parse_emu(&o.x), parse_emu(&o.y)))
                 .unwrap_or((0, 0));
-            let (ext_cx, ext_cy) = xfrm
-                .and_then(|x| x.extents.as_deref())
-                .map(|e| (e.cx, e.cy))
-                .unwrap_or((0, 0));
             table::TableItem {
                 off_x,
                 off_y,
-                ext_cx,
-                ext_cy,
                 table: tbl.inner().clone(),
             }
         })

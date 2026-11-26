@@ -925,10 +925,6 @@ impl TextStyleChain {
         }
         acc
     }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.layers.is_empty()
-    }
 }
 
 /// Build the [`TextStyleChain`] for a slide shape: own `lstStyle` (strongest)

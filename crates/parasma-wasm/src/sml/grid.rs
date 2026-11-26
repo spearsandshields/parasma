@@ -310,7 +310,8 @@ pub(crate) struct PlanPage {
     pub(crate) r0: u32,
     pub(crate) r1: u32,
     /// Absolute content-y of `r0`'s top edge (the flush `row_top` FP order:
-    /// the same sequential height accumulation from `min_row`).
+    /// the same sequential height accumulation from the used range's first
+    /// row).
     pub(crate) y0: f64,
     /// Page content height (the sequential sum of the page's row heights).
     pub(crate) content_h: f64,
@@ -321,11 +322,6 @@ pub(crate) struct PlanPage {
 pub(crate) struct SheetPlan {
     pub(crate) name: String,
     pub(crate) show_grid_lines: bool,
-    pub(crate) min_row: u32,
-    pub(crate) min_col: u32,
-    /// Range bounds AFTER the drawing extension.
-    pub(crate) max_row: u32,
-    pub(crate) max_col: u32,
     pub(crate) default_row_px: f64,
     /// Height exceptions (row, px), sorted by row, duplicates last-wins.
     pub(crate) row_hx: Vec<(u32, f64)>,
@@ -544,10 +540,6 @@ pub(crate) fn plan_pages(input: PlanInput, page: PageBox) -> SheetPlan {
     SheetPlan {
         name: input.name.to_string(),
         show_grid_lines: input.show_grid_lines,
-        min_row,
-        min_col,
-        max_row,
-        max_col,
         default_row_px,
         row_hx: exc,
         bands,

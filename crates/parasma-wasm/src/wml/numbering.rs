@@ -8,6 +8,7 @@
 //! `wml::loader::build_numbering_lookup`.
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use ooxml_wml::ext::StyleContext;
 use ooxml_wml::types::{STLevelSuffix, STNumberFormat};
@@ -77,6 +78,9 @@ impl MarkerRunOverrides {
 
 pub(crate) struct NumberingLevelDef {
     pub(crate) format: STNumberFormat,
+    /// How the level's number is written: `format` read with a custom
+    /// format's pattern (see `counter_style`).
+    pub(crate) counter: crate::engine::counter::CounterStyle,
     pub(crate) lvl_text: String,
     /// The abstract list whose counters this level advances: the num
     /// instance's own `abstractNumId` (§17.9.26: instances of one abstract
@@ -92,20 +96,18 @@ pub(crate) struct NumberingLevelDef {
     /// restarts this level's counter. `None` = the default (restart whenever
     /// any earlier level is used). `Some(0)` = never restart.
     pub(crate) lvl_restart: Option<i64>,
-    /// The level's own indents (§17.9.22 level pPr): left, and the first
-    /// line's offset from it (positive `firstLine`, negative `hanging`).
-    /// `None` where the level sets none.
-    pub(crate) indent_left_twips: Option<i64>,
-    pub(crate) indent_first_twips: Option<i64>,
-    /// The level's own tab stops (§17.9.22 level pPr), typically the `num`
-    /// stop after the marker, merged under the paragraph's own. A `num` stop
-    /// past the hanging indent loses to the implicit stop at the hang, which
-    /// comes first; Word was not measured there. Of the rest of the level pPr
-    /// only `ind` is read; spacing, justification and right indent are not
-    /// (FLOOR).
-    pub(crate) tabs: Option<ooxml_wml::types::CTTabs>,
+    /// The level's paragraph properties (§17.9.22), applied to its
+    /// paragraphs below their styles (§17.7.2; see
+    /// `ParagraphLayout::from_resolved`). Its tab stops (the `num` stop)
+    /// merge under the paragraph's own: a `num` stop past the hanging indent
+    /// loses to the implicit stop at the hang, which comes first (Word not
+    /// measured there).
+    pub(crate) p_pr: Option<Rc<ooxml_wml::types::CTPPrGeneral>>,
     /// §17.9.4 `isLgl`: every number in the label is written in decimal.
     pub(crate) legal: bool,
+    /// §17.9.7 `lvlJc`: where the number sits against the first line's
+    /// start.
+    pub(crate) jc: MarkerJc,
     /// §17.9.11 `lvlText@null`: the label is a null character: nothing is
     /// drawn, but the suffix still separates the text (an empty `lvlText`
     /// draws neither).
@@ -124,14 +126,14 @@ pub(crate) struct NumberingMarker {
     /// (`wml::symbol_font`); `None` for a marker in any other font.
     pub(crate) symbol_face: Option<SymbolFace>,
     /// See `NumberingLevelDef`.
-    pub(crate) indent_left_twips: Option<i64>,
-    pub(crate) indent_first_twips: Option<i64>,
-    pub(crate) tabs: Option<ooxml_wml::types::CTTabs>,
+    pub(crate) p_pr: Option<Rc<ooxml_wml::types::CTPPrGeneral>>,
     /// The paragraph names its list itself (a direct `numPr`), rather than
     /// through its style: then the list's indents beat the style's.
     pub(crate) direct: bool,
     /// §17.9.28 `w:suff` separator type (see `NumberingLevelDef::suffix`).
     pub(crate) suffix: STLevelSuffix,
+    /// See `NumberingLevelDef::jc`.
+    pub(crate) jc: MarkerJc,
     /// The suffix applies although `text` is empty (`lvlText@null`).
     pub(crate) suffix_only: bool,
     /// The resolved list identity + counter captured at
@@ -147,6 +149,38 @@ pub(crate) struct NumberingMarker {
     /// §17.9.24 — the level's own rPr digest, overlaid onto the marker's
     /// `RunStyle` in `layout_paragraph` (after the run-decoration strip).
     pub(crate) rpr: MarkerRunOverrides,
+}
+
+/// §17.9.7 `lvlJc`: the number starts at the first line's position, is
+/// centred on it, or ends at it. Values name the leading edge, so `start`
+/// and `left` are one; justified and distributed values act as `start`.
+/// FLOOR: in a right-to-left paragraph the marker is not mirrored here.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum MarkerJc {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
+impl MarkerJc {
+    pub(crate) fn from_st(jc: ooxml_wml::types::STJc) -> Self {
+        use ooxml_wml::types::STJc as J;
+        match jc {
+            J::Center => Self::Center,
+            J::End | J::Right => Self::End,
+            _ => Self::Start,
+        }
+    }
+
+    /// How far before the first line's position the number begins.
+    pub(crate) fn lead(self, glyphs: f64) -> f64 {
+        match self {
+            Self::Start => 0.0,
+            Self::Center => glyphs / 2.0,
+            Self::End => glyphs,
+        }
+    }
 }
 
 /// The running list counters of one layout pass, keyed by `(list, ilvl)`.
@@ -250,6 +284,7 @@ pub(crate) fn resolve_marker_for(
         None => {
             default_level = NumberingLevelDef {
                 format: STNumberFormat::Bullet,
+                counter: crate::engine::counter::CounterStyle::Decimal,
                 lvl_text: "\u{2022}".to_string(),
                 // The instance's list, from any level it does define; a num
                 // with no levels at all counts on a key no list uses.
@@ -258,10 +293,16 @@ pub(crate) fn resolve_marker_for(
                 start_override: None,
                 p_style: None,
                 lvl_restart: None,
-                indent_left_twips: Some(720 * (ilvl + 1)),
-                indent_first_twips: Some(-360),
-                tabs: None,
+                p_pr: Some(Rc::new(ooxml_wml::types::CTPPrGeneral {
+                    indentation: Some(Box::new(ooxml_wml::types::CTInd {
+                        left: Some((720 * (ilvl + 1)).to_string()),
+                        hanging: Some("360".to_string()),
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                })),
                 legal: false,
+                jc: MarkerJc::Start,
                 null_text: false,
                 suffix: STLevelSuffix::Tab,
                 rpr: MarkerRunOverrides::default(),
@@ -347,12 +388,12 @@ pub(crate) fn resolve_marker_for(
                             ref_def.map(|d| d.start).unwrap_or(1)
                         })
                     };
-                    let ref_format = if level.legal {
-                        &STNumberFormat::Decimal
+                    let ref_style = if level.legal {
+                        crate::engine::counter::CounterStyle::Decimal
                     } else {
-                        ref_def.map(|l| &l.format).unwrap_or(&level.format)
+                        ref_def.map_or(level.counter, |l| l.counter)
                     };
-                    result = result.replace(&token, &format_number(ref_counter, ref_format));
+                    result = result.replace(&token, &crate::engine::counter::format(ref_counter, ref_style));
                 }
             }
             result
@@ -371,11 +412,10 @@ pub(crate) fn resolve_marker_for(
         suffix_only: level.null_text && text.is_empty(),
         text,
         symbol_face,
-        indent_left_twips: level.indent_left_twips,
-        indent_first_twips: level.indent_first_twips,
-        tabs: level.tabs.clone(),
+        p_pr: level.p_pr.clone(),
         direct: false,
         suffix: level.suffix,
+        jc: level.jc,
         // Capture the resolved list identity + live counter for copy.
         num_id,
         ilvl,
@@ -407,22 +447,21 @@ fn decode_lvl_text_entities(s: &str) -> String {
     crate::engine::vml::decode_char_refs_verbatim(s)
 }
 
-/// A level's number in its `numFmt` (§17.18.59), through the shared
-/// formatter. Declared: a custom format (`numFmt@format`) and the forms with
-/// no formatter here (Vietnamese and Hindi counting, Thai counting, Hindi
-/// vowels and consonants, Korean legal, Taiwanese digital, Chinese legal
-/// simplified) are written in decimal, and letter formats always use the
-/// Latin alphabet whatever the run's language.
-pub(crate) fn format_number(n: i64, format: &STNumberFormat) -> String {
-    crate::engine::counter::format(n, counter_style(format))
-}
-
-/// The shared counter style of a WML number format.
-pub(crate) fn counter_style(format: &STNumberFormat) -> crate::engine::counter::CounterStyle {
+/// The shared counter style of a WML number format (§17.18.59), with the
+/// `format` attribute of a custom one. Word's custom formats name their
+/// first values ("001, 002, 003, ..."); the zero-padded decimals are read,
+/// any other custom format is written in decimal (declared). Also declared:
+/// the forms with no formatter here (Vietnamese and Hindi counting, Thai
+/// counting, Hindi vowels and consonants, Korean legal, Taiwanese digital,
+/// Chinese legal simplified) are written in decimal. Letter formats use the
+/// Latin alphabet whatever the paragraph's language, as Word does (measured
+/// with Russian, Greek and Hebrew).
+pub(crate) fn counter_style(format: &STNumberFormat, custom: Option<&str>) -> crate::engine::counter::CounterStyle {
     use crate::engine::counter::CounterStyle as C;
     use STNumberFormat as F;
     match format {
-        F::DecimalZero => C::DecimalZero,
+        F::Custom => custom.and_then(padded_decimal).map_or(C::Decimal, C::DecimalPadded),
+        F::DecimalZero => C::DecimalPadded(2),
         F::UpperRoman => C::UpperRoman,
         F::LowerRoman => C::LowerRoman,
         F::UpperLetter => C::UpperLetter,
@@ -466,6 +505,16 @@ pub(crate) fn counter_style(format: &STNumberFormat) -> crate::engine::counter::
     }
 }
 
+/// The width of a custom zero-padded decimal format: "001, 002, 003, ..."
+/// is 3. Its first value must be zeros then a 1.
+fn padded_decimal(format: &str) -> Option<u8> {
+    let first = format.split(',').next()?.trim();
+    let zeros = first.strip_suffix('1')?;
+    (zeros.bytes().all(|b| b == b'0') && !zeros.is_empty())
+        .then(|| u8::try_from(first.len()).ok())
+        .flatten()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -489,16 +538,16 @@ mod tests {
     fn def(fmt: STNumberFormat, text: &str, restart: Option<i64>) -> NumberingLevelDef {
         NumberingLevelDef {
             format: fmt,
+            counter: counter_style(&fmt, None),
             lvl_text: text.to_string(),
             list: 0,
             start: 1,
             start_override: None,
             p_style: None,
             lvl_restart: restart,
-            indent_left_twips: Some(720),
-            indent_first_twips: Some(-360),
-            tabs: None,
+            p_pr: None,
             legal: false,
+            jc: MarkerJc::Start,
             null_text: false,
             suffix: STLevelSuffix::Tab,
             rpr: MarkerRunOverrides::default(),

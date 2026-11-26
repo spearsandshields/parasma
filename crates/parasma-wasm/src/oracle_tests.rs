@@ -6606,8 +6606,6 @@ struct RuleSnap {
 /// One laid-out border-box VRule (vertical edge) node.
 struct VRuleSnap {
     x: f64,
-    y: f64,
-    height: f64,
 }
 
 /// A math atom snapshot lifted from a laid-out page (in-crate access to the
@@ -6688,8 +6686,8 @@ fn item_snaps(viewer: &Viewer) -> Vec<ItemSnap> {
                                     MathNode::Rule { x, y, w, .. } => {
                                         rules.push(RuleSnap { x: *x, y: *y, w: *w });
                                     }
-                                    MathNode::VRule { x, y, height, .. } => {
-                                        vrules.push(VRuleSnap { x: *x, y: *y, height: *height });
+                                    MathNode::VRule { x, .. } => {
+                                        vrules.push(VRuleSnap { x: *x });
                                     }
                                     // A MATH size-variant glyph painted by outline
                                     // (math face). Surface it as a glyph so the
@@ -8685,7 +8683,6 @@ fn w62_paraitems_docx(long_sentences: usize) -> Vec<u8> {
 #[test]
 fn rollback_reenters_through_paraitems_checkpoint() {
     let viewer = layout(w62_paraitems_docx(55));
-    use super::wml::page::PageElement;
     let stats = viewer.layout_stats();
     let pages = viewer.pages.borrow();
     let log = viewer.rollback_log.borrow();
@@ -9394,7 +9391,7 @@ fn line_bytes(l: &PagedLine) -> ItemBytes {
 fn page_bytes(p: &PageLayout) -> ItemBytes {
     use std::mem::size_of;
     let mut b = ItemBytes { total: size_of::<PageLayout>(), item_text: 0, shaped_text: 0, dup_text: 0, glyphs: 0 };
-    let mut add = |x: ItemBytes, b: &mut ItemBytes| {
+    let add = |x: ItemBytes, b: &mut ItemBytes| {
         b.total += x.total;
         b.item_text += x.item_text;
         b.shaped_text += x.shaped_text;
@@ -11029,4 +11026,64 @@ fn level_num_tab_sets_the_text_after_the_marker() {
     let lines = body_lines(&layout(list_docx(&level, "", &list_p(0, "", "Text"))));
     let x = text_start(&lines[0]);
     assert!((x - (96.0 + 72.0)).abs() < 0.5, "text at {x}, expected the num stop at 168");
+}
+
+/// Word writes a custom number format inside AlternateContent, with a plain
+/// decimal fallback; the numbering part takes the custom choice, and Word
+/// shows "001." (measured).
+#[test]
+fn custom_padded_number_format_is_read_through_alternate_content() {
+    let fmt = r#"<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><mc:Choice Requires="w14"><w:numFmt w:val="custom" w:format="001, 002, 003, ..."/></mc:Choice><mc:Fallback><w:numFmt w:val="decimal"/></mc:Fallback></mc:AlternateContent>"#;
+    let level = lvl(0, "decimal", "%1.", 720, 360, "").replace(r#"<w:numFmt w:val="decimal"/>"#, fmt);
+    let body = format!("{}{}", list_p(0, "", "One"), list_p(0, "", "Two"));
+    let lines = body_lines(&layout(list_docx(&level, "", &body)));
+    assert_eq!(lines[0].segments[0].items[0].text, "001.");
+    assert_eq!(lines[1].segments[0].items[0].text, "002.");
+}
+
+/// §17.9.22 + §17.7.2: a level's own pPr applies to its paragraphs below
+/// their style. Its spacing and justification take effect; a paragraph
+/// style that sets justification still wins over the level's.
+#[test]
+fn level_paragraph_properties_apply_below_the_style() {
+    let level = lvl(0, "decimal", "%1.", 720, 360, "")
+        .replace("<w:pPr>", r#"<w:pPr><w:spacing w:after="480"/><w:jc w:val="right"/>"#);
+    let style = r#"<w:style w:type="paragraph" w:styleId="Left"><w:name w:val="Left"/><w:pPr><w:jc w:val="left"/></w:pPr></w:style>"#;
+    let body = format!(
+        "{}{}{}",
+        list_p(0, "", "One"),
+        list_p(0, "", "Two"),
+        list_p(0, r#"<w:pStyle w:val="Left"/>"#, "Three"),
+    );
+    let lines = body_lines(&layout(list_docx(&level, style, &body)));
+    let gap = lines[1].baseline_y - lines[0].baseline_y - lines[0].line_height;
+    assert!((gap - 32.0).abs() < 0.5, "level spacing after = 32px, gap {gap}");
+    let right_aligned = lines[0].segments[0].x_start;
+    let style_aligned = lines[2].segments[0].x_start;
+    assert!(right_aligned > 400.0, "the level's jc=right moves the line: x {right_aligned}");
+    assert!((style_aligned - 120.0).abs() < 0.5, "the style's jc=left wins: x {style_aligned}");
+}
+
+/// §17.9.7 lvlJc: a right-aligned number ends at the first line's position
+/// (here 120), a centred one is centred on it; the text still tabs to the
+/// hang stop (144).
+#[test]
+fn level_justification_aligns_the_number_on_the_first_line_position() {
+    let start_of = |jc: &str| {
+        let level = lvl(0, "lowerRoman", "%1.", 720, 360, "")
+            .replace(r#"<w:lvlText w:val="%1."/>"#, &format!(r#"<w:lvlText w:val="%1."/><w:lvlJc w:val="{jc}"/>"#));
+        let body: String = (0..4).map(|i| list_p(0, "", &format!("Item{i}"))).collect();
+        let lines = body_lines(&layout(list_docx(&level, "", &body)));
+        assert_eq!(lines[3].segments[0].items[0].text, "iv.");
+        (lines[3].segments[0].x_start, text_start(&lines[3]))
+    };
+    let (left, left_text) = start_of("left");
+    let (right, right_text) = start_of("right");
+    let (center, center_text) = start_of("center");
+    assert!((left - 120.0).abs() < 0.5, "left starts at 120: {left}");
+    assert!(right < 110.0, "right-aligned iv. hangs left of 120: {right}");
+    assert!(((120.0 - center) * 2.0 - (120.0 - right)).abs() < 0.5, "centre leads by half: {center} vs {right}");
+    for x in [left_text, right_text, center_text] {
+        assert!((x - 144.0).abs() < 0.5, "text tabs to 144: {x}");
+    }
 }

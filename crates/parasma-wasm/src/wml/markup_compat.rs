@@ -19,8 +19,9 @@
 //! - failing both, the element is removed.
 //!
 //! "Understood" means the engine draws that markup: [`UNDERSTOOD`] lists the
-//! namespaces. A namespace is added when its content renders at least as well
-//! as the fallback.
+//! namespaces, and [`understood_in`] adds those understood in one part only.
+//! A namespace is added when its content renders at least as well as the
+//! fallback.
 //!
 //! Deviations, declared: the other MCE attributes (`Ignorable`,
 //! `ProcessContent`, `MustUnderstand`) are not processed (the parser already
@@ -42,6 +43,21 @@ const UNDERSTOOD: &[&str] = &[
     // `wml::drawing::extract_drawing_text_box`.
     "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
 ];
+
+/// Word 2010's main namespace. In the numbering part its only `Choice` is a
+/// custom number format (`numFmt val="custom"`, "001, 002, 003, ..."), which
+/// `engine::counter` writes; elsewhere it guards markup the engine does not
+/// draw, so it is understood in that part alone.
+const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+
+/// The namespaces understood in the part named `name`.
+fn understood_in(name: &str) -> Vec<&'static str> {
+    let mut understood = UNDERSTOOD.to_vec();
+    if name == "word/numbering.xml" {
+        understood.push(W14);
+    }
+    understood
+}
 
 /// Largest buffer reserved up front from a zip entry's declared size, which
 /// the file's author controls. Reads still grow past it as real data arrives.
@@ -66,7 +82,7 @@ pub(crate) fn resolve_package(bytes: Vec<u8>) -> Vec<u8> {
         if entry.read_to_end(&mut xml).is_err() {
             continue;
         }
-        if let Some(resolved) = resolve_part(&xml) {
+        if let Some(resolved) = resolve_part(&xml, &understood_in(&name)) {
             replacements.push((name, resolved));
         }
     }
@@ -76,13 +92,13 @@ pub(crate) fn resolve_package(bytes: Vec<u8>) -> Vec<u8> {
     rewrite_parts(&bytes, &replacements).unwrap_or(bytes)
 }
 
-/// One part with every `AlternateContent` resolved, or `None` when it holds
-/// none or does not read as XML.
-pub(crate) fn resolve_part(xml: &[u8]) -> Option<Vec<u8>> {
+/// One part with every `AlternateContent` resolved against the `understood`
+/// namespaces, or `None` when it holds none or does not read as XML.
+pub(crate) fn resolve_part(xml: &[u8], understood: &[&str]) -> Option<Vec<u8>> {
     if !contains(xml, b"AlternateContent") {
         return None;
     }
-    let resolved = resolve_fragment(xml, &HashMap::new())?;
+    let resolved = resolve_fragment(xml, &HashMap::new(), understood)?;
     (resolved != xml).then_some(resolved)
 }
 
@@ -90,7 +106,7 @@ pub(crate) fn resolve_part(xml: &[u8]) -> Option<Vec<u8>> {
 /// branch's children, themselves resolved. `outer` holds the namespace
 /// declarations met before this fragment; the fragment's own are added as they
 /// are read, so the root element's are known before any `AlternateContent`.
-fn resolve_fragment(xml: &[u8], outer: &HashMap<String, String>) -> Option<Vec<u8>> {
+fn resolve_fragment(xml: &[u8], outer: &HashMap<String, String>, understood: &[&str]) -> Option<Vec<u8>> {
     let mut namespaces = outer.clone();
     let mut reader = Reader::from_reader(xml);
     reader.config_mut().check_end_names = false;
@@ -99,8 +115,9 @@ fn resolve_fragment(xml: &[u8], outer: &HashMap<String, String>) -> Option<Vec<u
         let before = reader.buffer_position() as usize;
         match reader.read_event().ok()? {
             Event::Start(e) if local_name(&e) == b"AlternateContent" => {
-                let (selected, end) = select_branch(&mut reader, &namespaces)?;
-                let inner = resolve_fragment(&xml[selected], &namespaces)?;
+                declare_namespaces(&e, &mut namespaces);
+                let (selected, end) = select_branch(&mut reader, &namespaces, understood)?;
+                let inner = resolve_fragment(&xml[selected], &namespaces, understood)?;
                 splices.push((before..end, inner));
             }
             Event::Empty(e) if local_name(&e) == b"AlternateContent" => {
@@ -128,6 +145,7 @@ fn resolve_fragment(xml: &[u8], outer: &HashMap<String, String>) -> Option<Vec<u
 fn select_branch(
     reader: &mut Reader<&[u8]>,
     namespaces: &HashMap<String, String>,
+    understood: &[&str],
 ) -> Option<(Range<usize>, usize)> {
     let mut choice: Option<Range<usize>> = None;
     let mut fallback: Option<Range<usize>> = None;
@@ -139,7 +157,7 @@ fn select_branch(
                 let start = after_start(reader);
                 let end = skip_element(reader)?;
                 match local.as_slice() {
-                    b"Choice" if choice.is_none() && requires_understood(&e, namespaces) => {
+                    b"Choice" if choice.is_none() && requires_understood(&e, namespaces, understood) => {
                         choice = Some(start..end);
                     }
                     b"Fallback" if fallback.is_none() => fallback = Some(start..end),
@@ -149,7 +167,7 @@ fn select_branch(
             Event::Empty(e) => {
                 let at = after_start(reader);
                 match local_name(&e) {
-                    b"Choice" if choice.is_none() && requires_understood(&e, namespaces) => {
+                    b"Choice" if choice.is_none() && requires_understood(&e, namespaces, understood) => {
                         choice = Some(at..at);
                     }
                     b"Fallback" if fallback.is_none() => fallback = Some(at..at),
@@ -188,7 +206,7 @@ fn skip_element(reader: &mut Reader<&[u8]>) -> Option<usize> {
 
 /// Whether every namespace a `Choice` requires is one the engine draws. The
 /// element's own declarations count, then the part's.
-fn requires_understood(choice: &BytesStart, namespaces: &HashMap<String, String>) -> bool {
+fn requires_understood(choice: &BytesStart, namespaces: &HashMap<String, String>, understood: &[&str]) -> bool {
     let mut own = HashMap::new();
     let mut requires = None;
     for attr in choice.attributes().flatten() {
@@ -206,7 +224,7 @@ fn requires_understood(choice: &BytesStart, namespaces: &HashMap<String, String>
         && prefixes.all(|p| {
             own.get(p)
                 .or_else(|| namespaces.get(p))
-                .is_some_and(|uri| UNDERSTOOD.contains(&uri.as_str()))
+                .is_some_and(|uri| understood.contains(&uri.as_str()))
         })
 }
 
@@ -265,8 +283,14 @@ mod tests {
 
     fn resolve(body: &str) -> String {
         let xml = format!("{ROOT_OPEN}{body}</w:document>");
-        let out = resolve_part(xml.as_bytes()).map_or(xml, |b| String::from_utf8(b).unwrap());
+        let out = resolve_part(xml.as_bytes(), UNDERSTOOD).map_or(xml, |b| String::from_utf8(b).unwrap());
         out.strip_prefix(ROOT_OPEN).unwrap().strip_suffix("</w:document>").unwrap().to_string()
+    }
+
+    #[test]
+    fn word_2010_markup_is_understood_in_the_numbering_part_only() {
+        assert!(understood_in("word/numbering.xml").contains(&W14));
+        assert!(!understood_in("word/document.xml").contains(&W14));
     }
 
     #[test]
@@ -295,6 +319,12 @@ mod tests {
     }
 
     #[test]
+    fn a_prefix_declared_on_the_alternate_content_counts() {
+        let body = r#"<mc:AlternateContent xmlns:x="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><mc:Choice Requires="x"><a/></mc:Choice><mc:Fallback><b/></mc:Fallback></mc:AlternateContent>"#;
+        assert_eq!(resolve(body), "<a/>");
+    }
+
+    #[test]
     fn a_prefix_declared_on_the_choice_itself_counts() {
         let ac = r#"<mc:AlternateContent><mc:Choice xmlns:s="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" Requires="s"><a/></mc:Choice><mc:Fallback><b/></mc:Fallback></mc:AlternateContent>"#;
         assert_eq!(resolve(ac), "<a/>");
@@ -312,11 +342,11 @@ mod tests {
         let ac = r#"<mc:AlternateContent><mc:Choice Requires="wps"><x/></mc:Choice></mc:AlternateContent>"#;
         assert_eq!(resolve(&format!("{around}{ac}{around}")), format!("{around}<x/>{around}"));
         let xml = format!("{ROOT_OPEN}{around}</w:document>");
-        assert!(resolve_part(xml.as_bytes()).is_none(), "a part with no AlternateContent is left alone");
+        assert!(resolve_part(xml.as_bytes(), UNDERSTOOD).is_none(), "a part with no AlternateContent is left alone");
     }
 
     #[test]
     fn unreadable_xml_is_left_alone() {
-        assert!(resolve_part(b"<a><mc:AlternateContent><mc:Choice Requires=\"wps\">").is_none());
+        assert!(resolve_part(b"<a><mc:AlternateContent><mc:Choice Requires=\"wps\">", UNDERSTOOD).is_none());
     }
 }

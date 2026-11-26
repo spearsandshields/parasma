@@ -132,18 +132,6 @@ fn target_walk<'a>(
     }
 }
 
-/// The (box_x, box_y, box_w, box_h) of a target's OUTER box — the pointer hit
-/// region (a click anywhere in the shape/cell box selects its text). `None` for
-/// an out-of-range index.
-fn target_box(page: &SlidePage, target: PmlTarget) -> Option<(f64, f64, f64, f64)> {
-    match target {
-        PmlTarget::Shape(si) => page.shapes.get(si).map(|s| (s.x, s.y, s.w, s.h)),
-        PmlTarget::TableCell { table, cell } => {
-            page.tables.get(table)?.cells.get(cell).map(|c| (c.x, c.y, c.w, c.h))
-        }
-    }
-}
-
 /// True when `(x, y)` lies inside a box.
 fn in_box(bx: (f64, f64, f64, f64), x: f64, y: f64) -> bool {
     x >= bx.0 && x < bx.0 + bx.2 && y >= bx.1 && y < bx.1 + bx.3

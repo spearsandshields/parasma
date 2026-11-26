@@ -115,17 +115,6 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
         // here, resolved at counter time). 0 → never restart.
         let lvl_restart = level.lvl_restart.as_ref().map(|d| d.value);
 
-        // §17.9.22: the level's indents, each only where it sets one (the
-        // paragraph's own and its style's then decide the rest). The first
-        // line's offset: hanging wins over firstLine, as on a paragraph.
-        let ind = level.p_pr.as_ref().and_then(|ppr| ppr.indentation.as_ref());
-        let indent_left = ind.and_then(|ind| ind.start.as_deref().or(ind.left.as_deref()))
-            .and_then(|s| s.parse::<i64>().ok());
-        let indent_first = ind.and_then(|ind| {
-            ind.hanging.as_deref().and_then(|s| s.parse::<i64>().ok()).map(|h| -h)
-                .or_else(|| ind.first_line.as_deref().and_then(|s| s.parse::<i64>().ok()))
-        });
-
         // §17.9.28 w:suff — separator between marker and text; omitted → tab.
         let suffix = level.suff.as_ref()
             .map(|s| s.value)
@@ -133,16 +122,20 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
 
         NumberingLevelDef {
             format,
+            counter: crate::wml::numbering::counter_style(
+                &format,
+                level.num_fmt.as_ref().and_then(|f| f.format.as_deref()),
+            ),
             lvl_text,
             list,
             start,
             start_override,
             p_style: level.paragraph_style.as_ref().map(|s| s.value.clone()),
             lvl_restart,
-            indent_left_twips: indent_left,
-            indent_first_twips: indent_first,
-            tabs: level.p_pr.as_ref().and_then(|p| p.tabs.as_deref()).cloned(),
+            // §17.9.22: the level's paragraph properties, applied in layout.
+            p_pr: level.p_pr.as_deref().cloned().map(std::rc::Rc::new),
             legal: crate::check_toggle(&level.is_lgl).unwrap_or(false),
+            jc: level.lvl_jc.as_ref().map_or_else(Default::default, |j| crate::wml::numbering::MarkerJc::from_st(j.value)),
             null_text: level.lvl_text.as_ref().and_then(|t| t.null.as_deref()).is_some_and(crate::on_off),
             suffix,
             // §17.9.24 — the level's own rPr formats the numbering text. This

@@ -863,7 +863,7 @@ fn wrap_latin_breaks_at_space_not_mid_word() {
         let txt: String = line.runs.iter().map(|r| r.text.clone()).collect();
         let t = txt.trim();
         assert!(
-            t.is_empty() || ["alpha", "beta", "gamma"].iter().any(|w| t.split_whitespace().all(|p| ["alpha", "beta", "gamma"].contains(&p))),
+            t.is_empty() || t.split_whitespace().all(|p| ["alpha", "beta", "gamma"].contains(&p)),
             "line '{t}' must be whole words, never a mid-word split"
         );
     }

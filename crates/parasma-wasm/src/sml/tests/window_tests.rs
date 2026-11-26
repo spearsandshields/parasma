@@ -305,7 +305,7 @@ fn envelope_cdata_quotes_and_prefixed_streams_survive_slicing() {
 fn chunk_lru_evicts_oldest_and_rebuilds_identically() {
     let mut store = ChunkStore::new(2);
     let mut builds = 0usize;
-    let mut get = |store: &mut ChunkStore, key: (usize, u32), builds: &mut usize| {
+    let get = |store: &mut ChunkStore, key: (usize, u32), builds: &mut usize| {
         store.get_or_build(key, || {
             *builds += 1;
             vec![]
