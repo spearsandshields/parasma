@@ -98,7 +98,7 @@ L7 p1 f0 l0 segs1
     i9 y1 w61.14 cw57.06 c412+9 "reserved " sh9g adv61.14 r0 s1
     i10 y1 w44.04 cw39.96 c421+6 "bands " sh6g adv44.04 r0 s1
 L8 p1 f0 l0 segs1
-  S0 n12
+  S0 n11
     i0 y1 w28.55 cw24.47 c427+4 "and " sh4g adv28.55 r0 s1
     i1 y1 w24.46 cw20.39 c431+4 "the " sh4g adv24.46 r0 s1
     i2 y1 w35.88 cw31.80 c435+5 "body " sh5g adv35.88 r0 s1
@@ -110,18 +110,18 @@ L8 p1 f0 l0 segs1
     i8 y1 w40.76 cw36.68 c470+6 "them. " sh6g adv40.76 r0 s1
     i9 y1 w29.35 cw25.27 c476+4 "The " sh4g adv29.35 r0 s1
     i10 y1 w43.21 cw39.14 c480+7 "layout " sh7g adv43.21 r0 s1
-    i11 y1 w48.12 cw44.04 c487+7 "engine " sh7g adv48.12 r0 s1
 L9 p1 f0 l1 segs1
-  S0 n9
-    i0 y1 w68.47 cw64.40 c494+9 "measures " sh9g adv68.47 r0 s1
-    i1 y1 w39.94 cw35.86 c503+6 "every " sh6g adv39.94 r0 s1
-    i2 y1 w39.14 cw35.06 c509+6 "glyph " sh6g adv39.14 r0 s1
-    i3 y1 w45.66 cw41.59 c515+7 "before " sh7g adv45.66 r0 s1
-    i4 y1 w12.23 cw8.16 c522+2 "a " sh2g adv12.23 r0 s1
-    i5 y1 w42.40 cw38.32 c524+7 "single " sh7g adv42.40 r0 s1
-    i6 y1 w36.70 cw32.63 c531+5 "page " sh5g adv36.70 r0 s1
-    i7 y1 w45.64 cw41.57 c536+8 "exists. " sh8g adv45.64 r0 s1
-    i8 y2 w4.77 cw4.77 c- "1" fn1
+  S0 n10
+    i0 y1 w48.12 cw44.04 c487+7 "engine " sh7g adv48.12 r0 s1
+    i1 y1 w68.47 cw64.40 c494+9 "measures " sh9g adv68.47 r0 s1
+    i2 y1 w39.94 cw35.86 c503+6 "every " sh6g adv39.94 r0 s1
+    i3 y1 w39.14 cw35.06 c509+6 "glyph " sh6g adv39.14 r0 s1
+    i4 y1 w45.66 cw41.59 c515+7 "before " sh7g adv45.66 r0 s1
+    i5 y1 w12.23 cw8.16 c522+2 "a " sh2g adv12.23 r0 s1
+    i6 y1 w42.40 cw38.32 c524+7 "single " sh7g adv42.40 r0 s1
+    i7 y1 w36.70 cw32.63 c531+5 "page " sh5g adv36.70 r0 s1
+    i8 y1 w45.64 cw41.57 c536+8 "exists. " sh8g adv45.64 r0 s1
+    i9 y2 w4.77 cw4.77 c- "1" fn1
 L10 p2 f1 l0 segs1
   S0 n9
     i0 y1 w79.90 cw75.83 c0+11 "Paragraphs " sh11g adv79.90 r0 s1
@@ -147,7 +147,7 @@ L11 p2 f0 l0 segs1
     i9 y1 w35.88 cw31.80 c105+6 "table " sh6g adv35.88 r0 s1
     i10 y1 w28.54 cw24.46 c111+5 "that " sh5g adv28.54 r0 s1
 L12 p2 f0 l0 segs1
-  S0 n16
+  S0 n10
     i0 y1 w63.59 cw59.51 c116+10 "straddles " sh10g adv63.59 r0 s1
     i1 y1 w12.23 cw8.16 c126+2 "a " sh2g adv12.23 r0 s1
     i2 y1 w36.70 cw32.63 c128+5 "page " sh5g adv36.70 r0 s1
@@ -158,51 +158,51 @@ L12 p2 f0 l0 segs1
     i7 y1 w42.40 cw38.32 c157+6 "whole " sh6g adv42.40 r0 s1
     i8 y1 w37.50 cw33.42 c163+6 "while " sh6g adv37.50 r0 s1
     i9 y1 w24.46 cw20.39 c169+4 "the " sh4g adv24.46 r0 s1
-    i10 y1 w70.10 cw66.03 c173+10 "remainder " sh10g adv70.10 r0 s1
-    i11 y1 w48.08 cw44.01 c183+8 "carries " sh8g adv48.08 r0 s1
-    i12 y1 w16.31 cw12.23 c191+3 "to " sh3g adv16.31 r0 s1
-    i13 y1 w24.46 cw20.39 c194+4 "the " sh4g adv24.46 r0 s1
-    i14 y1 w31.80 cw27.72 c198+5 "next " sh5g adv31.80 r0 s1
-    i15 y1 w40.78 cw36.70 c203+6 "page. " sh6g adv40.78 r0 s1
 L13 p2 f0 l0 segs1
-  S0 n14
-    i0 y1 w72.55 cw68.48 c209+9 "Numbered " sh9g adv72.55 r0 s1
-    i1 y1 w39.12 cw35.04 c218+6 "items " sh6g adv39.12 r0 s1
-    i2 y1 w59.53 cw55.45 c224+8 "advance " sh8g adv59.53 r0 s1
-    i3 y1 w32.61 cw28.53 c232+6 "their " sh6g adv32.61 r0 s1
-    i4 y1 w60.33 cw56.25 c238+9 "counters " sh9g adv60.33 r0 s1
-    i5 y1 w35.88 cw31.80 c247+5 "even " sh5g adv35.88 r0 s1
-    i6 y1 w39.14 cw35.06 c252+5 "when " sh5g adv39.14 r0 s1
-    i7 y1 w74.19 cw70.12 c257+12 "interrupted " sh12g adv74.19 r0 s1
-    i8 y1 w19.57 cw15.49 c269+3 "by " sh3g adv19.57 r0 s1
-    i9 y1 w35.06 cw30.99 c272+6 "plain " sh6g adv35.06 r0 s1
-    i10 y1 w27.71 cw23.64 c278+5 "text " sh5g adv27.71 r0 s1
-    i11 y1 w59.53 cw55.45 c283+8 "between " sh8g adv59.53 r0 s1
-    i12 y1 w24.46 cw20.39 c291+4 "the " sh4g adv24.46 r0 s1
-    i13 y1 w32.61 cw28.53 c295+5 "runs " sh5g adv32.61 r0 s1
+  S0 n13
+    i0 y1 w70.10 cw66.03 c173+10 "remainder " sh10g adv70.10 r0 s1
+    i1 y1 w48.08 cw44.01 c183+8 "carries " sh8g adv48.08 r0 s1
+    i2 y1 w16.31 cw12.23 c191+3 "to " sh3g adv16.31 r0 s1
+    i3 y1 w24.46 cw20.39 c194+4 "the " sh4g adv24.46 r0 s1
+    i4 y1 w31.80 cw27.72 c198+5 "next " sh5g adv31.80 r0 s1
+    i5 y1 w40.78 cw36.70 c203+6 "page. " sh6g adv40.78 r0 s1
+    i6 y1 w72.55 cw68.48 c209+9 "Numbered " sh9g adv72.55 r0 s1
+    i7 y1 w39.12 cw35.04 c218+6 "items " sh6g adv39.12 r0 s1
+    i8 y1 w59.53 cw55.45 c224+8 "advance " sh8g adv59.53 r0 s1
+    i9 y1 w32.61 cw28.53 c232+6 "their " sh6g adv32.61 r0 s1
+    i10 y1 w60.33 cw56.25 c238+9 "counters " sh9g adv60.33 r0 s1
+    i11 y1 w35.88 cw31.80 c247+5 "even " sh5g adv35.88 r0 s1
+    i12 y1 w39.14 cw35.06 c252+5 "when " sh5g adv39.14 r0 s1
 L14 p2 f0 l0 segs1
   S0 n16
-    i0 y1 w16.31 cw12.23 c300+3 "of " sh3g adv16.31 r0 s1
-    i1 y1 w12.23 cw8.16 c303+2 "a " sh2g adv12.23 r0 s1
-    i2 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
-    i3 y1 w59.51 cw55.44 c311+8 "Headers " sh8g adv59.51 r0 s1
-    i4 y1 w28.55 cw24.47 c319+4 "and " sh4g adv28.55 r0 s1
-    i5 y1 w48.91 cw44.84 c323+8 "footers " sh8g adv48.91 r0 s1
-    i6 y1 w50.55 cw46.47 c331+7 "occupy " sh7g adv50.55 r0 s1
-    i7 y1 w32.61 cw28.53 c338+6 "their " sh6g adv32.61 r0 s1
-    i8 y1 w61.14 cw57.06 c344+9 "reserved " sh9g adv61.14 r0 s1
-    i9 y1 w44.04 cw39.96 c353+6 "bands " sh6g adv44.04 r0 s1
-    i10 y1 w28.55 cw24.47 c359+4 "and " sh4g adv28.55 r0 s1
-    i11 y1 w24.46 cw20.39 c363+4 "the " sh4g adv24.46 r0 s1
-    i12 y1 w35.88 cw31.80 c367+5 "body " sh5g adv35.88 r0 s1
-    i13 y1 w40.76 cw36.69 c372+6 "never " sh6g adv40.76 r0 s1
-    i14 y1 w56.25 cw52.18 c378+9 "intrudes " sh9g adv56.25 r0 s1
-    i15 y1 w27.72 cw23.65 c387+5 "into " sh5g adv27.72 r0 s1
+    i0 y1 w74.19 cw70.12 c257+12 "interrupted " sh12g adv74.19 r0 s1
+    i1 y1 w19.57 cw15.49 c269+3 "by " sh3g adv19.57 r0 s1
+    i2 y1 w35.06 cw30.99 c272+6 "plain " sh6g adv35.06 r0 s1
+    i3 y1 w27.71 cw23.64 c278+5 "text " sh5g adv27.71 r0 s1
+    i4 y1 w59.53 cw55.45 c283+8 "between " sh8g adv59.53 r0 s1
+    i5 y1 w24.46 cw20.39 c291+4 "the " sh4g adv24.46 r0 s1
+    i6 y1 w32.61 cw28.53 c295+5 "runs " sh5g adv32.61 r0 s1
+    i7 y1 w16.31 cw12.23 c300+3 "of " sh3g adv16.31 r0 s1
+    i8 y1 w12.23 cw8.16 c303+2 "a " sh2g adv12.23 r0 s1
+    i9 y1 w26.07 cw22.00 c305+6 "list. " sh6g adv26.07 r0 s1
+    i10 y1 w59.51 cw55.44 c311+8 "Headers " sh8g adv59.51 r0 s1
+    i11 y1 w28.55 cw24.47 c319+4 "and " sh4g adv28.55 r0 s1
+    i12 y1 w48.91 cw44.84 c323+8 "footers " sh8g adv48.91 r0 s1
+    i13 y1 w50.55 cw46.47 c331+7 "occupy " sh7g adv50.55 r0 s1
+    i14 y1 w32.61 cw28.53 c338+6 "their " sh6g adv32.61 r0 s1
+    i15 y1 w61.14 cw57.06 c344+9 "reserved " sh9g adv61.14 r0 s1
 L15 p2 f0 l1 segs1
-  S0 n3
-    i0 y1 w40.76 cw36.69 c392+7 "either " sh7g adv40.76 r0 s1
-    i1 y1 w16.31 cw12.23 c399+3 "of " sh3g adv16.31 r0 s1
-    i2 y1 w40.76 cw36.68 c402+6 "them. " sh6g adv40.76 r0 s1
+  S0 n10
+    i0 y1 w44.04 cw39.96 c353+6 "bands " sh6g adv44.04 r0 s1
+    i1 y1 w28.55 cw24.47 c359+4 "and " sh4g adv28.55 r0 s1
+    i2 y1 w24.46 cw20.39 c363+4 "the " sh4g adv24.46 r0 s1
+    i3 y1 w35.88 cw31.80 c367+5 "body " sh5g adv35.88 r0 s1
+    i4 y1 w40.76 cw36.69 c372+6 "never " sh6g adv40.76 r0 s1
+    i5 y1 w56.25 cw52.18 c378+9 "intrudes " sh9g adv56.25 r0 s1
+    i6 y1 w27.72 cw23.65 c387+5 "into " sh5g adv27.72 r0 s1
+    i7 y1 w40.76 cw36.69 c392+7 "either " sh7g adv40.76 r0 s1
+    i8 y1 w16.31 cw12.23 c399+3 "of " sh3g adv16.31 r0 s1
+    i9 y1 w40.76 cw36.68 c402+6 "them. " sh6g adv40.76 r0 s1
 L16 p3 f1 l0 segs1
   S0 n17
     i0 y1 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1

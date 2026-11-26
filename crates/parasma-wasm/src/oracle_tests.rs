@@ -1307,7 +1307,14 @@ fn oracle_objects_layout_snapshot() {
     // segment x, line count and page count is byte-identical, and the ITEM and
     // GLYPH streams are byte-identical once the L#/S# framing is stripped. A
     // pure break-point move on the wrapSquare paragraph, which is the point.
-    assert_oracle("oracle-objects", oracle_objects_docx(), 5, 0xbcfe64182d4c649f);
+    //
+    // Re-baselined 2026-11-26 for the anchor's wrap distances (§20.4.2.3): the
+    // fixture's wp:anchor carries distL/distR=114300 (12 px) over a bare
+    // wp:wrapSquare, which used to be read as 0. Diffed: the 13 lines beside
+    // the float start at x=300 instead of 288 (exactly distR) and re-partition
+    // their words; the next two lines refill. Baselines, heights, line and
+    // page counts are unchanged.
+    assert_oracle("oracle-objects", oracle_objects_docx(), 5, 0x74676609b741ae30);
 }
 
 // ─── oracle document: "hdr-ftr-inherit" ─────────────────────────────────────

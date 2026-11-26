@@ -88,6 +88,11 @@ pub(crate) fn parse_anchor_position(drawing: &ooxml_wml::types::CTDrawing, obj_w
                 behind = true;
             }
         }
+        // §20.4.2.3: the anchor's own distances, which apply to every side
+        // its wrap element does not set. Word writes them here (typically
+        // 0.125" left and right) with a bare <wp:wrapSquare/>.
+        let anchor_dist = |key: &str| vml_attr(elem, key).and_then(|v| v.parse::<i64>().ok()).map(emu_to_px).unwrap_or(0.0);
+        let anchor_dists = (anchor_dist("distL"), anchor_dist("distT"), anchor_dist("distR"), anchor_dist("distB"));
 
         for inner in &elem.children {
             let ooxml_xml::RawXmlNode::Element(ref ie) = inner else { continue };
@@ -124,7 +129,7 @@ pub(crate) fn parse_anchor_position(drawing: &ooxml_wml::types::CTDrawing, obj_w
                     wrap = WrapInfo { mode: WrapMode::None, ..WrapInfo::none() };
                 }
                 "wrapSquare" | "wrapTight" | "wrapThrough" | "wrapTopAndBottom" => {
-                    wrap = parse_wrap_child(ie, obj_w_px, obj_h_px);
+                    wrap = parse_wrap_child(ie, obj_w_px, obj_h_px, anchor_dists);
                 }
                 _ => {}
             }
@@ -190,15 +195,22 @@ pub(crate) fn inline_dist_px(drawing: &ooxml_wml::types::CTDrawing) -> (f64, f64
 /// Parse a wrapSquare/wrapTight/wrapThrough/wrapTopAndBottom element into
 /// `WrapInfo`. `obj_w_px`/`obj_h_px` are the object's box dimensions, needed
 /// to map the 21600-relative wrapPolygon coords (§20.4.2.10) into px offsets
-/// from the object's upper-left corner.
-fn parse_wrap_child(elem: &ooxml_xml::RawXmlElement, obj_w_px: f64, obj_h_px: f64) -> WrapInfo {
+/// from the object's upper-left corner. `anchor_dists` (left, top, right,
+/// bottom px) are the anchor's distances, used for each side the wrap element
+/// does not set.
+///
+/// Declared: `wp:effectExtent` (§20.4.2.6, room for shadows and glows) is not
+/// added to the wrap area.
+fn parse_wrap_child(
+    elem: &ooxml_xml::RawXmlElement,
+    obj_w_px: f64,
+    obj_h_px: f64,
+    anchor_dists: (f64, f64, f64, f64),
+) -> WrapInfo {
     let local = xml_local_name(&elem.name);
 
     // §20.4.2: distT/distB/distL/distR are EMU attributes on the wrap element.
-    let mut dist_t = 0.0;
-    let mut dist_b = 0.0;
-    let mut dist_l = 0.0;
-    let mut dist_r = 0.0;
+    let (mut dist_l, mut dist_t, mut dist_r, mut dist_b) = anchor_dists;
     let mut wrap_text = WrapTextSide::BothSides;
     for (a, v) in &elem.attributes {
         match xml_local_name(a) {
@@ -687,6 +699,23 @@ mod dist_tests {
         d.extra_children
             .push(PositionedNode::new(0, RawXmlNode::Element(elem)));
         d
+    }
+
+    /// §20.4.2.3: an anchor's distances apply to each side its wrap element
+    /// does not set; a side the wrap element sets keeps its own.
+    #[test]
+    fn a_bare_wrap_element_takes_the_anchors_distances() {
+        let mut d = drawing_with("wp:anchor", &[("distL", "114300"), ("distR", "114300"), ("distT", "0"), ("distB", "0")]);
+        let ooxml_xml::RawXmlNode::Element(ref mut anchor) = d.extra_children[0].node else { unreachable!() };
+        anchor.self_closing = false;
+        anchor.children.push(RawXmlNode::Element(RawXmlElement {
+            name: "wp:wrapSquare".into(),
+            attributes: vec![("wrapText".into(), "bothSides".into()), ("distR".into(), "228600".into())],
+            children: Vec::new(),
+            self_closing: true,
+        }));
+        let (_, _, _, _, _, wrap) = parse_anchor_position(&d, 100.0, 100.0);
+        assert_eq!((wrap.dist_l, wrap.dist_r), (12.0, 24.0), "left from the anchor, right from the wrap element");
     }
 
     #[test]

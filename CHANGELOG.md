@@ -55,6 +55,11 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: text keeps its gap from floating pictures and text boxes
+  (usually an eighth of an inch at each side, as Word writes it on the
+  object), including tight and through wrapping. It used to run up against
+  them, so line breaks and page breaks around floating objects now match
+  Word more closely. Room for shadows and glows is not added yet.
 - Documents: DATE, TIME, CREATEDATE and SAVEDATE fields show the viewer's
   local time instead of UTC, so header times are right and dates no longer
   change a day early or late near midnight.

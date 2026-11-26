@@ -670,7 +670,14 @@ pub(crate) fn build_active_float(
         WrapMode::Polygon { polygon } => match polygon {
             Some(pts) if pts.len() >= 3 => {
                 // Polygon coords are px offsets from the object's upper-left.
-                let abs: Vec<(f64, f64)> = pts.iter().map(|&(px, py)| (x + px, y + py)).collect();
+                // Tight and through wrapping keep their left and right
+                // distances (§20.4.2.18, §20.4.2.19): points left of the
+                // object's middle move out by distL, the rest by distR.
+                // Declared: an outward shift, not a true offset of the outline.
+                let mid = w / 2.0;
+                let abs: Vec<(f64, f64)> = pts.iter()
+                    .map(|&(px, py)| (x + if px < mid { px - dl } else { px + dr }, y + py))
+                    .collect();
                 let x0 = abs.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
                 let x1 = abs.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
                 let y0 = abs.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
