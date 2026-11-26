@@ -154,7 +154,7 @@ use wml::page::{
 // `collect_paragraph_style_rprs`/`ResolvedTabStops`/`TabAlignment`/`TabLeader`.
 // lib.rs's own page-assembly/render code also uses several of these.
 pub(crate) use wml::paragraph::{
-    collect_paragraph_style_chain, collect_paragraph_style_rprs, layout_paragraph,
+    collect_paragraph_style_chain, collect_paragraph_style_rprs, gap_prev, layout_paragraph, paragraph_gap,
     ParagraphCache, ResolvedTabStops, TabAlignment, TabLeader,
 };
 use wml::render::{layout_text_box, render_line, render_table_row, render_text_box, substitute_page_fields};
@@ -1920,10 +1920,11 @@ fn flatten_cell_lines(cell: &crate::wml::table::TableCellCache, cell_x: f64) -> 
     let mut protos = Vec::new();
     let mut cur: f64 = 0.0; // running offset from cell content top
     let mut prev_after: f64 = 0.0;
+    let mut prev_para: Option<&crate::wml::paragraph::ParagraphLayout> = None;
     for block in &cell.blocks {
         match block {
             CellBlock::Paragraph(pc) => {
-                cur += prev_after.max(pc.layout.space_before_px);
+                cur += paragraph_gap(Some(gap_prev(prev_para, prev_after)), &pc.layout);
                 for (li, line) in pc.lines.iter().enumerate() {
                     let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
                     let indent_extra = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
@@ -1957,9 +1958,11 @@ fn flatten_cell_lines(cell: &crate::wml::table::TableCellCache, cell_x: f64) -> 
                     cur += lh;
                 }
                 prev_after = pc.layout.space_after_px;
+                prev_para = Some(&pc.layout);
             }
             CellBlock::Table(nested) => {
                 cur += prev_after;
+                prev_para = None;
                 let nested_x = cell_x + cell.mar_left;
                 for nrow in &nested.rows {
                     let nrow_top = cur;
@@ -4371,10 +4374,14 @@ impl Viewer {
                             capture_checkpoint!();
                         }
                         let at_page_top = current.is_empty() && y_in_page == 0.0;
-                        let suppress_spacing = cache.layout.contextual_spacing
+                        // §17.3.1.9: this paragraph's before-spacing is dropped
+                        // after a paragraph of its own style when it has
+                        // contextual spacing (the previous one's after-spacing
+                        // by that one's flag, in `paragraph_gap`).
+                        let suppress_before = cache.layout.contextual_spacing
                             && prev_para_style.as_ref().is_some_and(|(id, _)|
                                 cache.layout.style_id.as_deref() == Some(id.as_str()));
-                        if !skip_spacing_and_break && !suppress_spacing {
+                        if !skip_spacing_and_break {
                             if at_page_top {
                                 // Word applies the FIRST paragraph's OWN before-spacing
                                 // at a page top (it drops the previous page's trailing
@@ -4388,12 +4395,13 @@ impl Viewer {
                                 // body/page top — CSS first-child margin-collapse at a
                                 // block-formatting root. Explicit before-spacing is still
                                 // honored.
-                                if !w.suppress_top_spacing && !cache.layout.before_auto {
+                                if !w.suppress_top_spacing && !cache.layout.before_auto && !suppress_before {
                                     y_in_page += cache.layout.space_before_px;
                                 }
                             } else {
-                                let gap = prev_space_after_px.max(cache.layout.space_before_px);
-                                y_in_page += gap;
+                                let prev = prev_para_style.as_ref()
+                                    .map_or((None, false), |(id, flag)| (Some(id.as_str()), *flag));
+                                y_in_page += paragraph_gap(Some((prev.0, prev.1, prev_space_after_px)), &cache.layout);
                             }
                         }
 
@@ -5021,11 +5029,7 @@ impl Viewer {
                                 place_float_aware!('relay, cache, block_idx, items, first_batch, true);
                             }
                         }
-                        prev_space_after_px = if suppress_spacing {
-                            0.0
-                        } else {
-                            cache.layout.space_after_px
-                        };
+                        prev_space_after_px = cache.layout.space_after_px;
                         prev_para_style = cache.layout.style_id.clone()
                             .map(|id| (id, cache.layout.contextual_spacing));
                         for &fn_id in &cache.footnote_ids {
@@ -5290,6 +5294,7 @@ impl Viewer {
 
                                 let mut cell_y = cell_y_origin;
                                 let mut cell_prev_after: f64 = 0.0;
+                                let mut cell_prev_para: Option<&crate::wml::paragraph::ParagraphLayout> = None;
                                 for block in if cell.float_layout.is_some() {
                                     &[][..]
                                 } else {
@@ -5297,7 +5302,7 @@ impl Viewer {
                                 } {
                                     match block {
                                         CellBlock::Paragraph(pc) => {
-                                            let gap = cell_prev_after.max(pc.layout.space_before_px);
+                                            let gap = paragraph_gap(Some(gap_prev(cell_prev_para, cell_prev_after)), &pc.layout);
                                             cell_y += gap;
                                             for (li, line) in pc.lines.iter().enumerate() {
                                                 let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
@@ -5333,9 +5338,11 @@ impl Viewer {
                                                 cell_y += lh;
                                             }
                                             cell_prev_after = pc.layout.space_after_px;
+                                            cell_prev_para = Some(&pc.layout);
                                         }
                                         CellBlock::Table(nested) => {
                                             cell_y += cell_prev_after;
+                                            cell_prev_para = None;
                                             let nested_x = cell_x + cell.mar_left;
                                             for nrow in &nested.rows {
                                                 let nrow_top = cell_y;
@@ -5566,9 +5573,10 @@ impl Viewer {
                                         let mut cell_lines = Vec::new();
                                         let mut cell_y = row_y_top + cell.mar_top;
                                         let mut cell_prev_after = 0.0_f64;
+                                        let mut cell_prev_para: Option<&crate::wml::paragraph::ParagraphLayout> = None;
                                         for cb in &cell.blocks {
                                             if let CellBlock::Paragraph(pc) = cb {
-                                                cell_y += cell_prev_after.max(pc.layout.space_before_px);
+                                                cell_y += paragraph_gap(Some(gap_prev(cell_prev_para, cell_prev_after)), &pc.layout);
                                                 for (li, line) in pc.lines.iter().enumerate() {
                                                     let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
                                                     let ie = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
@@ -5589,6 +5597,7 @@ impl Viewer {
                                                     cell_y += lh;
                                                 }
                                                 cell_prev_after = pc.layout.space_after_px;
+                                                cell_prev_para = Some(&pc.layout);
                                             }
                                         }
                                         paged_cells.push(PagedTableCell {

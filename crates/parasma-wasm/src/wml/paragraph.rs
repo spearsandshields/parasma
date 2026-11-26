@@ -636,7 +636,32 @@ pub(crate) struct ParagraphLayout {
     pub(crate) ea: EaToggles,
 }
 
+/// The space between two consecutive paragraphs (§17.3.1.33): the larger of
+/// the first's after-spacing and the second's before-spacing. Each side is
+/// dropped when its own paragraph has contextual spacing and the two share a
+/// style (§17.3.1.9). `prev` is the earlier paragraph's style, its
+/// contextual-spacing flag and its after-spacing.
+pub(crate) fn paragraph_gap(prev: Option<(Option<&str>, bool, f64)>, cur: &ParagraphLayout) -> f64 {
+    let Some((prev_style, prev_contextual, prev_after)) = prev else {
+        return cur.space_before_px;
+    };
+    let same = prev_style.is_some() && prev_style == cur.style_id.as_deref();
+    let after = if same && prev_contextual { 0.0 } else { prev_after };
+    let before = if same && cur.contextual_spacing { 0.0 } else { cur.space_before_px };
+    after.max(before)
+}
+
+/// The `prev` of [`paragraph_gap`] for a walk that tracks the previous
+/// paragraph (none after a table) and the after-spacing still pending.
+pub(crate) fn gap_prev(prev: Option<&ParagraphLayout>, pending_after: f64) -> (Option<&str>, bool, f64) {
+    match prev {
+        Some(p) => (p.style_id.as_deref(), p.contextual_spacing, pending_after),
+        None => (None, false, pending_after),
+    }
+}
+
 impl ParagraphLayout {
+
     #[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)
     fn from_resolved(
         paragraph: &ooxml_wml::types::Paragraph,
@@ -859,9 +884,12 @@ impl ParagraphLayout {
         );
         let grid_pitch_px = if snaps_to_grid { section_grid_pitch_px } else { None };
 
+        // A paragraph with no style of its own has the default one (§17.7.4.17),
+        // so two such paragraphs share a style for contextual spacing.
         let style_id = paragraph.p_pr.as_ref()
             .and_then(|ppr| ppr.paragraph_style.as_ref())
-            .map(|ps| ps.value.clone());
+            .map(|ps| ps.value.clone())
+            .or_else(|| crate::wml::loader::default_paragraph_style_id(style_ctx).map(str::to_owned));
 
         // The nearest shading element decides, including one that clears.
         let shading_color = match paragraph.p_pr.as_ref().and_then(|ppr| ppr.shading.as_ref()) {

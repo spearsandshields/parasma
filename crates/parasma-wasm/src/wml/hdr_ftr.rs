@@ -85,6 +85,8 @@ fn layout_hdr_ftr_blocks(
     let mut out_blocks = Vec::new();
     let mut total_height = 0.0;
     let mut hf_prev_after: f64 = 0.0;
+    // The previous paragraph's style and contextual-spacing flag; none after a table.
+    let mut hf_prev: Option<(Option<String>, bool)> = None;
     let mut flat = Vec::new();
     flatten_blocks(blocks, &mut flat);
     // Header/footer tables don't carry list markers in practice; pass empty
@@ -95,7 +97,8 @@ fn layout_hdr_ftr_blocks(
         match block {
             FlatBlock::Para(p) => {
                 let cache = layout_paragraph(font_cache, p, content_width, None, style_ctx, default_ppr, default_tab_stop_px, theme_fonts, None, &[], &[], None, false, None)?;
-                let gap = hf_prev_after.max(cache.layout.space_before_px);
+                let prev = hf_prev.as_ref().map_or((None, false), |(id, flag)| (id.as_deref(), *flag));
+                let gap = crate::wml::paragraph::paragraph_gap(Some((prev.0, prev.1, hf_prev_after)), &cache.layout);
                 total_height += gap;
                 for line in &cache.lines {
                     total_height += cache.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
@@ -110,6 +113,7 @@ fn layout_hdr_ftr_blocks(
                     total_height += b.space_px + b.width_px;
                 }
                 hf_prev_after = cache.layout.space_after_px;
+                hf_prev = Some((cache.layout.style_id.clone(), cache.layout.contextual_spacing));
                 out_blocks.push(HfBlock::Paragraph(cache));
             }
             FlatBlock::Table(t) => {
@@ -121,6 +125,7 @@ fn layout_hdr_ftr_blocks(
                 total_height += hf_prev_after;
                 total_height += hf_table_height(&cache);
                 hf_prev_after = 0.0;
+                hf_prev = None;
                 out_blocks.push(HfBlock::Table(cache));
             }
         }
@@ -176,13 +181,14 @@ pub(crate) fn position_hdr_ftr_lines(
     let mut rows = Vec::new();
     let mut y = y_start;
     let mut pos_prev_after: f64 = 0.0;
+    let mut pos_prev: Option<&crate::wml::paragraph::ParagraphLayout> = None;
     // Body content area left edge (= page left margin); tables align relative to it.
     let band_left = margin_left;
     let band_width = page_w - margin_left - margin_right;
     for block in &cache.blocks {
         match block {
             HfBlock::Paragraph(pc) => {
-                let gap = pos_prev_after.max(pc.layout.space_before_px);
+                let gap = crate::wml::paragraph::paragraph_gap(Some(crate::wml::paragraph::gap_prev(pos_prev, pos_prev_after)), &pc.layout);
                 y += gap;
                 for (li, line) in pc.lines.iter().enumerate() {
                     let indent = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
@@ -218,10 +224,12 @@ pub(crate) fn position_hdr_ftr_lines(
                     y += lh;
                 }
                 pos_prev_after = pc.layout.space_after_px;
+                pos_prev = Some(&pc.layout);
             }
             HfBlock::Table(table) => {
                 y += pos_prev_after;
                 pos_prev_after = 0.0;
+                pos_prev = None;
                 position_hf_table(table, &mut rows, &mut y, band_left, band_width);
             }
         }
@@ -271,9 +279,10 @@ fn position_hf_table(
             };
             let mut cell_y = row_y_top + cell.mar_top + v_offset;
             let mut cell_prev_after: f64 = 0.0;
+            let mut cell_prev: Option<&crate::wml::paragraph::ParagraphLayout> = None;
             for block in &cell.blocks {
                 if let CellBlock::Paragraph(pc) = block {
-                    let gap = cell_prev_after.max(pc.layout.space_before_px);
+                    let gap = crate::wml::paragraph::paragraph_gap(Some(crate::wml::paragraph::gap_prev(cell_prev, cell_prev_after)), &pc.layout);
                     cell_y += gap;
                     for (li, line) in pc.lines.iter().enumerate() {
                         let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
@@ -304,6 +313,7 @@ fn position_hf_table(
                         cell_y += lh;
                     }
                     cell_prev_after = pc.layout.space_after_px;
+                    cell_prev = Some(&pc.layout);
                 }
                 // Nested tables inside a header/footer cell are not expanded
                 // (out of scope — a header table is a flat grid in practice).

@@ -55,6 +55,10 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: "Don't add space between paragraphs of the same style" now
+  works as in Word: between list items, between paragraphs that use the
+  default style, in table cells and in headers, and when only the earlier
+  paragraph asks for it. Lists and tables are no longer too tall.
 - Documents: pictures in a header or footer table, content control or link
   appear; they were missing, or showed another header's picture when two
   headers both had one. A different first page with no first-page header

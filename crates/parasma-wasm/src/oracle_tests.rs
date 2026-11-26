@@ -10537,6 +10537,49 @@ fn an_omitted_first_page_header_is_blank() {
     assert_eq!(header_pictures(&v, 1).len(), 1, "val=0 is off");
 }
 
+/// §17.3.1.9 contextual spacing: between two paragraphs of one style, each
+/// one's spacing is dropped by its own flag; paragraphs with no style share
+/// the default one; and it applies in table cells too.
+#[test]
+fn contextual_spacing_drops_spacing_between_paragraphs_of_one_style() {
+    // 12 pt after-spacing = 16 px.
+    let styles = |flag: &str| format!(
+        r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:before="0" w:after="240"/>{flag}</w:pPr></w:style><w:style w:type="paragraph" w:styleId="LP"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/><w:pPr>{flag}</w:pPr></w:style>"#
+    );
+    let gaps = |styles: &str, body: &str| {
+        let lines = body_lines(&layout(numbering_docx(styles, "", body)));
+        lines.windows(2).map(|w| w[1].baseline_y - w[0].baseline_y).collect::<Vec<_>>()
+    };
+    let lp = |text: &str, extra: &str| format!(r#"<w:p><w:pPr><w:pStyle w:val="LP"/>{extra}</w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>"#);
+    let flag = "<w:contextualSpacing/>";
+
+    let list = [lp("a", ""), lp("b", ""), lp("c", "")].concat();
+    let (on, off) = (gaps(&styles(flag), &list), gaps(&styles(""), &list));
+    assert!((off[0] - on[0] - 16.0).abs() < 0.01, "list items lose their gap: {on:?} vs {off:?}");
+
+    // Only the earlier paragraph has the flag: its after-spacing still goes.
+    let earlier_only = [lp("a", ""), lp("b", r#"<w:contextualSpacing w:val="0"/>"#)].concat();
+    let g = gaps(&styles(flag), &earlier_only);
+    assert!((off[0] - g[0] - 16.0).abs() < 0.01, "the earlier flag drops its own after-spacing: {g:?}");
+
+    // Paragraphs with no style share the default style.
+    let plain = [para("a"), para("b")].concat();
+    let (on, off) = (gaps(&styles(flag), &plain), gaps(&styles(""), &plain));
+    assert!((off[0] - on[0] - 16.0).abs() < 0.01, "default-style paragraphs: {on:?} vs {off:?}");
+
+    // In a table cell, the row is shorter by the dropped gaps.
+    let cell = |body: &str| format!(r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr>{body}</w:tc></w:tr></w:tbl>"#);
+    let row_height = |styles: &str| {
+        let v = layout(numbering_docx(styles, "", &cell(&list)));
+        let pages = v.pages.borrow();
+        pages[0].elements.iter().find_map(|e| match e {
+            PageElement::TableRow(r) => Some(r.height_px),
+            _ => None,
+        }).expect("a row")
+    };
+    assert!((row_height(&styles("")) - row_height(&styles(flag)) - 32.0).abs() < 0.01, "two gaps of 16 px");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

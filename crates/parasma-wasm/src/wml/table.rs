@@ -32,6 +32,7 @@ use crate::wml::float::{
 };
 use crate::wml::float_resolve::{resolve_anchor_position, FrameCtx};
 use crate::wml::page::{PagedLine, PARA_SENTINEL};
+use crate::wml::paragraph::{gap_prev, paragraph_gap, ParagraphLayout};
 use crate::wml::render::layout_text_box;
 
 // ─── Table layout cache ─────────────────────────────────────────────────────
@@ -119,18 +120,20 @@ impl TableCellCache {
         }
         let mut total = 0.0_f64;
         let mut prev_after = 0.0_f64;
+        let mut prev_para: Option<&ParagraphLayout> = None;
         for block in &self.blocks {
             match block {
                 CellBlock::Paragraph(pc) => {
-                    let gap = prev_after.max(pc.layout.space_before_px);
-                    total += gap;
+                    total += paragraph_gap(Some(gap_prev(prev_para, prev_after)), &pc.layout);
                     total += pc.lines.iter().map(|l| pc.layout.line_height(l.max_font_pt, l.max_ascent + l.max_descent, l.max_image_height)).sum::<f64>();
                     prev_after = pc.layout.space_after_px;
+                    prev_para = Some(&pc.layout);
                 }
                 CellBlock::Table(tc) => {
                     total += prev_after;
                     total += tc.rows.iter().map(|r| r.height_px).sum::<f64>();
                     prev_after = 0.0;
+                    prev_para = None;
                 }
             }
         }
@@ -283,13 +286,13 @@ fn build_cell_float_layout(
     let mut lines: Vec<PagedLine> = Vec::new();
     let mut cursor = 0.0_f64; // cell-local y, origin at cell content top
     let mut prev_after = 0.0_f64;
+    let mut prev_para: Option<&ParagraphLayout> = None;
     // The lowest bottom of a float that wraps text: it grows the cell.
     let mut float_bottom = 0.0_f64;
 
     for block in blocks {
         let CellBlock::Paragraph(pc) = block else { continue }; // gate excluded Tables
-        let gap = prev_after.max(pc.layout.space_before_px);
-        cursor += gap;
+        cursor += paragraph_gap(Some(gap_prev(prev_para, prev_after)), &pc.layout);
         let para_top = cursor;
         let fctx = FrameCtx {
             col_x_offset: dom_left,
@@ -402,6 +405,7 @@ fn build_cell_float_layout(
             cursor += lh;
         }
         prev_after = pc.layout.space_after_px;
+        prev_para = Some(&pc.layout);
     }
 
     // Float-aware cell content height (pre v-margin): the lower of text bottom
