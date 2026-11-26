@@ -3989,8 +3989,8 @@ impl Viewer {
             }
 
             // Split a table row that is taller than the page remainder across the
-            // page break (§17.4.6 — splitting at line granularity; §17.4.7
-            // cantSplit rows never reach here, they take the whole-row path).
+            // page break (§17.4.6 — splitting at line granularity; a cantSplit
+            // row reaches here only when it fits on no page).
             // Each fragment is a `PagedTableRow` carrying the
             // subset of cell lines that fit on the current page: top/side borders
             // repeat on every fragment, the bottom border is DEFERRED (None) until
@@ -5196,16 +5196,24 @@ impl Viewer {
                             // overflow test were decided PRE-advance on the
                             // original run — emit the row verbatim.
                             let resume_whole = whole_resume == Some(row_idx);
+                            // What the split path can carry: a row needs two
+                            // lines to leave a remainder (a single-line row
+                            // whole-pushes), and a cell-hosted float is laid out
+                            // cell-locally for the WHOLE-row path only (split-row
+                            // cell floats are a known limitation).
+                            let splittable = row.cells.iter()
+                                .filter(|c| !c.v_merged_away)
+                                .map(|c| flatten_cell_lines(c, 0.0).len())
+                                .sum::<usize>() >= 2
+                                && !row.cells.iter().any(|c| c.float_layout.is_some());
                             if !resume_whole {
-                            // ── Row-split trigger (§17.4.6/§17.4.7, line
-                            // granularity). The default whole-row path is taken UNLESS all
+                            // ── Row-split trigger (§17.4.6, line granularity).
+                            // The default whole-row path is taken UNLESS all
                             // of: (a) the row is taller than the page remainder;
-                            // (b) it is not cantSplit (§17.4.7); (c) it has ≥2
-                            // splittable lines total; (d) at least the first line
-                            // fits in the remainder. The ≥2-lines clause is the
-                            // single-line firewall — a single-line row has no
-                            // remainder to carry, so it whole-pushes exactly as
-                            // before (keeps the oracle-flow 36-row pin ORIGINAL).
+                            // (b) it is not cantSplit; (c) it is `splittable`;
+                            // (d) at least the first line fits in the remainder;
+                            // (e) something is already on the page (a row that
+                            // opens its page is judged below).
                             let remaining = content_height - y_in_page;
                             let row_top_chrome = {
                                 // Top margin + first-line ascent budget of the
@@ -5218,20 +5226,12 @@ impl Viewer {
                                     })
                                     .fold(0.0_f64, f64::max)
                             };
-                            let total_lines: usize = row.cells.iter()
-                                .filter(|c| !c.v_merged_away)
-                                .map(|c| flatten_cell_lines(c, 0.0).len())
-                                .sum();
                             let first_line_fits = row_top_chrome <= remaining;
                             let want_split = !row.cant_split
                                 && row.height_px > remaining
-                                && total_lines >= 2
+                                && splittable
                                 && first_line_fits
-                                && !current.is_empty()
-                                // A cell-hosted float is laid out cell-locally for
-                                // the WHOLE-row path only; split-row cell floats
-                                // are not yet supported (a known limitation).
-                                && !row.cells.iter().any(|c| c.float_layout.is_some());
+                                && !current.is_empty();
 
                             if want_split {
                                 place_split_row!('relay, table, row, row_idx, block_idx);
@@ -5243,6 +5243,19 @@ impl Viewer {
                                 overflow_col!('relay, block_idx,
                                     ResumeAt::RowWhole { block: block_idx, next_row: row_idx });
                             }
+                            }
+                            // A row that still does not fit where it now stands —
+                            // it opens its page, or was just pushed to a fresh
+                            // one — fits on no page, so it splits here; placed
+                            // whole it would run off the bottom. This holds for a
+                            // cantSplit row too: the push above is all the
+                            // setting can do for it. Judged from the row and the
+                            // page alone, so a RowWhole re-entry decides the same.
+                            if splittable
+                                && row.height_px > effective_content_height(&laid_out_hf, geo, section_page_idx) - y_in_page
+                            {
+                                place_split_row!('relay, table, row, row_idx, block_idx);
+                                continue 'row_loop;
                             }
 
                             let col = &geo.columns[col_idx];

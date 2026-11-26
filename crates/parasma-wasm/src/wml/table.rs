@@ -49,10 +49,11 @@ pub(crate) struct TableCache {
 pub(crate) struct TableRowCache {
     pub(crate) cells: Vec<TableCellCache>,
     pub(crate) height_px: f64,
-    /// §17.4.7 `w:cantSplit` (trPr): if set, the row must not be broken across a
+    /// §17.4.6 `w:cantSplit` (trPr): if set, the row is not broken across a
     /// page boundary — it is placed whole, pushed to a fresh page if it does not
     /// fit the page remainder. When unset (the default here), a row taller than
-    /// the remaining space splits across the break at line granularity.
+    /// the remaining space splits across the break at line granularity. A row
+    /// that fits on no page splits either way.
     pub(crate) cant_split: bool,
 }
 
@@ -165,8 +166,8 @@ impl TableCellCache {
     }
 }
 
-/// A single cell line flattened for row-splitting (§17.4.6/§17.4.7,
-/// split at line granularity). `rel_top` is the line's top offset from the cell's
+/// A single cell line flattened for row-splitting (§17.4.6, split at line
+/// granularity). `rel_top` is the line's top offset from the cell's
 /// *content* top (i.e. excluding the cell's top margin and any vertical-align
 /// offset); `height` is its line height. `line` is the fully-built `PagedLine`
 /// whose `baseline_y` is stored *relative* to the same content top — a fragment
@@ -1003,12 +1004,9 @@ pub(crate) fn layout_table(
             content_height
         };
 
-        // §17.4.7 cantSplit (common boolean, §17.17.4): present + value not
-        // explicitly off ("0"/"false"/"off") = on. An empty `<w:cantSplit/>`
-        // (value None) is therefore ON — it is the canonical "on" form.
+        // §17.4.6 cantSplit.
         let cant_split = row.row_properties.as_ref()
-            .and_then(|p| p.cant_split.as_ref())
-            .map(|o| !matches!(o.value.as_deref(), Some("0" | "false" | "off")))
+            .and_then(|p| crate::check_toggle(&p.cant_split))
             .unwrap_or(false);
 
         rows.push(TableRowCache { cells, height_px: row_height, cant_split });
@@ -1019,7 +1017,7 @@ pub(crate) fn layout_table(
     Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px })
 }
 
-/// §17.4.56 tblLook: which of its style's conditional regions a table uses.
+/// §17.4.55 tblLook: which of its style's conditional regions a table uses.
 #[derive(Clone, Copy, Default)]
 struct TableLook {
     first_row: bool,
@@ -1031,7 +1029,7 @@ struct TableLook {
 
 impl TableLook {
     /// Each flag from its named attribute, else from its bit in the hex
-    /// `w:val`: the only form Word 2007 writes ([MS-OI29500] §17.4.56:
+    /// `w:val`: the only form Word 2007 writes ([MS-OI29500] §17.4.55:
     /// 0x0020 first row, 0x0040 last row, 0x0080 first column, 0x0100 last
     /// column, 0x0200 no row bands).
     fn read(look: Option<&ooxml_wml::types::CTTblLook>) -> Self {

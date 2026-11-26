@@ -11723,7 +11723,7 @@ fn neighbouring_runs_with_one_border_share_a_box() {
     assert_eq!(sides, 4, "one box of four sides");
 }
 
-// ── Table look (§17.4.56): which style regions a table uses ─────────────────
+// ── Table look (§17.4.55): which style regions a table uses ─────────────────
 
 /// A table style with a fill per region, for reading which region won.
 const LOOK_STYLE: &str = r#"<w:style w:type="table" w:styleId="Look"><w:name w:val="Look"/><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="lastRow"><w:rPr><w:b/></w:rPr></w:tblStylePr><w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:val="clear" w:fill="333333"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type="band2Horz"><w:tcPr><w:shd w:val="clear" w:fill="BBBBBB"/></w:tcPr></w:tblStylePr></w:style>"#;
@@ -11885,4 +11885,63 @@ fn a_row_with_grid_before_starts_at_its_grid_column() {
     assert_eq!(geometry(1), [(px(1000.0), px(2000.0)), (px(3000.0), px(3000.0))], "one grid column skipped");
     assert_eq!(geometry(2), [(0.0, px(1000.0)), (px(1000.0), px(2000.0))], "a trailing column left empty");
     assert_eq!(geometry(3), geometry(0), "a gridBefore wider than the grid is ignored");
+}
+
+// ── Rows taller than a page (§17.4.6 cantSplit) ─────────────────────────────
+
+/// A one-cell table whose single row holds 80 one-line paragraphs: taller
+/// than the 864px text area. `lead` goes before the table.
+fn tall_row_docx(tr_pr: &str, lead: &str) -> Vec<u8> {
+    let paras: String = (0..80).map(|k| p("", &r("", &format!("line {k}")))).collect();
+    let body = format!(
+        r#"{lead}<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr>{tr_pr}</w:trPr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p/>"#
+    );
+    numbering_docx("", "", &body)
+}
+
+/// The page's row fragments as (page, bottom edge, line count).
+fn row_fragments(v: &Viewer) -> Vec<(usize, f64, usize)> {
+    v.pages.borrow().iter().enumerate().flat_map(|(pi, page)| {
+        page.elements.iter().filter_map(move |e| match e {
+            PageElement::TableRow(r) => Some((pi, r.y_top + r.height_px, r.cells[0].lines.len())),
+            _ => None,
+        }).collect::<Vec<_>>()
+    }).collect()
+}
+
+/// The bottom of the text area: a 1056px page with 96px margins.
+const TEXT_BOTTOM_PX: f64 = 960.0;
+
+fn assert_row_stays_on_its_pages(frags: &[(usize, f64, usize)]) {
+    assert_eq!(frags.iter().map(|f| f.2).sum::<usize>(), 80, "every line is placed once: {frags:?}");
+    for (page, bottom, _) in frags {
+        assert!(*bottom <= TEXT_BOTTOM_PX + 0.5, "the fragment on page {page} ends at {bottom}, past the text area");
+    }
+}
+
+/// A row taller than a page that opens its page still splits.
+#[test]
+fn a_tall_row_at_the_top_of_a_page_splits() {
+    let v = layout(tall_row_docx("", ""));
+    let frags = row_fragments(&v);
+    assert_row_stays_on_its_pages(&frags);
+    assert_eq!(frags.iter().map(|f| f.0).collect::<Vec<_>>(), [0, 1]);
+}
+
+/// A cantSplit row that cannot fit on any page moves to a fresh page, as
+/// the setting asks, and then splits rather than running off the bottom.
+#[test]
+fn a_cant_split_row_taller_than_a_page_splits_from_a_fresh_page() {
+    let v = layout(tall_row_docx("<w:cantSplit/>", &p("", &r("", "before"))));
+    let frags = row_fragments(&v);
+    assert_row_stays_on_its_pages(&frags);
+    assert_eq!(frags.iter().map(|f| f.0).collect::<Vec<_>>(), [1, 2], "it starts on the page after the lead paragraph");
+}
+
+#[test]
+fn restart_cant_split_row_taller_than_a_page() {
+    let (log, skipped) = assert_restartable("restart_cant_split_tall_row", tall_row_docx("<w:cantSplit/>", &p("", &r("", "before"))));
+    assert_eq!(skipped, 0);
+    assert!(log_has(&log, |r| matches!(r, super::ResumeAt::RowWhole { .. })), "the row is pushed whole first");
+    assert!(log_has(&log, |r| matches!(r, super::ResumeAt::RowSplit { .. })), "and then splits");
 }

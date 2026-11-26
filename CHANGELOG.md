@@ -275,6 +275,9 @@ are held stable regardless.
 - Tables: rows that leave leading grid columns empty (forms, tables
   converted from PDF or HTML, tables with deleted cells) line up with the
   rows around them instead of sliding to the left edge.
+- Tables: a row taller than a whole page (a one-cell layout table, a cell
+  with a long text block) now continues on the next page instead of running
+  off the bottom, also when the row is set not to break across pages.
 
 ### Changed
 
