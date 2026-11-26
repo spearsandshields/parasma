@@ -4031,8 +4031,6 @@ impl Viewer {
                         _ => table.indent_px,
                     };
                     let cell_x_start = col_ml + table_offset;
-                    let tbl_cm_h = table.cell_margin_h;
-                    let tbl_cm_v = table.cell_margin_v;
 
                     // Flatten every cell once (content-relative line protos +
                     // structural metadata). `cell_protos[i]` is the flat line list
@@ -4154,8 +4152,6 @@ impl Viewer {
                             height_px: frag_height,
                             border_color: table.border_color.clone(),
                             has_borders: table.has_borders,
-                            cell_margin_h: tbl_cm_h,
-                            cell_margin_v: tbl_cm_v,
                         }));
 
                         consumed = frag_bottom;
@@ -5264,8 +5260,6 @@ impl Viewer {
                             };
                             let mut cell_x = col_ml + table_offset;
 
-                            let tbl_cm_h = table.cell_margin_h;
-                            let tbl_cm_v = table.cell_margin_v;
 
                             for cell in &row.cells {
                                 let mut cell_lines = Vec::new();
@@ -5359,8 +5353,6 @@ impl Viewer {
                                 height_px: row.height_px,
                                 border_color: table.border_color.clone(),
                                 has_borders: table.has_borders,
-                                cell_margin_h: tbl_cm_h,
-                                cell_margin_v: tbl_cm_v,
                             }));
                             y_in_page += row.height_px;
                         }
@@ -5512,8 +5504,6 @@ impl Viewer {
                                     let col = &geo.columns[col_idx];
                                     let col_ml = col.x_offset_px;
                                     let col_cw = col.width_px;
-                                    let tbl_cm_h = table.cell_margin_h;
-                                    let tbl_cm_v = table.cell_margin_v;
                                     let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                                     let row_y_top = margin_top + balance_band_offset + y_in_page;
                                     let table_width: f64 = table.col_widths_px.iter().sum();
@@ -5548,7 +5538,6 @@ impl Viewer {
                                     current.push(PageElement::TableRow(PagedTableRow {
                                         cells: paged_cells, y_top: row_y_top, height_px: row.height_px,
                                         border_color: table.border_color.clone(), has_borders: table.has_borders,
-                                        cell_margin_h: tbl_cm_h, cell_margin_v: tbl_cm_v,
                                     }));
                                     y_in_page += row.height_px;
                                 }

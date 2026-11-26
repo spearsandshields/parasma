@@ -408,17 +408,13 @@ pub(crate) struct PagedTableRow {
     pub(crate) cells: Vec<PagedTableCell>,
     pub(crate) y_top: f64,
     pub(crate) height_px: f64,
-    // Row-level border/margin summary retained on the paged row; per-cell
+    // Row-level border summary retained on the paged row; per-cell
     // resolved edges (`PagedTableCell::border_*`) are what the painter reads,
     // so these row aggregates are currently unread.
     #[allow(dead_code)]
     pub(crate) border_color: String,
     #[allow(dead_code)]
     pub(crate) has_borders: bool,
-    #[allow(dead_code)]
-    pub(crate) cell_margin_h: f64,
-    #[allow(dead_code)]
-    pub(crate) cell_margin_v: f64,
 }
 
 #[derive(Clone)]

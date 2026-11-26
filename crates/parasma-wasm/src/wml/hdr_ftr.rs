@@ -305,8 +305,6 @@ fn position_hf_table(
         _ => table.indent_px,
     };
     let cell_x_start = band_left + table_offset;
-    let tbl_cm_h = table.cell_margin_h;
-    let tbl_cm_v = table.cell_margin_v;
 
     for row in &table.rows {
         let row_y_top = *y;
@@ -354,8 +352,6 @@ fn position_hf_table(
             height_px: row.height_px,
             border_color: table.border_color.clone(),
             has_borders: table.has_borders,
-            cell_margin_h: tbl_cm_h,
-            cell_margin_v: tbl_cm_v,
         });
         *y += row.height_px;
     }

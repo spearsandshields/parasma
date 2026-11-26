@@ -43,8 +43,6 @@ pub(crate) struct TableCache {
     pub(crate) border_color: String,
     pub(crate) has_borders: bool,
     pub(crate) alignment: STJcTable,
-    pub(crate) cell_margin_h: f64,
-    pub(crate) cell_margin_v: f64,
     pub(crate) indent_px: f64,
 }
 
@@ -242,19 +240,19 @@ pub(crate) fn flatten_cell_lines(cell: &TableCellCache, cell_x: f64) -> Vec<Cell
                     for ncell in &nrow.cells {
                         if ncell.v_merged_away { continue; }
                         let ncell_x = nested_x + nested.col_widths_px[..ncell.col_start].iter().sum::<f64>();
-                        let mut ny = nrow_top + nested.cell_margin_v;
+                        let mut ny = nrow_top + ncell.mar_top;
                         for nb in &ncell.blocks {
                             if let CellBlock::Paragraph(npc) = nb {
                                 ny += npc.layout.border_reserve_top();
                                 let nn = npc.lines.len();
-                                let (nleft, nright) = (ncell_x + nested.cell_margin_h, ncell_x + ncell.width_px - nested.cell_margin_h);
+                                let (nleft, nright) = (ncell_x + ncell.mar_left, ncell_x + ncell.width_px - ncell.mar_right);
                                 for (nli, nline) in npc.lines.iter().enumerate() {
                                     let nlh = npc.layout.line_height(nline.max_font_pt, nline.max_ascent + nline.max_descent, nline.max_image_height);
                                     let nindent = if nli == 0 { npc.layout.indent_first_line_px } else { 0.0 };
                                     let nx = npc.layout.x_start(
                                         ncell_x + ncell.width_px,
-                                        ncell_x + nested.cell_margin_h,
-                                        nested.cell_margin_h,
+                                        ncell_x + ncell.mar_left,
+                                        ncell.mar_left,
                                         nline.width(), nindent,
                                     );
                                     protos.push(CellLineProto {
@@ -266,13 +264,13 @@ pub(crate) fn flatten_cell_lines(cell: &TableCellCache, cell_x: f64) -> Vec<Cell
                                             baseline_y: ny + nline.max_ascent,
                                             para_shading: None,
                                             line_height: nlh,
-                                            content_left: ncell_x + nested.cell_margin_h,
-                                            content_right: ncell_x + ncell.width_px - nested.cell_margin_h,
+                                            content_left: ncell_x + ncell.mar_left,
+                                            content_right: ncell_x + ncell.width_px - ncell.mar_right,
                                             border_top: None, border_bottom: None,
                                             border_left: None, border_right: None,
                                             bar_tabs: npc.tab_stops.bar_xs(
-                                                ncell_x + nested.cell_margin_h + npc.layout.indent_left_px,
-                                                ncell_x + ncell.width_px - nested.cell_margin_h - npc.layout.indent_right_px,
+                                                ncell_x + ncell.mar_left + npc.layout.indent_left_px,
+                                                ncell_x + ncell.width_px - ncell.mar_right - npc.layout.indent_right_px,
                                                 npc.layout.base_rtl),
                                             is_first_line: false, is_last_line: false,
                                         }.decorated(&npc.layout, nli, nn, nleft, nright),
@@ -611,6 +609,87 @@ fn grid_span_columns(val: Option<i64>, remaining_grid_columns: usize) -> usize {
     usize::try_from(requested).unwrap_or(usize::MAX).min(ceiling)
 }
 
+const PX_PER_TWIP: f64 = 96.0 / 1440.0;
+
+/// A table measurement (§17.4.87 CT_TblWidth), read by its lexical form
+/// first and its type second (§17.18.90).
+enum TblWidth {
+    /// A length, in px.
+    Px(f64),
+    /// A share of the extent the property is measured against.
+    Fraction(f64),
+    Auto,
+    /// Zero, whatever the width says.
+    Nil,
+}
+
+/// Read a table measurement. A value with a percent sign is a percentage
+/// and a value with a unit is that length, whatever the type says; a bare
+/// number is fiftieths of a percent for `pct` and twentieths of a point for
+/// `dxa` or no type. A missing width is 0; an unreadable one is `Auto`.
+fn tbl_width(w: &ooxml_wml::types::CTTblWidth) -> TblWidth {
+    const TWIPS_PER_UNIT: [(&str, f64); 6] =
+        [("mm", 1440.0 / 25.4), ("cm", 1440.0 / 2.54), ("in", 1440.0), ("pt", 20.0), ("pc", 240.0), ("pi", 240.0)];
+    if matches!(w.r#type, Some(STTblWidth::Nil)) {
+        return TblWidth::Nil;
+    }
+    let raw = w.width.as_deref().map_or("0", str::trim);
+    let number = |s: &str| s.parse::<f64>().ok().filter(|n| n.is_finite());
+    if let Some(pct) = raw.strip_suffix('%') {
+        return number(pct).map_or(TblWidth::Auto, |p| TblWidth::Fraction(p / 100.0));
+    }
+    for (unit, twips) in TWIPS_PER_UNIT {
+        if let Some(n) = raw.strip_suffix(unit) {
+            return number(n).map_or(TblWidth::Auto, |n| TblWidth::Px(n * twips * PX_PER_TWIP));
+        }
+    }
+    match (number(raw), w.r#type) {
+        (Some(n), Some(STTblWidth::Pct)) => TblWidth::Fraction(n / 5000.0),
+        (Some(n), Some(STTblWidth::Dxa) | None) => TblWidth::Px(n * PX_PER_TWIP),
+        _ => TblWidth::Auto,
+    }
+}
+
+/// A cell's four margins, in px.
+#[derive(Clone, Copy)]
+struct CellMargins {
+    top: f64,
+    bottom: f64,
+    left: f64,
+    right: f64,
+}
+
+impl CellMargins {
+    /// With no margin anywhere in the style hierarchy. DEVIATION, declared:
+    /// §17.4.34 and §17.4.11 give 115 twentieths for the sides; Word uses 108.
+    const DEFAULT: Self = Self {
+        top: DEFAULT_CELL_MARGIN_V_TWIPS as f64 * PX_PER_TWIP,
+        bottom: DEFAULT_CELL_MARGIN_V_TWIPS as f64 * PX_PER_TWIP,
+        left: DEFAULT_CELL_MARGIN_H_TWIPS as f64 * PX_PER_TWIP,
+        right: DEFAULT_CELL_MARGIN_H_TWIPS as f64 * PX_PER_TWIP,
+    };
+
+    /// Take the edges a tblCellMar or tcMar names. A `pct` or `auto` margin
+    /// is ignored (§17.4.5, the same for every edge) and `nil` is zero.
+    /// Declared: start and end are left and right, also in a right-to-left
+    /// table.
+    fn overlay(
+        &mut self,
+        top: Option<&ooxml_wml::types::CTTblWidth>,
+        bottom: Option<&ooxml_wml::types::CTTblWidth>,
+        start: Option<&ooxml_wml::types::CTTblWidth>,
+        end: Option<&ooxml_wml::types::CTTblWidth>,
+    ) {
+        for (edge, w) in [(&mut self.top, top), (&mut self.bottom, bottom), (&mut self.left, start), (&mut self.right, end)] {
+            match w.map(tbl_width) {
+                Some(TblWidth::Px(px)) => *edge = px.max(0.0),
+                Some(TblWidth::Nil) => *edge = 0.0,
+                Some(TblWidth::Fraction(_) | TblWidth::Auto) | None => {}
+            }
+        }
+    }
+}
+
 /// Lay out ONE table into a [`TableCache`]: resolved column widths, per-row
 /// cell geometry (x / width / margins / spans), each cell's laid-out block
 /// content, and the resolved borders/fills — everything the page assembler
@@ -659,46 +738,16 @@ pub(crate) fn layout_table(
     let props = table.properties();
     let tbl_style_id = props.tbl_style.as_ref().map(|s| s.value.as_str());
 
-    let resolve_cell_mar = |mar: &ooxml_wml::types::CTTblCellMar| -> (i64, i64) {
-        let h = mar.start.as_ref().or(mar.left.as_ref())
-            .and_then(|w| w.width.as_deref()?.parse().ok())
-            .unwrap_or(DEFAULT_CELL_MARGIN_H_TWIPS);
-        let v = mar.top.as_ref()
-            .and_then(|w| w.width.as_deref()?.parse().ok())
-            .unwrap_or(DEFAULT_CELL_MARGIN_V_TWIPS);
-        (h, v)
-    };
-
-    let (cell_margin_h_twips, cell_margin_v_twips) = props.tbl_cell_mar.as_deref()
-        .map(resolve_cell_mar)
-        .or_else(|| {
-            tbl_style_id
-                .and_then(|id| style_ctx.style(id))
-                .and_then(|s| s.table_properties.as_ref())
-                .and_then(|tp| tp.tbl_cell_mar.as_deref())
-                .map(resolve_cell_mar)
-        })
-        .unwrap_or((DEFAULT_CELL_MARGIN_H_TWIPS, DEFAULT_CELL_MARGIN_V_TWIPS));
-
-    let cell_margin_h = twips_to_px(cell_margin_h_twips);
-    let cell_margin_v = twips_to_px(cell_margin_v_twips);
-
-    // Per-cell margins (§17.4.42 tcMar) override the table/row default. Returns
-    // (top, bottom, left, right) px; each edge falls back to the table value.
-    let resolve_tc_mar = |tcm: Option<&ooxml_wml::types::CTTcMar>| -> (f64, f64, f64, f64) {
-        let edge = |w: Option<&Box<ooxml_wml::types::CTTblWidth>>, dflt: i64| -> f64 {
-            twips_to_px(w.and_then(|w| w.width.as_deref()?.parse().ok()).unwrap_or(dflt))
-        };
-        match tcm {
-            Some(m) => (
-                edge(m.top.as_ref(), cell_margin_v_twips),
-                edge(m.bottom.as_ref(), cell_margin_v_twips),
-                edge(m.start.as_ref().or(m.left.as_ref()), cell_margin_h_twips),
-                edge(m.end.as_ref().or(m.right.as_ref()), cell_margin_h_twips),
-            ),
-            None => (cell_margin_v, cell_margin_v, cell_margin_h, cell_margin_h),
-        }
-    };
+    // §17.4.42: each edge from the table's own tblCellMar, else from its
+    // style's, else the default.
+    let mut table_mar = CellMargins::DEFAULT;
+    let style_mar = tbl_style_id
+        .and_then(|id| style_ctx.style(id))
+        .and_then(|s| s.table_properties.as_ref())
+        .and_then(|tp| tp.tbl_cell_mar.as_deref());
+    for m in style_mar.into_iter().chain(props.tbl_cell_mar.as_deref()) {
+        table_mar.overlay(m.top.as_deref(), m.bottom.as_deref(), m.start.as_deref().or(m.left.as_deref()), m.end.as_deref().or(m.right.as_deref()));
+    }
 
     let indent_px = props.tbl_ind.as_ref()
         .and_then(|ind| ind.width.as_deref())
@@ -722,16 +771,13 @@ pub(crate) fn layout_table(
 
         // `tblW` is a *preferred* table width. A value of 0 — or type Auto/Nil —
         // means "no preferred width": the table sizes from its grid columns
-        // (auto-fit), NOT a literal zero-width table. Only a positive Pct/Dxa
+        // (auto-fit), NOT a literal zero-width table. Only a positive share or length
         // value is an explicit target; otherwise fall through to grid-based
         // sizing below (down-scaling the grid if it overflows the content box).
-        let target_width = table.properties().tbl_w.as_ref().and_then(|tw| {
-            let val = tw.width.as_deref()?.parse::<f64>().ok()?;
-            match tw.r#type? {
-                STTblWidth::Pct if val > 0.0 => Some((val / 5000.0) * content_width),
-                STTblWidth::Dxa if val > 0.0 => Some(twips_to_px(val as i64)),
-                _ => None,
-            }
+        let target_width = props.tbl_w.as_deref().and_then(|tw| match tbl_width(tw) {
+            TblWidth::Fraction(f) if f > 0.0 => Some(f * content_width),
+            TblWidth::Px(px) if px > 0.0 => Some(px),
+            _ => None,
         });
 
         if let Some(target) = target_width {
@@ -799,9 +845,12 @@ pub(crate) fn layout_table(
             // true no matter what a future caller passes.
             let end = col_idx.saturating_add(col_span).min(col_widths_px.len());
             let cell_width: f64 = col_widths_px[col_idx..end].iter().sum();
-            let (cmar_top, cmar_bottom, cmar_left, cmar_right) =
-                resolve_tc_mar(cell.properties().and_then(|p| p.tc_mar.as_deref()));
-            let cell_content_width = (cell_width - cmar_left - cmar_right).max(0.0);
+            // §17.4.68: a cell's tcMar overrides the table's margins edge by edge.
+            let mut mar = table_mar;
+            if let Some(m) = cell.properties().and_then(|p| p.tc_mar.as_deref()) {
+                mar.overlay(m.top.as_deref(), m.bottom.as_deref(), m.start.as_deref().or(m.left.as_deref()), m.end.as_deref().or(m.right.as_deref()));
+            }
+            let cell_content_width = (cell_width - mar.left - mar.right).max(0.0);
 
             let table_base_rpr = tbl_style_id
                 .and_then(|id| style_ctx.style(id))
@@ -893,7 +942,7 @@ pub(crate) fn layout_table(
                 None
             } else {
                 build_cell_float_layout(
-                    &cell_blocks, cell_width, cmar_left, cmar_right,
+                    &cell_blocks, cell_width, mar.left, mar.right,
                     font_cache, style_ctx, default_ppr, default_tab_stop_px,
                     theme_fonts, numbering_levels,
                 )
@@ -911,10 +960,10 @@ pub(crate) fn layout_table(
                 border_left: cell_bdr_left,
                 border_right: cell_bdr_right,
                 diagonals: if v_merged_away { None } else { cell_diagonals(theme_fonts, cell) },
-                mar_top: cmar_top,
-                mar_bottom: cmar_bottom,
-                mar_left: cmar_left,
-                mar_right: cmar_right,
+                mar_top: mar.top,
+                mar_bottom: mar.bottom,
+                mar_left: mar.left,
+                mar_right: mar.right,
                 float_layout,
             });
             col_idx = end;
@@ -955,7 +1004,7 @@ pub(crate) fn layout_table(
     }
     resolve_border_conflicts(&mut rows, &direct_edges);
 
-    Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, cell_margin_h, cell_margin_v, indent_px })
+    Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px })
 }
 
 /// §17.4.56 tblLook: which of its style's conditional regions a table uses.
@@ -1655,8 +1704,6 @@ mod tests {
             border_color: "#000000".to_string(),
             has_borders: true,
             alignment: STJcTable::Start,
-            cell_margin_h: 0.0,
-            cell_margin_v: 0.0,
             indent_px: 0.0,
         };
 

@@ -146,8 +146,6 @@ fn table_cell_text_participates() {
         height_px: 24.0,
         border_color: "#000".to_string(),
         has_borders: false,
-        cell_margin_h: 0.0,
-        cell_margin_v: 0.0,
     }));
     let matches = v.collect_search_rects(0, &page, "invoice", opts());
     assert_eq!(matches.len(), 1, "table-cell text is searched");

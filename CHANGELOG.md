@@ -267,6 +267,11 @@ are held stable regardless.
   column and banding back; the look was stored in a form that was not read.
   Header and total rows no longer pick up the band colour, and banding
   starts under the header.
+- Tables: cell padding is read for each of the four sides, from the cell,
+  the table and the table style in turn, so tables with different left and
+  right (or top and bottom) padding wrap and size their rows as Word does.
+  Table widths written as "50%" or with a unit, or with no unit type, are
+  honoured.
 
 ### Changed
 

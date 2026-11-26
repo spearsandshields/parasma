@@ -715,7 +715,7 @@ fn geometry_dump(viewer: &Viewer) -> String {
                     // REST-DOTS, installed at THIS walk (the canonical body
                     // one; the header/footer walks carry the same shapes and
                     // inherit the guarantee). Decisions for the `_` fields:
-                    //  - row `border_color`/`has_borders`/`cell_margin_h/v`:
+                    //  - row `border_color`/`has_borders`:
                     //    declared-unread aggregates (the painter reads the
                     //    per-cell resolved edges; see #[allow(dead_code)] at
                     //    the struct).
@@ -730,8 +730,6 @@ fn geometry_dump(viewer: &Viewer) -> String {
                         height_px,
                         border_color: _,
                         has_borders: _,
-                        cell_margin_h: _,
-                        cell_margin_v: _,
                     } = row;
                     out.push_str(&format!("T y{y_top:.2} h{height_px:.2}\n"));
                     for cell in cells {
@@ -11774,4 +11772,96 @@ fn header_and_total_rows_are_left_out_of_the_bands() {
     let plain = look_fills(r#"<w:tblLook w:firstRow="0" w:lastRow="0"/>"#);
     assert_eq!(plain[0], [fill("AAAAAA"), fill("AAAAAA")], "with no header, band 1 is the first row");
     assert_eq!(plain[3], [fill("BBBBBB"), fill("BBBBBB")]);
+}
+
+// ── Cell margins per edge and width units (§17.4.42, §17.4.68, §17.18.90) ───
+
+const PX_PER_TWIP: f64 = 96.0 / 1440.0;
+
+/// The first row of a one-row table whose first cell holds `text`; both
+/// cells carry `tc_pr`.
+fn margin_row(tbl_pr: &str, tc_pr: &str, styles: &str, text: &str) -> PagedTableRow {
+    let v = layout(bordered_table_docx(tbl_pr, &[&format!("{}{}", bcell(tc_pr, text), bcell(tc_pr, "b"))], styles));
+    table_rows_of(&v).remove(0)
+}
+
+fn assert_px(got: f64, want: f64, what: &str) {
+    assert!((got - want).abs() < 0.01, "{what}: got {got}, want {want}");
+}
+
+/// The table's bottom and right default margins are read; they were taken
+/// from top and left.
+#[test]
+fn table_cell_margins_are_read_per_edge() {
+    let plain = margin_row(r#"<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>"#, "", "", "a");
+    let padded = margin_row(r#"<w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="300" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>"#, "", "", "a");
+    assert_px(padded.height_px - plain.height_px, 300.0 * PX_PER_TWIP, "bottom padding");
+    // A wide right margin leaves room for one word a line.
+    let narrow = margin_row(r#"<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="1400" w:type="dxa"/></w:tblCellMar>"#, "", "", "aaaa bbbb cccc");
+    assert_eq!(narrow.cells[0].lines.len(), 3, "the text wraps inside the right margin");
+    assert_px(narrow.cells[0].lines[0].content_left - narrow.cells[0].x, 0.0, "the left margin stays 0");
+}
+
+/// A direct tblCellMar that names one edge keeps the style's other edges.
+#[test]
+fn table_cell_margins_inherit_from_the_style_edge_by_edge() {
+    let style = r#"<w:style w:type="table" w:styleId="Pad"><w:name w:val="Pad"/><w:tblPr><w:tblCellMar><w:left w:w="500" w:type="dxa"/><w:bottom w:w="200" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>"#;
+    let styled = margin_row(r#"<w:tblStyle w:val="Pad"/>"#, "", style, "a");
+    let direct = margin_row(r#"<w:tblStyle w:val="Pad"/><w:tblCellMar><w:top w:w="100" w:type="dxa"/></w:tblCellMar>"#, "", style, "a");
+    assert_px(direct.cells[0].lines[0].content_left - direct.cells[0].x, 500.0 * PX_PER_TWIP, "the style's left margin");
+    assert_px(direct.height_px - styled.height_px, 100.0 * PX_PER_TWIP, "the direct top is added to the style's bottom");
+}
+
+/// A cell margin edge the cell does not set falls back to the SAME edge of
+/// the table; a bottom-less tcMar took the table's top.
+#[test]
+fn a_cell_margin_falls_back_to_the_same_table_edge() {
+    let tbl = r#"<w:tblCellMar><w:top w:w="300" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/></w:tblCellMar>"#;
+    let plain = margin_row("", "", "", "a");
+    let cell = margin_row(tbl, r#"<w:tcMar><w:left w:w="20" w:type="dxa"/></w:tcMar>"#, "", "a");
+    assert_px(cell.height_px - plain.height_px, 300.0 * PX_PER_TWIP, "top 300 and bottom 0, as the table says");
+}
+
+/// §17.4.42: a pct or auto margin is ignored, nil is zero, and an edge with
+/// no width is zero.
+#[test]
+fn margin_width_types_are_honoured() {
+    let base = margin_row("", "", "", "a");
+    let ignored = margin_row(r#"<w:tblCellMar><w:top w:w="2500" w:type="pct"/><w:bottom w:w="700" w:type="auto"/></w:tblCellMar>"#, "", "", "a");
+    assert_px(ignored.height_px, base.height_px, "pct and auto margins");
+    let tbl = r#"<w:tblCellMar><w:top w:w="300" w:type="dxa"/><w:bottom w:w="300" w:type="dxa"/></w:tblCellMar>"#;
+    let zeroed = margin_row(tbl, r#"<w:tcMar><w:top w:w="300" w:type="nil"/><w:bottom w:type="dxa"/></w:tcMar>"#, "", "a");
+    assert_px(zeroed.height_px, base.height_px, "nil and width-less cell margins");
+}
+
+/// The width of a two-column table whose tblW is `tbl_w`, and the width of
+/// the same table at 100% of the text width.
+fn table_width_px(tbl_w: &str) -> (f64, f64) {
+    let row = format!("<w:tr>{}{}</w:tr>", bcell("", "a"), bcell("", "b"));
+    let table = |w: &str| format!(r#"<w:tbl><w:tblPr>{w}</w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{row}</w:tbl><w:p/>"#);
+    let width = |w: &str| {
+        let v = layout(numbering_docx("", "", &table(w)));
+        table_rows_of(&v)[0].cells.iter().map(|c| c.width_px).sum::<f64>()
+    };
+    (width(tbl_w), width(r#"<w:tblW w:w="5000" w:type="pct"/>"#))
+}
+
+/// §17.18.90: a width written as a percentage ("50%") is a share of the
+/// text width whatever its type says.
+#[test]
+fn a_percent_sign_table_width_is_a_share_of_the_text_width() {
+    let (half, full) = table_width_px(r#"<w:tblW w:w="50%" w:type="pct"/>"#);
+    assert_px(half, full / 2.0, "50%");
+    let (mistyped, _) = table_width_px(r#"<w:tblW w:w="50%" w:type="dxa"/>"#);
+    assert_px(mistyped, full / 2.0, "the percent sign overrides the type");
+}
+
+/// A table width with no type is in twentieths of a point, and a measure
+/// with a unit is that length.
+#[test]
+fn an_untyped_or_unit_table_width_is_a_length() {
+    let (untyped, _) = table_width_px(r#"<w:tblW w:w="3000"/>"#);
+    assert_px(untyped, 3000.0 * PX_PER_TWIP, "no type means dxa");
+    let (inches, _) = table_width_px(r#"<w:tblW w:w="1.5in" w:type="dxa"/>"#);
+    assert_px(inches, 144.0, "1.5in");
 }
