@@ -299,20 +299,25 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
 /// (1.0 unless an alpha transform says otherwise). No transforms, or a
 /// malformed base, return the base unchanged with alpha 1.0.
 ///
-/// The colour space each transform works in follows the spec's own worked
-/// examples:
+/// The colour space each transform works in is the one PowerPoint uses,
+/// measured from its PDF export (see the `matches_powerpoint` test):
 /// - `tint` and `shade` mix with white or black in linear light: "a 10% tint
 ///   is 10% of the input color combined with 90% white" (§20.1.2.3.34), and
 ///   tint 50% on `00FF00` gives `BCFFBC`.
-/// - `hue`, `sat` and `lum` and their offsets and modulations work in HSL of
-///   the sRGB values (`lumOff -20%` on `00FF00` gives `009900`), as do
-///   `red`/`green`/`blue` and theirs (`redMod 50%` on `FF0000` gives
-///   `800000`), `comp` and `inv`.
-/// - `gamma` and `invGamma` apply and remove the sRGB curve.
-/// - `gray` weighs the sRGB values by ITU-R BT.601 luma.
+/// - `red`/`green`/`blue` with their offsets and modulations, and `inv`, also
+///   work in linear light (`blueMod 50%` on `0000FF` gives `0000BC`).
+/// - `hue`, `sat` and `lum` with theirs work in HSL of the sRGB values
+///   (`lumOff -20%` on `00FF00` gives `009900`), and `comp` turns the hue
+///   half way round.
+/// - `gamma` and `invGamma` apply and remove the sRGB curve; `gray` weighs
+///   the sRGB values by ITU-R BT.601 luma.
 ///
-/// Every component is clamped after each step (0-100 %, hue 0-360°), as the
-/// element descriptions require.
+/// Deviation from the spec text, following PowerPoint: the spec's examples
+/// for the red/green/blue family work on sRGB values (`blueMod 50%` giving
+/// `000080`), and §20.1.2.3.16 clamps a shifted hue to 0-360°; PowerPoint
+/// mixes in linear light and wraps the hue round the circle, which is what
+/// SmartArt's colour cycles rely on. Other components are clamped after each
+/// step (0-100 %).
 pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String, f64) {
     let Some((r, g, b)) = hex_to_rgb(hex) else {
         return (hex.to_string(), 1.0);
@@ -328,7 +333,7 @@ pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String,
     let with_hsl = |c: &mut [f64; 3], f: &dyn Fn(&mut f64, &mut f64, &mut f64)| {
         let (mut h, mut s, mut l) = rgb_to_hsl(c[0] * 255.0, c[1] * 255.0, c[2] * 255.0);
         f(&mut h, &mut s, &mut l);
-        let (r, g, b) = hsl_to_rgb(h.clamp(0.0, 360.0), s.clamp(0.0, 1.0), l.clamp(0.0, 1.0));
+        let (r, g, b) = hsl_to_rgb(h.rem_euclid(360.0), s.clamp(0.0, 1.0), l.clamp(0.0, 1.0));
         *c = [r / 255.0, g / 255.0, b / 255.0];
     };
     for t in xs {
@@ -345,7 +350,7 @@ pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String,
                 let (max, min) = (c[0].max(c[1]).max(c[2]), c[0].min(c[1]).min(c[2]));
                 c = c.map(|x| max + min - x);
             }
-            T::Inv => c = c.map(|x| 1.0 - x),
+            T::Inv => c = c.map(|x| linear_to_srgb(1.0 - srgb_to_linear(x))),
             T::Gray => {
                 let y = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
                 c = [y, y, y];
@@ -362,15 +367,15 @@ pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String,
             T::Lum(v) => with_hsl(&mut c, &|_, _, l| *l = v),
             T::LumOff(v) => with_hsl(&mut c, &|_, _, l| *l += v),
             T::LumMod(v) => with_hsl(&mut c, &|_, _, l| *l *= v),
-            T::Red(v) => c[0] = unit(v),
-            T::RedOff(v) => c[0] = unit(c[0] + v),
-            T::RedMod(v) => c[0] = unit(c[0] * v),
-            T::Green(v) => c[1] = unit(v),
-            T::GreenOff(v) => c[1] = unit(c[1] + v),
-            T::GreenMod(v) => c[1] = unit(c[1] * v),
-            T::Blue(v) => c[2] = unit(v),
-            T::BlueOff(v) => c[2] = unit(c[2] + v),
-            T::BlueMod(v) => c[2] = unit(c[2] * v),
+            T::Red(v) => c[0] = linear_to_srgb(unit(v)),
+            T::RedOff(v) => c[0] = linear_to_srgb(unit(srgb_to_linear(c[0]) + v)),
+            T::RedMod(v) => c[0] = linear_to_srgb(unit(srgb_to_linear(c[0]) * v)),
+            T::Green(v) => c[1] = linear_to_srgb(unit(v)),
+            T::GreenOff(v) => c[1] = linear_to_srgb(unit(srgb_to_linear(c[1]) + v)),
+            T::GreenMod(v) => c[1] = linear_to_srgb(unit(srgb_to_linear(c[1]) * v)),
+            T::Blue(v) => c[2] = linear_to_srgb(unit(v)),
+            T::BlueOff(v) => c[2] = linear_to_srgb(unit(srgb_to_linear(c[2]) + v)),
+            T::BlueMod(v) => c[2] = linear_to_srgb(unit(srgb_to_linear(c[2]) * v)),
             T::Gamma => c = c.map(linear_to_srgb),
             T::InvGamma => c = c.map(srgb_to_linear),
         }
@@ -988,35 +993,44 @@ mod dml_transform_tests {
         assert_eq!(hex("4472C4", &[("lumMod", "60000"), ("lumOff", "40000")]), "#8FAADC");
     }
 
-    /// §20.1.2.3.16: the shifted hue is clamped to 0-360°, not wrapped.
+    /// What PowerPoint draws for each transform, read from the fill colours
+    /// of its PDF export of a probe deck (PowerPoint for Mac 16, sRGB).
     #[test]
-    fn hue_offset_shifts_and_clamps() {
-        near(&hex("FF0000", &[("hueOff", "7200000")]), "00FF00");
-        near(&hex("00FF00", &[("hueOff", "18000000")]), "FF0000");
+    fn matches_powerpoint() {
+        let cases: &[(&str, &[(&str, &str)], &str)] = &[
+            ("4472C4", &[("shade", "75000")], "3B64AC"),
+            ("00FF00", &[("lumMod", "50000")], "007F00"),
+            ("4472C4", &[("satMod", "150000")], "2469E4"),
+            ("00FF00", &[("hueOff", "7200000")], "0000FF"),
+            // Wraps round the circle: 120° + 300° = 60°, yellow.
+            ("00FF00", &[("hueOff", "18000000")], "FFFF00"),
+            ("4472C4", &[("hueOff", "10800000")], "C49644"),
+            // The red/green/blue family mixes in linear light.
+            ("0000FF", &[("blueMod", "50000")], "0000BC"),
+            ("FF0000", &[("redOff", "-20000")], "E70000"),
+            ("00FF00", &[("red", "50000")], "BCFF00"),
+            ("4472C4", &[("redMod", "50000")], "2F72C4"),
+            ("FF0000", &[("comp", "")], "00FFFF"),
+            ("4472C4", &[("comp", "")], "C49644"),
+            ("4472C4", &[("inv", "")], "F8EBB3"),
+            ("4472C4", &[("gray", "")], "6E6E6E"),
+            ("4472C4", &[("gamma", "")], "8DB2E3"),
+            ("4472C4", &[("invGamma", "")], "0F2B8D"),
+            ("4472C4", &[("tint", "50000"), ("lumMod", "50000")], "3F5493"),
+            ("4472C4", &[("lumMod", "50000"), ("tint", "50000")], "BDBFC6"),
+        ];
+        for (base, xs, want) in cases {
+            near(&hex(base, xs), want);
+        }
     }
 
     #[test]
-    fn rgb_component_transforms_follow_the_spec_examples() {
+    fn rgb_components_set_to_full_or_none() {
         assert_eq!(hex("00FF00", &[("red", "100%")]), "#FFFF00");
-        assert_eq!(hex("FF0000", &[("redMod", "50%")]), "#800000");
-        assert_eq!(hex("FF0000", &[("redOff", "-20%")]), "#CC0000");
         assert_eq!(hex("0000FF", &[("green", "100%")]), "#00FFFF");
-        assert_eq!(hex("00FF00", &[("greenMod", "50%")]), "#008000");
-        assert_eq!(hex("00FF00", &[("greenOff", "-20%")]), "#00CC00");
         assert_eq!(hex("00FF00", &[("blue", "100%")]), "#00FFFF");
-        assert_eq!(hex("0000FF", &[("blueMod", "50%")]), "#000080");
-    }
-
-    #[test]
-    fn complement_inverse_and_gray() {
-        assert_eq!(hex("FF0000", &[("comp", "")]), "#00FFFF");
+        assert_eq!(hex("FF0000", &[("redMod", "0")]), "#000000");
         assert_eq!(hex("FF0000", &[("inv", "")]), "#00FFFF");
-        // The complement keeps lightness and saturation; the inverse does not.
-        assert_eq!(hex("4472C4", &[("comp", "")]), "#C49644");
-        assert_eq!(hex("4472C4", &[("inv", "")]), "#BB8D3B");
-        let g = hex("4472C4", &[("gray", "")]);
-        assert_eq!(&g[1..3], &g[3..5]);
-        assert_eq!(&g[3..5], &g[5..7]);
     }
 
     #[test]
