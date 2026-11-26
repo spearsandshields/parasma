@@ -12,7 +12,7 @@
 //! Purity is enforced by the oracle snapshot tests — their geometry hashes
 //! must not drift on a pure move.
 
-use crate::engine::color::{apply_color_transforms, parse_dml_pct, vml_color_to_css, DmlTransform};
+use crate::engine::color::{apply_color_transforms, css_color, dml_base_color, vml_color_to_css, DmlTransform, DML_COLOR_MODELS};
 use crate::engine::fonts::ThemeFonts;
 use crate::engine::units::{css_length_to_px, emu_to_px};
 use crate::engine::vml::{vml_attr, vml_find_descendant, xml_local_name};
@@ -537,83 +537,31 @@ fn fill_color(fill: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> Option<Str
 }
 
 /// The colour of the first DrawingML colour element inside `parent`
-/// (§20.1.2.3): `srgbClr`, `schemeClr` (through the theme), `sysClr`,
-/// `prstClr` or `scrgbClr`, with its luminance, saturation, tint, shade and
-/// alpha modifiers applied. A colour with alpha below 1 is returned as
-/// `rgba(…)`.
+/// (§20.1.2.3), `schemeClr` through the theme, with its transforms applied in
+/// order (see [`apply_color_transforms`]). A colour with alpha below 1 is
+/// returned as `rgba(…)`.
 pub(crate) fn dml_color(parent: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> Option<String> {
     for c in &parent.children {
         let ooxml_xml::RawXmlNode::Element(e) = c else { continue };
-        let base = match xml_local_name(&e.name) {
-            "srgbClr" => vml_attr(e, "val").map(str::to_owned),
-            "schemeClr" => vml_attr(e, "val").and_then(|v| theme.scheme_color(v)).map(str::to_owned),
-            "sysClr" => vml_attr(e, "lastClr").map(str::to_owned).or_else(|| match vml_attr(e, "val") {
-                Some("window") => Some("FFFFFF".into()),
-                Some("windowText") => Some("000000".into()),
-                _ => None,
-            }),
-            "prstClr" => vml_attr(e, "val").and_then(preset_color).map(str::to_owned),
-            "scrgbClr" => {
-                // Linear-light percentages; converted without the sRGB curve.
-                let pct = |n| vml_attr(e, n).and_then(parse_dml_pct).unwrap_or(0.0);
-                let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-                Some(format!("{:02X}{:02X}{:02X}", ch(pct("r")), ch(pct("g")), ch(pct("b"))))
-            }
-            _ => continue,
-        };
-        let base = base?;
+        let model = xml_local_name(&e.name);
+        if !DML_COLOR_MODELS.contains(&model) {
+            continue;
+        }
+        let base = if model == "schemeClr" {
+            vml_attr(e, "val")
+                .and_then(|v| theme.scheme_color(v))
+                .map(|hex| format!("#{}", hex.trim_start_matches('#')))
+        } else {
+            dml_base_color(model, |n| vml_attr(e, n).map(str::to_owned))
+        }?;
         let transforms: Vec<DmlTransform> = e.children.iter().filter_map(|t| {
             let ooxml_xml::RawXmlNode::Element(t) = t else { return None };
-            let v = vml_attr(t, "val").and_then(parse_dml_pct)?;
-            Some(match xml_local_name(&t.name) {
-                "lumMod" => DmlTransform::LumMod(v),
-                "lumOff" => DmlTransform::LumOff(v),
-                "satMod" => DmlTransform::SatMod(v),
-                "satOff" => DmlTransform::SatOff(v),
-                "tint" => DmlTransform::Tint(v),
-                "shade" => DmlTransform::Shade(v),
-                "alpha" => DmlTransform::Alpha(v),
-                _ => return None,
-            })
+            DmlTransform::parse(xml_local_name(&t.name), vml_attr(t, "val"))
         }).collect();
         let (hex, alpha) = apply_color_transforms(&base, &transforms);
-        return Some(if alpha < 1.0 { css_rgba(&hex, alpha) } else { hex });
+        return Some(css_color(&hex, alpha));
     }
     None
-}
-
-fn css_rgba(hex: &str, alpha: f64) -> String {
-    let h = hex.trim_start_matches('#');
-    let c = |i: usize| u8::from_str_radix(h.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
-    format!("rgba({},{},{},{:.3})", c(0), c(2), c(4), alpha)
-}
-
-/// `prstClr@val` (ST_PresetColorVal, §20.1.10.47) for the names documents
-/// use in practice. Declared: the rest of the 140-name list is not mapped and
-/// draws as no colour.
-fn preset_color(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "black" => "000000",
-        "white" => "FFFFFF",
-        "red" => "FF0000",
-        "green" => "008000",
-        "lime" => "00FF00",
-        "blue" => "0000FF",
-        "yellow" => "FFFF00",
-        "cyan" | "aqua" => "00FFFF",
-        "magenta" | "fuchsia" => "FF00FF",
-        "gray" | "grey" => "808080",
-        "silver" => "C0C0C0",
-        "ltGray" | "ltGrey" => "D3D3D3",
-        "dkGray" | "dkGrey" => "A9A9A9",
-        "orange" => "FFA500",
-        "navy" => "000080",
-        "purple" => "800080",
-        "maroon" => "800000",
-        "olive" => "808000",
-        "teal" => "008080",
-        _ => return None,
-    })
 }
 
 fn find_txbx_content_in(elem: &ooxml_xml::RawXmlElement) -> Option<CTTxbxContent> {
@@ -833,6 +781,20 @@ mod text_box_frame_tests {
         assert_ne!(tinted.fill_color.as_deref(), Some("#4472C4"), "modifiers apply");
         let clear = wsp(r#"<wps:spPr><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:solidFill></wps:spPr>"#);
         assert_eq!(clear.fill_color.as_deref(), Some("rgba(255,0,0,0.500)"));
+    }
+
+    /// Every colour model and transform reaches a text-box frame through the
+    /// shared resolver (§20.1.2.3).
+    #[test]
+    fn frame_colours_use_every_colour_model() {
+        let fill = |clr: &str| wsp(&format!("<wps:spPr><a:solidFill>{clr}</a:solidFill></wps:spPr>")).fill_color;
+        // scRGB is linear light: 50 % is BC, not 80.
+        assert_eq!(fill(r#"<a:scrgbClr r="50%" g="50%" b="50%"/>"#).as_deref(), Some("#BCBCBC"));
+        assert_eq!(fill(r#"<a:hslClr hue="14400000" sat="100%" lum="50%"/>"#).as_deref(), Some("#0000FF"));
+        assert_eq!(fill(r#"<a:prstClr val="cornflowerBlue"/>"#).as_deref(), Some("#6495ED"));
+        assert_eq!(fill(r#"<a:sysClr val="btnFace"/>"#).as_deref(), Some("#F0F0F0"));
+        assert_eq!(fill(r#"<a:srgbClr val="00FF00"><a:tint val="50000"/></a:srgbClr>"#).as_deref(), Some("#BCFFBC"));
+        assert_eq!(fill(r#"<a:srgbClr val="FF0000"><a:comp/></a:srgbClr>"#).as_deref(), Some("#00FFFF"));
     }
 
     #[test]

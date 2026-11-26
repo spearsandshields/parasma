@@ -55,7 +55,7 @@ use crate::engine::units::emu_to_px;
 use ooxml_dml::types::CTTable;
 
 use super::shape::{
-    build_paragraphs_from_styled, color_choice_to_hex, solid_fill_hex, solid_line_fill_hex,
+    build_paragraphs_from_styled, color_choice_css, solid_fill_hex, solid_line_fill_hex,
     CellTextDefaults, ShapeOutline, SlideParagraph, SlideTheme, BODY_DEFAULT_PT, DEFAULT_OUTLINE_PX,
 };
 
@@ -294,9 +294,7 @@ fn overlay_part(
 
     // Text colour + bold: tcTxStyle/color_choice → #rrggbb; @b="on" → bold.
     if let Some(tx) = part.tc_tx_style.as_deref() {
-        if let Some(hex) =
-            color_choice_to_hex(tx.color_choice.as_deref(), theme).map(|(h, _a)| h)
-        {
+        if let Some(hex) = color_choice_css(tx.color_choice.as_deref(), theme) {
             acc.text.color = Some(hex);
         }
         use ooxml_dml::types::STOnOffStyleType;

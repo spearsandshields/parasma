@@ -1368,7 +1368,7 @@ fn connector_style_ln_color(
     if style.ln_ref.idx == 0 {
         return None;
     }
-    color_choice_to_hex(style.ln_ref.color_choice.as_deref(), theme).map(|(hex, _alpha)| hex)
+    color_choice_css(style.ln_ref.color_choice.as_deref(), theme)
 }
 
 /// Build the filled arrowhead triangle for one line end (`a:headEnd`/`a:tailEnd`)
@@ -1873,8 +1873,7 @@ fn shape_fill(sp: &Shape, theme: &SlideTheme) -> Option<ShapeFill> {
     use ooxml_dml::types::EGFillProperties as F;
     match sp.shape_properties.fill_properties.as_deref() {
         Some(F::NoFill(_)) => None,
-        Some(F::SolidFill(sf)) => color_choice_to_hex(sf.color_choice.as_deref(), theme)
-            .map(|(hex, _alpha)| ShapeFill::Solid(hex)),
+        Some(F::SolidFill(sf)) => color_choice_css(sf.color_choice.as_deref(), theme).map(ShapeFill::Solid),
         Some(F::GradFill(gf)) => gradient_shape_fill(gf, theme),
         Some(F::PattFill(pf)) => pattern_shape_fill(pf, theme),
         Some(F::BlipFill(_)) | Some(F::GrpFill(_)) => None,
@@ -1890,8 +1889,7 @@ fn style_fill_ref(sp: &Shape, theme: &SlideTheme) -> Option<ShapeFill> {
     if style.fill_ref.idx == 0 {
         return None;
     }
-    color_choice_to_hex(style.fill_ref.color_choice.as_deref(), theme)
-        .map(|(hex, _alpha)| ShapeFill::Solid(hex))
+    color_choice_css(style.fill_ref.color_choice.as_deref(), theme).map(ShapeFill::Solid)
 }
 
 /// An explicit `spPr/gradFill` (§20.1.8.33) on a SHAPE: every `gsLst/gs`
@@ -1912,8 +1910,7 @@ fn gradient_shape_fill(
         .iter()
         .filter_map(|g| {
             let pos = parse_dml_pct(&g.pos)?.clamp(0.0, 1.0);
-            let (hex, _alpha) = color_choice_to_hex(g.color_choice.as_deref(), theme)?;
-            Some((pos, hex))
+            Some((pos, color_choice_css(g.color_choice.as_deref(), theme)?))
         })
         .collect();
     stops.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -1942,6 +1939,8 @@ fn pattern_shape_fill(
     pf: &ooxml_dml::types::PatternFill,
     theme: &SlideTheme,
 ) -> Option<ShapeFill> {
+    // Opaque hex: the pattern's colours are blended and rasterised as RGB.
+    // Declared: pattern colours ignore alpha.
     let resolve = |c: Option<&ooxml_dml::types::CTColor>| {
         c.and_then(|c| color_choice_to_hex(c.color_choice.as_deref(), theme))
             .map(|(hex, _alpha)| hex)
@@ -2080,7 +2079,7 @@ fn style_ln_color(sp: &Shape, theme: &SlideTheme) -> Option<String> {
     if style.ln_ref.idx == 0 {
         return None;
     }
-    color_choice_to_hex(style.ln_ref.color_choice.as_deref(), theme).map(|(hex, _alpha)| hex)
+    color_choice_css(style.ln_ref.color_choice.as_deref(), theme)
 }
 
 /// Resolve a shape's preset geometry: read the fork-parsed
@@ -2182,9 +2181,8 @@ fn parse_val_fmla(fmla: &str) -> Option<f64> {
     rest.parse::<f64>().ok()
 }
 
-/// Extract `#rrggbb` from an `EGFillProperties` that is a `solidFill`. This
-/// resolves `srgbClr` AND themed `schemeClr`/`sysClr` (via the slide theme);
-/// gradient + pattern fills still return `None`.
+/// The CSS colour of an `EGFillProperties` that is a `solidFill` (see
+/// [`color_choice_css`]); gradient and pattern fills return `None`.
 pub(crate) fn solid_fill_hex(
     fill: Option<&ooxml_dml::types::EGFillProperties>,
     theme: &SlideTheme,
@@ -2193,11 +2191,11 @@ pub(crate) fn solid_fill_hex(
     let EGFillProperties::SolidFill(sf) = fill? else {
         return None;
     };
-    color_choice_to_hex(sf.color_choice.as_deref(), theme).map(|(hex, _alpha)| hex)
+    color_choice_css(sf.color_choice.as_deref(), theme)
 }
 
-/// Extract `#rrggbb` from an `EGLineFillProperties` that is a `solidFill` (the
-/// line-fill twin of [`solid_fill_hex`]), resolving themed colours.
+/// The CSS colour of an `EGLineFillProperties` that is a `solidFill` (the
+/// line-fill twin of [`solid_fill_hex`]).
 pub(crate) fn solid_line_fill_hex(
     fill: Option<&ooxml_dml::types::EGLineFillProperties>,
     theme: &SlideTheme,
@@ -2206,76 +2204,27 @@ pub(crate) fn solid_line_fill_hex(
     let EGLineFillProperties::SolidFill(sf) = fill? else {
         return None;
     };
-    color_choice_to_hex(sf.color_choice.as_deref(), theme).map(|(hex, _alpha)| hex)
+    color_choice_css(sf.color_choice.as_deref(), theme)
 }
 
-/// Resolve any `EGColorChoice` to a CSS `#rrggbb` + resolved alpha (0.0–1.0):
-/// `srgbClr` is the decoded `[r,g,b]` triple; `schemeClr` resolves through the
-/// slide theme (clrMap for `bg/tx`, direct scheme slot otherwise) then applies
-/// its DML colour transforms (lumMod/lumOff/tint/shade/satMod/alpha); `sysClr`
-/// uses `@lastClr`. `phClr` (placeholder colour) and `hsl/scrgb/prst` are
-/// best-effort `None` (style-matrix fills out of scope). The alpha is
-/// returned for callers that can honour transparency; the fill sites currently
-/// use the hex only.
+/// Resolve any `EGColorChoice` to `#rrggbb` + alpha (0.0–1.0), a `schemeClr`
+/// through the slide theme (clrMap for `bg/tx`, the scheme slot otherwise);
+/// see [`crate::engine::color::resolve_color_choice`]. `phClr` has no colour
+/// of its own here (style-matrix fills are out of scope).
+/// [`color_choice_to_hex`] as a CSS colour: `#rrggbb`, or `rgba()` when the
+/// colour is translucent (`alpha`, `alphaMod`, `alphaOff`).
+pub(crate) fn color_choice_css(
+    choice: Option<&ooxml_dml::types::EGColorChoice>,
+    theme: &SlideTheme,
+) -> Option<String> {
+    color_choice_to_hex(choice, theme).map(|(hex, alpha)| crate::engine::color::css_color(&hex, alpha))
+}
+
 pub(crate) fn color_choice_to_hex(
     choice: Option<&ooxml_dml::types::EGColorChoice>,
     theme: &SlideTheme,
 ) -> Option<(String, f64)> {
-    use ooxml_dml::types::EGColorChoice;
-    match choice? {
-        EGColorChoice::SrgbClr(c) => {
-            let rgb = &c.value;
-            if rgb.len() != 3 {
-                return None;
-            }
-            let hex = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
-            Some(apply_transforms(hex, &c.color_transform))
-        }
-        EGColorChoice::SchemeClr(c) => {
-            let base = resolve_scheme_color(&c.value, theme)?;
-            Some(apply_transforms(base, &c.color_transform))
-        }
-        EGColorChoice::SysClr(c) => {
-            let rgb = c.last_clr.as_ref()?;
-            if rgb.len() != 3 {
-                return None;
-            }
-            let hex = format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
-            Some(apply_transforms(hex, &c.color_transform))
-        }
-        // scrgb/hsl/prst/phClr: theme-matrix + named colours out of scope.
-        _ => None,
-    }
-}
-
-/// Map an `EGColorTransform` slice to our [`DmlTransform`] set and apply it to a
-/// base `#rrggbb`, returning `(hex, alpha)`.
-fn apply_transforms(
-    hex: String,
-    xs: &[ooxml_dml::types::EGColorTransform],
-) -> (String, f64) {
-    use crate::engine::color::{apply_color_transforms, parse_dml_pct, DmlTransform};
-    use ooxml_dml::types::EGColorTransform as T;
-    let mut out = Vec::new();
-    for x in xs {
-        let mapped = match x {
-            T::LumMod(p) => parse_dml_pct(&p.value).map(DmlTransform::LumMod),
-            T::LumOff(p) => parse_dml_pct(&p.value).map(DmlTransform::LumOff),
-            T::SatMod(p) => parse_dml_pct(&p.value).map(DmlTransform::SatMod),
-            T::SatOff(p) => parse_dml_pct(&p.value).map(DmlTransform::SatOff),
-            T::Tint(p) => parse_dml_pct(&p.value).map(DmlTransform::Tint),
-            T::Shade(p) => parse_dml_pct(&p.value).map(DmlTransform::Shade),
-            T::Alpha(p) => parse_dml_pct(&p.value).map(DmlTransform::Alpha),
-            _ => None,
-        };
-        if let Some(m) = mapped {
-            out.push(m);
-        }
-    }
-    if out.is_empty() {
-        return (hex, 1.0);
-    }
-    apply_color_transforms(&hex, &out)
+    crate::engine::color::resolve_color_choice(choice?, |v| resolve_scheme_color(v, theme))
 }
 
 /// Resolve a `<a:schemeClr@val>` to a base `#rrggbb` against the slide theme.

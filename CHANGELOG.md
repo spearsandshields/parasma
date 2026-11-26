@@ -55,6 +55,19 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Colours: lighter and darker theme colour variants made with a tint or
+  shade are mixed with white or black as the standard defines, so the banded
+  rows of PowerPoint's table styles and other tinted fills are pale, not
+  saturated. Colour adjustments apply in the order the file lists them, and
+  the ones that were ignored now apply: hue changes (which give SmartArt's
+  colourful styles their different colours), transparency changes,
+  red/green/blue changes, complement, inverse, greyscale and gamma.
+- Colours: colours given by preset name, system colour, HSL or linear RGB now
+  resolve everywhere, including Word drawings and chart series. Linear RGB
+  colours are no longer too dark.
+- Presentations: transparent shapes, lines, text and table cells are drawn
+  transparent instead of opaque. Pattern fills and slide backgrounds still
+  draw opaque, and transparent 3-D shapes are drawn without face shading.
 - Fonts: names the font map had silently dropped, such as Consolas, Palatino
   Linotype, Futura and Menlo, now reach their substitute, so monospaced text
   stays monospaced. Georgia uses Gelasio, its metric-compatible equivalent;

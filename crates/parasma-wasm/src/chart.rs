@@ -373,6 +373,8 @@ fn series_name(tx: &Option<Box<ooxml_dml::types::SeriesText>>) -> String {
         .unwrap_or_default()
 }
 
+/// A series' solid fill colour (§20.1.2.3), else the default palette colour.
+/// A `schemeClr` falls back to the palette: charts have no theme here yet.
 fn series_color(sp_pr: &Option<Box<ooxml_dml::types::CTShapeProperties>>, fallback_idx: usize) -> String {
     sp_pr.as_ref()
         .and_then(|sp| sp.fill_properties.as_ref())
@@ -380,13 +382,8 @@ fn series_color(sp_pr: &Option<Box<ooxml_dml::types::CTShapeProperties>>, fallba
             ooxml_dml::types::EGFillProperties::SolidFill(sf) => sf.color_choice.as_ref(),
             _ => None,
         })
-        .and_then(|cc| match cc.as_ref() {
-            ooxml_dml::types::EGColorChoice::SrgbClr(c) => {
-                let hex: String = c.value.iter().map(|b| format!("{:02x}", b)).collect();
-                Some(format!("#{}", hex))
-            }
-            _ => None,
-        })
+        .and_then(|cc| crate::engine::color::resolve_color_choice(cc, |_| None))
+        .map(|(hex, alpha)| crate::engine::color::css_color(&hex, alpha))
         .unwrap_or_else(|| series_color_by_index(fallback_idx))
 }
 

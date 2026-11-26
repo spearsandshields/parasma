@@ -706,6 +706,8 @@ impl PmlRenderer {
                 // single flat geometry fill — each face's base colour scaled by
                 // its shade multiplier. A gradient/none base fill has no single
                 // colour to shade, so we fall through to the flat silhouette fill.
+                // Declared: a translucent base (an `rgba()` fill) is not shaded;
+                // every face draws the base colour.
                 let painted_faces = match (&sh.faces, sh.solid_fill_hex()) {
                     (Some(faces), Some(base)) if !faces.is_empty() => {
                         for face in faces {
@@ -2334,10 +2336,9 @@ fn parse_opc_table_styles(pkg: Option<&mut opc::OpcPackage<'_>>) -> table::Table
     }
 }
 
-/// Resolve a `schemeClr@val` against a freshly-parsed clrMap+scheme, applying
-/// any DML colour transforms. Used by the bg scan (the bg `solidFill` can carry
-/// a `schemeClr`). Returns `#rrggbb`.
-fn resolve_scheme_hex(theme: &shape::SlideTheme, val: &str, transforms: &[(&str, &str)]) -> Option<String> {
+/// Resolve a `schemeClr@val` against a freshly-parsed clrMap+scheme, before
+/// its transforms. Used by the background scans. Returns `#rrggbb`.
+fn resolve_scheme_hex(theme: &shape::SlideTheme, val: &str) -> Option<String> {
     use ooxml_dml::types::STSchemeColorVal as V;
     let v = match val {
         "bg1" => V::Bg1,
@@ -2358,51 +2359,7 @@ fn resolve_scheme_hex(theme: &shape::SlideTheme, val: &str, transforms: &[(&str,
         "folHlink" => V::FolHlink,
         _ => return None,
     };
-    let base = shape::resolve_scheme_color(&v, theme)?;
-    Some(apply_transform_pairs(&base, transforms))
-}
-
-/// Apply scanned `(name, val-string)` DML colour-transform pairs (lumMod/tint/…)
-/// to a `#rrggbb` base. Unknown names / unparseable values are skipped; no
-/// transforms → the base unchanged. Shared by the schemeClr resolver and the
-/// gradient-stop scan (a `srgbClr` stop can carry transforms too).
-fn apply_transform_pairs(base: &str, transforms: &[(&str, &str)]) -> String {
-    use crate::engine::color::{apply_color_transforms, parse_dml_pct, DmlTransform};
-    let mut xs = Vec::new();
-    for (name, val) in transforms {
-        let mapped = match *name {
-            "lumMod" => parse_dml_pct(val).map(DmlTransform::LumMod),
-            "lumOff" => parse_dml_pct(val).map(DmlTransform::LumOff),
-            "satMod" => parse_dml_pct(val).map(DmlTransform::SatMod),
-            "satOff" => parse_dml_pct(val).map(DmlTransform::SatOff),
-            "tint" => parse_dml_pct(val).map(DmlTransform::Tint),
-            "shade" => parse_dml_pct(val).map(DmlTransform::Shade),
-            "alpha" => parse_dml_pct(val).map(DmlTransform::Alpha),
-            _ => None,
-        };
-        if let Some(m) = mapped {
-            xs.push(m);
-        }
-    }
-    if xs.is_empty() {
-        return base.to_string();
-    }
-    apply_color_transforms(base, &xs).0
-}
-
-/// Scan the DML colour-transform children (`lumMod`/`lumOff`/`satMod`/`satOff`/
-/// `tint`/`shade`/`alpha` `@val`) out of one colour element's chunk.
-fn scan_clr_transforms(chunk: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for name in ["lumMod", "lumOff", "satMod", "satOff", "tint", "shade", "alpha"] {
-        let needle = format!("<a:{name}");
-        if let Some(i) = chunk.find(&needle) {
-            if let Some(v) = scan_attr_str(&chunk[i..], "val") {
-                out.push((name.to_string(), v));
-            }
-        }
-    }
-    out
+    shape::resolve_scheme_color(&v, theme)
 }
 
 /// Scan a slide-master `<p:clrMap .../>` (§19.3.1.6) into a `placeholder → slot`
@@ -2479,50 +2436,22 @@ fn scan_font_scheme(xml: &str) -> shape::ThemeFontScheme {
     }
 }
 
-/// Scan a slide/layout/master part's `cSld/bg/bgPr/solidFill` (§19.3.1.2) for a
-/// solid background colour. Handles an `srgbClr@val` directly. A `schemeClr`/
-/// `sysClr`/gradient/blip bg returns `None` here (the schemeClr bg is resolved
-/// later against the theme — see [`scan_bg_solid_fill_with_theme`]). Returns
-/// `#rrggbb`.
-fn scan_bg_solid_fill(xml: &str) -> Option<String> {
-    // Find the <p:bg> ... </p:bg> envelope, then its first solidFill.
+/// A part's `cSld/bg/bgPr/solidFill` colour (§19.3.1.2): its colour element,
+/// a `schemeClr` through the slide theme, with its transforms applied.
+fn scan_bg_solid_fill_with_theme(xml: &str, theme: &shape::SlideTheme) -> Option<String> {
     let bg_start = xml.find("<p:bg>")?;
     let bg_end = xml[bg_start..].find("</p:bg>").map(|e| bg_start + e)?;
     let bg = &xml[bg_start..bg_end];
     let sf_start = bg.find("<a:solidFill>")?;
     let sf = &bg[sf_start..];
-    let sf_end = sf.find("</a:solidFill>").map(|e| &sf[..e]).unwrap_or(sf);
-    // Only a direct srgbClr is resolved at scan time (no theme here); a schemeClr
-    // bg is handled by the theme-aware pass in `parse_opc_theme` via
-    // `scan_bg_solid_fill_with_theme`.
-    if let Some(idx) = sf_end.find("<a:srgbClr") {
-        let tag = &sf_end[idx..];
-        if let Some(val) = scan_attr_str(tag, "val") {
-            return Some(format!("#{}", val.to_lowercase()));
-        }
-    }
-    None
+    let sf = sf.find("</a:solidFill>").map(|e| &sf[..e]).unwrap_or(sf);
+    resolve_scan_color(sf, theme)
 }
 
-/// Theme-aware bg scan: like [`scan_bg_solid_fill`] but also resolves a
-/// `schemeClr` background (with its DML transforms) against the slide theme.
-fn scan_bg_solid_fill_with_theme(xml: &str, theme: &shape::SlideTheme) -> Option<String> {
-    if let Some(hex) = scan_bg_solid_fill(xml) {
-        return Some(hex);
-    }
-    let bg_start = xml.find("<p:bg>")?;
-    let bg_end = xml[bg_start..].find("</p:bg>").map(|e| bg_start + e)?;
-    let bg = &xml[bg_start..bg_end];
-    let sf_start = bg.find("<a:solidFill>")?;
-    let sf = &bg[sf_start..];
-    let sf_end = sf.find("</a:solidFill>").map(|e| &sf[..e]).unwrap_or(sf);
-    let sc_idx = sf_end.find("<a:schemeClr")?;
-    let sc = &sf_end[sc_idx..];
-    let val = scan_attr_str(sc, "val")?;
-    // Pull any child transforms (lumMod/lumOff/shade/tint/satMod/alpha @val).
-    let transforms = scan_clr_transforms(sc);
-    let pairs: Vec<(&str, &str)> = transforms.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
-    resolve_scheme_hex(theme, &val, &pairs)
+/// The colour of the first colour element in a scanned chunk of part XML.
+/// Declared: a slide background is drawn opaque, so its alpha is dropped.
+fn resolve_scan_color(chunk: &str, theme: &shape::SlideTheme) -> Option<String> {
+    crate::engine::color::resolve_dml_color_xml(chunk, |val| resolve_scheme_hex(theme, val)).map(|(hex, _alpha)| hex)
 }
 
 /// Resolve a slide/layout/master part's `cSld/bg/bgPr` fill to a [`shape::SlideBg`]:
@@ -2558,7 +2487,7 @@ fn scan_bg_grad_fill(xml: &str, theme: &shape::SlideTheme) -> Option<shape::Slid
         let chunk = &gs[..gs_end];
         if let (Some(pos), Some(hex)) = (
             scan_attr_str(chunk, "pos").and_then(|p| p.parse::<f64>().ok()),
-            scan_gs_color(chunk, theme),
+            resolve_scan_color(chunk, theme),
         ) {
             stops.push(((pos / 100_000.0).clamp(0.0, 1.0), hex));
         }
@@ -2602,25 +2531,6 @@ fn scan_bg_grad_fill(xml: &str, theme: &shape::SlideTheme) -> Option<shape::Slid
             Some(shape::SlideBg::Gradient { stops, angle_deg })
         }
     }
-}
-
-/// Resolve one gradient stop's colour: a direct `srgbClr@val` or a theme-mapped
-/// `schemeClr@val`, either with DML colour transforms applied. Returns `#rrggbb`.
-fn scan_gs_color(chunk: &str, theme: &shape::SlideTheme) -> Option<String> {
-    if let Some(idx) = chunk.find("<a:srgbClr") {
-        let clr = &chunk[idx..];
-        let val = scan_attr_str(clr, "val")?;
-        let transforms = scan_clr_transforms(clr);
-        let pairs: Vec<(&str, &str)> =
-            transforms.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
-        return Some(apply_transform_pairs(&format!("#{}", val.to_lowercase()), &pairs));
-    }
-    let idx = chunk.find("<a:schemeClr")?;
-    let clr = &chunk[idx..];
-    let val = scan_attr_str(clr, "val")?;
-    let transforms = scan_clr_transforms(clr);
-    let pairs: Vec<(&str, &str)> = transforms.iter().map(|(n, v)| (n.as_str(), v.as_str())).collect();
-    resolve_scheme_hex(theme, &val, &pairs)
 }
 
 /// Paint a linear-gradient slide background onto the canvas: a

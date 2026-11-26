@@ -1433,6 +1433,40 @@ fn table_style_resolves_green_header_first_col_banding_and_white_bold_text() {
     assert_eq!(cells[5].fill_hex.as_deref(), Some("#70ad47"), "lastRow cell green");
 }
 
+/// Banded rows take the style's tinted accent (§20.1.2.3.34: tint keeps that
+/// share of the colour and mixes the rest with white, in linear light). These
+/// are PowerPoint's pale bands; moving toward white by the tint amount gave
+/// saturated mid-greens (#a9ce91, #8dbd6c).
+#[test]
+fn table_style_bands_are_pale_tints_of_the_accent() {
+    use crate::engine::fonts::FontCache;
+    let slide = STYLED_TABLE_SLIDE
+        .replace(r#"firstRow="1" firstCol="1" lastRow="1" bandRow="1" bandCol="1""#, r#"firstRow="1" bandRow="1""#)
+        .replace(r#"<a:tcPr><a:solidFill><a:srgbClr val="F0A030"/></a:solidFill></a:tcPr>"#, "<a:tcPr/>");
+    let pptx = build_pptx(&[
+        ("[Content_Types].xml", STYLED_TABLE_CONTENT_TYPES),
+        ("_rels/.rels", ROOT_RELS),
+        ("ppt/presentation.xml", PRESENTATION),
+        ("ppt/_rels/presentation.xml.rels", STYLED_TABLE_PRESENTATION_RELS),
+        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
+        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", THEME_MASTER_RELS),
+        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
+        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
+        ("ppt/theme/theme1.xml", THEME1),
+        ("ppt/tableStyles.xml", STYLED_TABLE_STYLES),
+        ("ppt/slides/slide1.xml", &slide),
+        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
+    ]);
+    let pages = PmlRenderer::from_pptx(pptx).expect("pptx loads").build_pages_for_test(&FontCache::new());
+    let cells = &pages[0].tables[0].cells;
+    assert_eq!(cells[0].fill_hex.as_deref(), Some("#70ad47"), "header: accent 6");
+    // Row 1 is the first body row: band1H, accent 6 at tint 40 %.
+    assert_eq!(cells[2].fill_hex.as_deref(), Some("#D5E3CF"));
+    assert_eq!(cells[3].fill_hex.as_deref(), Some("#D5E3CF"));
+    // Row 2 is band2H, which has no fill: the whole table's tint 20 % shows.
+    assert_eq!(cells[4].fill_hex.as_deref(), Some("#EBF1E9"));
+}
+
 #[test]
 fn table_with_no_style_part_renders_unstyled() {
     // The base `table_pptx` deck has NO tableStyles part — every cell renders
@@ -2065,6 +2099,37 @@ fn theme_pptx() -> Vec<u8> {
     ])
 }
 
+/// A colour's alpha reaches the paint (§20.1.2.3.1), and hue offsets, which
+/// SmartArt's "Colorful" styles bake into every node, change the colour.
+#[test]
+fn shape_fills_keep_transparency_and_hue_offsets() {
+    use crate::engine::fonts::FontCache;
+    let slide = THEME_SLIDE
+        .replace(
+            r#"<a:solidFill><a:schemeClr val="accent1"/></a:solidFill></p:spPr>"#,
+            r#"<a:solidFill><a:schemeClr val="accent1"><a:alpha val="50000"/></a:schemeClr></a:solidFill></p:spPr>"#,
+        )
+        .replace(r#"<a:lumMod val="50000"/>"#, r#"<a:hueOff val="-10800000"/>"#);
+    let pptx = build_pptx(&[
+        ("[Content_Types].xml", THEME_CONTENT_TYPES),
+        ("_rels/.rels", ROOT_RELS),
+        ("ppt/presentation.xml", PRESENTATION),
+        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
+        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
+        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", THEME_MASTER_RELS),
+        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
+        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
+        ("ppt/theme/theme1.xml", THEME1),
+        ("ppt/slides/slide1.xml", &slide),
+        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
+    ]);
+    let pages = PmlRenderer::from_pptx(pptx).expect("pptx loads").build_pages_for_test(&FontCache::new());
+    let fills: Vec<_> = pages[0].shapes.iter().filter_map(|s| s.solid_fill_hex()).collect();
+    assert!(fills.contains(&"rgba(68,114,196,0.500)"), "accent 1 at 50 % opacity: {fills:?}");
+    // accent 1 (hue 219°) turned back 180° to an orange: the complement.
+    assert!(fills.contains(&"#C49644"), "hue offset applied: {fills:?}");
+}
+
 #[test]
 fn schemeclr_shape_fill_resolves_to_theme_color() {
     use crate::engine::fonts::FontCache;
@@ -2191,7 +2256,7 @@ fn gradfill_background_resolves_stops_and_angle() {
     assert_eq!(
         pages[0].bg,
         Some(shape::SlideBg::Gradient {
-            stops: vec![(0.0, "#002060".to_string()), (1.0, "#7030a0".to_string())],
+            stops: vec![(0.0, "#002060".to_string()), (1.0, "#7030A0".to_string())],
             angle_deg: 90.0,
         }),
         "2-stop srgbClr gradFill bg resolves with its linear angle"
@@ -2241,7 +2306,7 @@ fn gradfill_path_background_resolves_radial_with_corner_focus() {
     assert_eq!(
         pages[0].bg,
         Some(shape::SlideBg::Radial {
-            stops: vec![(0.0, "#002060".to_string()), (1.0, "#7030a0".to_string())],
+            stops: vec![(0.0, "#002060".to_string()), (1.0, "#7030A0".to_string())],
             focus: (1.0, 1.0),
         }),
         "path gradFill resolves to a radial bg focused at the fillToRect corner"
