@@ -123,7 +123,7 @@ pub(crate) fn layout_hdr_ftr_blocks(
     for block in &flat {
         match block {
             FlatBlock::Para(p) => {
-                let cache = layout_paragraph(font_cache, p, content_width, None, style_ctx, default_ppr, default_tab_stop_px, theme_fonts, None, &[], &[], None, false, None)?;
+                let cache = layout_paragraph(font_cache, p, content_width, None, style_ctx, default_ppr, default_tab_stop_px, theme_fonts, &[], &[], None, false, None)?;
                 out_blocks.push(HfBlock::Paragraph(cache));
             }
             FlatBlock::Table(t) => {

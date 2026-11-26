@@ -206,7 +206,7 @@ pub(crate) fn layout_text_box(
             let cache = match layout_paragraph(
                 font_cache, p, inner_width, marker.as_ref(),
                 style_ctx, default_ppr, default_tab_stop_px,
-                theme_fonts, None, &[], &[],
+                theme_fonts, &[], &[],
                 None,
                 false,
                 None, // R28 — textbox interior is a non-captured stream (R22)

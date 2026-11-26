@@ -227,44 +227,49 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
     map
 }
 
-// ─── The default paragraph style ────────────────────────────────────────────
+// ─── The default paragraph and table styles ─────────────────────────────────
 
-/// Key under which the document's default paragraph style is registered in the
-/// style map. NUL cannot appear in XML, so no real styleId can collide with it.
+/// Keys under which the document's default paragraph and table styles are
+/// registered in the style map. NUL cannot appear in XML, so no real styleId
+/// can collide with them.
 pub(crate) const DEFAULT_PARAGRAPH_STYLE_KEY: &str = "\u{0}default-paragraph-style";
+pub(crate) const DEFAULT_TABLE_STYLE_KEY: &str = "\u{0}default-table-style";
 
 /// §17.7.4.17: the default paragraph style "applies to every paragraph that
-/// carries no pStyle". It is the style with `w:default` true and type paragraph
-/// (an absent `w:type` means paragraph); when several claim it, the last one in
-/// the part wins. Word writes Normal paragraphs without a pStyle, so most body
-/// text reaches its Normal style only through this rule.
+/// carries no pStyle", and the default table style to every table with no
+/// tblStyle. Each is the style of its type with `w:default` true (an absent
+/// `w:type` means paragraph); when several claim it, the last one in the part
+/// wins. Word writes Normal paragraphs without a pStyle, so most body text
+/// reaches its Normal style only through this rule.
 ///
-/// Registered once at load as an alias entry whose `basedOn` is the default
-/// style, so every style-chain walk falls back to `DEFAULT_PARAGRAPH_STYLE_KEY`
-/// and reaches it in one keyed lookup. Picked from `styles.style` (document
-/// order), not from the context's map, which has none.
-pub(crate) fn register_default_paragraph_style(
+/// Registered once at load as alias entries whose `basedOn` is the default
+/// style, so a style-chain walk that starts from the key reaches it in one
+/// keyed lookup. Picked from `styles.style` (document order), not from the
+/// context's map, which has none.
+pub(crate) fn register_default_styles(
     ctx: &mut ooxml_wml::ext::StyleContext,
     styles: &ooxml_wml::types::Styles,
 ) {
     use ooxml_wml::types::{CTString, STStyleType, Style};
-    let default_id = styles
-        .style
-        .iter()
-        .rev()
-        .filter(|s| {
-            matches!(s.r#type, None | Some(STStyleType::Paragraph))
-                && s.default.as_deref().is_some_and(crate::on_off)
-        })
-        .find_map(|s| s.style_id.clone());
-    if let Some(id) = default_id {
-        ctx.styles.insert(
-            DEFAULT_PARAGRAPH_STYLE_KEY.to_string(),
-            Style {
-                based_on: Some(Box::new(CTString { value: id })),
-                ..Default::default()
-            },
-        );
+    for (key, kind) in [(DEFAULT_PARAGRAPH_STYLE_KEY, STStyleType::Paragraph), (DEFAULT_TABLE_STYLE_KEY, STStyleType::Table)] {
+        let default_id = styles
+            .style
+            .iter()
+            .rev()
+            .filter(|s| {
+                s.r#type.unwrap_or(STStyleType::Paragraph) == kind
+                    && s.default.as_deref().is_some_and(crate::on_off)
+            })
+            .find_map(|s| s.style_id.clone());
+        if let Some(id) = default_id {
+            ctx.styles.insert(
+                key.to_string(),
+                Style {
+                    based_on: Some(Box::new(CTString { value: id })),
+                    ..Default::default()
+                },
+            );
+        }
     }
 }
 
@@ -301,7 +306,7 @@ pub(crate) fn inject_builtin_hdr_ftr_styles(ctx: &mut ooxml_wml::ext::StyleConte
         STTabJc, Style,
     };
     // basedOn target: the document's default paragraph style (Word chains the
-    // built-ins off Normal), as `register_default_paragraph_style` picked it,
+    // built-ins off Normal), as `register_default_styles` picked it,
     // which must run first. A missing target breaks safely — the style-chain
     // collector tolerates dangling basedOn ids.
     let default_para_id = default_paragraph_style_id(ctx).unwrap_or("Normal").to_string();

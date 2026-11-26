@@ -244,9 +244,8 @@ pub(crate) fn layout_paragraph(
     default_ppr: Option<&ooxml_wml::types::CTPPrGeneral>,
     default_tab_stop_px: f64,
     theme_fonts: &ThemeFonts,
-    table_style_id: Option<&str>,
     table_style_rprs: &[&ooxml_wml::types::RunProperties],
-    table_cond_pprs: &[&ooxml_wml::types::CTPPrGeneral],
+    table_style_pprs: &[&ooxml_wml::types::CTPPrGeneral],
     grid_pitch_px: Option<f64>,
     exact_row: bool,
     // Selection capture — `Some` ONLY on the cache-build walk (body + table cells);
@@ -258,7 +257,7 @@ pub(crate) fn layout_paragraph(
     // its own (its run walk is the bulk of the shaping).
     let faces = FaceCache::new();
     let list = marker.and_then(|m| m.p_pr.as_deref().map(|ppr| ListPpr { ppr, direct: m.direct }));
-    let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, list, table_style_id, table_cond_pprs, grid_pitch_px, exact_row, theme_fonts);
+    let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, list, table_style_pprs, grid_pitch_px, exact_row, theme_fonts);
 
     let (mut items, anchored_images, anchored_text_boxes, footnote_ids, endnote_ids) = collect_items(font_cache, paragraph, style_ctx, theme_fonts, table_style_rprs)?;
 
@@ -819,20 +818,16 @@ impl ParagraphLayout {
         style_ctx: &StyleContext,
         default_ppr: Option<&ooxml_wml::types::CTPPrGeneral>,
         list: Option<ListPpr>,
-        table_style_id: Option<&str>,
-        table_cond_pprs: &[&ooxml_wml::types::CTPPrGeneral],
+        table_style_pprs: &[&ooxml_wml::types::CTPPrGeneral],
         section_grid_pitch_px: Option<f64>,
         exact_row: bool,
         theme_fonts: &ThemeFonts,
     ) -> Self {
         // Below direct formatting, nearest first (§17.7.2): the paragraph's
-        // style chain, its list level's pPr (§17.9.22), the table's
-        // conditional pPr (firstRow, firstCol, ...), the table style's.
+        // style chain, its list level's pPr (§17.9.22), the table style's
+        // pPr (its conditional regions, then the style itself).
         let chain = collect_paragraph_style_chain(paragraph, style_ctx);
-        let table_style_ppr = table_style_id
-            .and_then(|id| style_ctx.style(id))
-            .and_then(|s| s.p_pr.as_deref());
-        let tables = || table_cond_pprs.iter().copied().chain(table_style_ppr);
+        let tables = || table_style_pprs.iter().copied();
         let style_pprs: Vec<&ooxml_wml::types::CTPPrGeneral> =
             chain.iter().copied().chain(list.map(|l| l.ppr)).chain(tables()).collect();
         // The left and first-line indents keep the list out of the chain: its
@@ -1281,12 +1276,12 @@ mod doc_default_toggle_tests {
             ..Default::default()
         };
         let ctx = StyleContext::default();
-        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, None, &[], None, false, &ThemeFonts::empty());
+        let layout = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, Some(&defaults), None, &[], None, false, &ThemeFonts::empty());
         assert!(!layout.widow_control, "pPrDefault widowControl val=0");
         assert!(layout.keep_next, "pPrDefault keepNext");
         assert!(layout.keep_lines, "pPrDefault keepLines");
 
-        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, None, &[], None, false, &ThemeFonts::empty());
+        let none = ParagraphLayout::from_resolved(&Paragraph::default(), &ctx, None, None, &[], None, false, &ThemeFonts::empty());
         assert!(none.widow_control && !none.keep_next, "absent everywhere: the site defaults");
     }
 }
@@ -1420,8 +1415,13 @@ pub(crate) fn paragraph_style_chain<'a>(
     let style_id = paragraph.p_pr.as_ref()
         .and_then(|ppr| ppr.paragraph_style.as_ref())
         .map(|ps| ps.value.as_str());
-    let mut current_id = style_id.unwrap_or(DEFAULT_PARAGRAPH_STYLE_KEY).to_owned();
+    style_chain(ctx, style_id.unwrap_or(DEFAULT_PARAGRAPH_STYLE_KEY))
+}
 
+/// A style and the styles it is based on (§17.7.4.3), nearest first. Bounded,
+/// so a basedOn cycle ends.
+pub(crate) fn style_chain<'a>(ctx: &'a StyleContext, style_id: &str) -> Vec<&'a ooxml_wml::types::Style> {
+    let mut current_id = style_id.to_owned();
     let mut result = Vec::new();
     while result.len() < 20 {
         let Some(style) = ctx.style(&current_id) else { break };

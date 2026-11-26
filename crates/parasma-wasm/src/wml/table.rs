@@ -32,7 +32,8 @@ use crate::wml::float::{
 };
 use crate::wml::float_resolve::{resolve_anchor_position, FrameCtx};
 use crate::wml::page::{PagedLine, PARA_SENTINEL};
-use crate::wml::paragraph::{gap_prev, paragraph_gap, ParagraphLayout};
+use crate::wml::loader::DEFAULT_TABLE_STYLE_KEY;
+use crate::wml::paragraph::{gap_prev, paragraph_gap, style_chain, ParagraphLayout};
 use crate::wml::render::layout_text_box;
 
 // ─── Table layout cache ─────────────────────────────────────────────────────
@@ -739,16 +740,12 @@ pub(crate) fn layout_table(
         None => (0, 0),
     };
     let props = table.properties();
-    let tbl_style_id = props.tbl_style.as_ref().map(|s| s.value.as_str());
+    let style = TableStyle::of(props, style_ctx);
 
     // §17.4.42: each edge from the table's own tblCellMar, else from its
-    // style's, else the default.
+    // style hierarchy's, else the default.
     let mut table_mar = CellMargins::DEFAULT;
-    let style_mar = tbl_style_id
-        .and_then(|id| style_ctx.style(id))
-        .and_then(|s| s.table_properties.as_ref())
-        .and_then(|tp| tp.tbl_cell_mar.as_deref());
-    for m in style_mar.into_iter().chain(props.tbl_cell_mar.as_deref()) {
+    for m in style.tbl_prs().filter_map(|tp| tp.tbl_cell_mar.as_deref()).chain(props.tbl_cell_mar.as_deref()) {
         table_mar.overlay(m.top.as_deref(), m.bottom.as_deref(), m.start.as_deref().or(m.left.as_deref()), m.end.as_deref().or(m.right.as_deref()));
     }
 
@@ -795,17 +792,12 @@ pub(crate) fn layout_table(
     };
 
     let (border_color, has_borders) = extract_table_border_info(props);
-    let table_border_edges = extract_table_border_edges(theme_fonts, props, tbl_style_id, style_ctx);
+    let table_border_edges = extract_table_border_edges(theme_fonts, props, &style);
     let alignment = props.justification.as_ref()
         .map(|j| j.value)
         .unwrap_or(STJcTable::Start);
 
     let look = TableLook::read(props.tbl_look.as_deref());
-
-    let style_overrides: &[ooxml_wml::types::TableStyleProperties] = tbl_style_id
-        .and_then(|id| style_ctx.style(id))
-        .map(|s| s.tbl_style_pr.as_slice())
-        .unwrap_or(&[]);
 
     let table_rows = table_rows(table);
     let num_rows = table_rows.len();
@@ -864,18 +856,17 @@ pub(crate) fn layout_table(
             }
             let cell_content_width = (cell_width - mar.left - mar.right).max(0.0);
 
-            let table_base_rpr = tbl_style_id
-                .and_then(|id| style_ctx.style(id))
-                .and_then(|s| s.r_pr.as_deref());
-            let cond_rprs = collect_conditional_run_properties(
-                look, at,
-                style_overrides, table_base_rpr,
-            );
-
-            let cond_pprs = collect_conditional_para_properties(
-                look, at,
-                style_overrides,
-            );
+            let region_props = style.region_props(&conditional_regions(look, at));
+            // Run and paragraph properties from the style, nearest first:
+            // the cell's regions, then the style itself.
+            let style_rprs: Vec<&ooxml_wml::types::RunProperties> = region_props.iter()
+                .filter_map(|o| o.r_pr.as_deref())
+                .chain(style.chain.iter().filter_map(|s| s.r_pr.as_deref()))
+                .collect();
+            let style_pprs: Vec<&ooxml_wml::types::CTPPrGeneral> = region_props.iter()
+                .filter_map(|o| o.p_pr.as_deref())
+                .chain(style.chain.iter().filter_map(|s| s.p_pr.as_deref()))
+                .collect();
 
             let mut cell_blocks: Vec<CellBlock> = Vec::new();
             if !v_merged_away {
@@ -890,7 +881,7 @@ pub(crate) fn layout_table(
                             if let Some(cap) = capture.as_deref_mut() {
                                 cap.location = cell_para_location(cap.nested, cap_sec, cap_block, row_idx, cell_idx);
                             }
-                            let cache = layout_paragraph(font_cache, p, cell_content_width, marker.as_ref(), style_ctx, default_ppr, default_tab_stop_px, theme_fonts, tbl_style_id, &cond_rprs, &cond_pprs, None, is_exact_row, capture.as_deref_mut())?;
+                            let cache = layout_paragraph(font_cache, p, cell_content_width, marker.as_ref(), style_ctx, default_ppr, default_tab_stop_px, theme_fonts, &style_rprs, &style_pprs, None, is_exact_row, capture.as_deref_mut())?;
                             cell_blocks.push(CellBlock::Paragraph(cache));
                         }
                         FlatBlock::Table(nested) => {
@@ -920,30 +911,21 @@ pub(crate) fn layout_table(
                 .map(|s| theme_fonts.wml_shading(s));
 
             let fill_color = direct_fill.unwrap_or_else(|| {
-                resolve_conditional_cell_fill(
-                    theme_fonts,
-                    look, at,
-                    style_overrides,
-                )
+                region_props.iter()
+                    .find_map(|o| o.cell_properties.as_ref()?.shading.as_ref())
+                    .and_then(|shd| theme_fonts.wml_shading(shd))
             });
 
-            let direct_valign = cell.properties()
+            let v_align = cell.properties()
                 .and_then(|p| p.v_align.as_ref())
-                .map(|va| va.value);
-            let v_align = match direct_valign {
-                Some(ooxml_wml::types::STVerticalJc::Center) => CellVAlign::Center,
-                Some(ooxml_wml::types::STVerticalJc::Bottom) => CellVAlign::Bottom,
-                Some(_) => CellVAlign::Top,
-                None => resolve_conditional_cell_valign(
-                    look, at,
-                    style_overrides,
-                ),
-            };
+                .or_else(|| region_props.iter().find_map(|o| o.cell_properties.as_ref()?.v_align.as_ref()))
+                .map_or(CellVAlign::Top, |va| match va.value {
+                    ooxml_wml::types::STVerticalJc::Center => CellVAlign::Center,
+                    ooxml_wml::types::STVerticalJc::Bottom => CellVAlign::Bottom,
+                    _ => CellVAlign::Top,
+                });
 
-            let cond_borders = resolve_conditional_cell_borders(
-                theme_fonts, look, at,
-                style_overrides,
-            );
+            let cond_borders = resolve_conditional_cell_borders(theme_fonts, at, &region_props);
             let (cell_bdr_top, cell_bdr_bottom, cell_bdr_left, cell_bdr_right) =
                 extract_cell_borders(theme_fonts, cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, num_cols);
             row_direct.push(direct_cell_edges(cell));
@@ -1017,6 +999,38 @@ pub(crate) fn layout_table(
     Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px })
 }
 
+/// A table's style and the styles it is based on, nearest first (§17.7.6).
+/// A table that names no style uses the default table style (§17.7.4.17).
+struct TableStyle<'a> {
+    chain: Vec<&'a ooxml_wml::types::Style>,
+}
+
+impl<'a> TableStyle<'a> {
+    fn of(props: &ooxml_wml::types::TableProperties, ctx: &'a StyleContext) -> Self {
+        let id = props.tbl_style.as_ref().map_or(DEFAULT_TABLE_STYLE_KEY, |s| s.value.as_str());
+        Self { chain: style_chain(ctx, id) }
+    }
+
+    /// The hierarchy's table-wide tblPr, base first, so a later one overrides.
+    fn tbl_prs(&self) -> impl Iterator<Item = &'a ooxml_wml::types::CTTblPrBase> + '_ {
+        self.chain.iter().rev().filter_map(|s| s.table_properties.as_deref())
+    }
+
+    /// The tblStylePr that format a cell in `regions` (least specific first,
+    /// as `conditional_regions` gives them), most specific first: a more
+    /// specific region before a less specific one, and within a region the
+    /// nearest style before the ones it is based on.
+    fn region_props(&self, regions: &[ooxml_wml::types::STTblStyleOverrideType]) -> Vec<&'a ooxml_wml::types::TableStyleProperties> {
+        let mut out = Vec::new();
+        for region in regions.iter().rev() {
+            for style in &self.chain {
+                out.extend(style.tbl_style_pr.iter().filter(|o| o.r#type == *region));
+            }
+        }
+        out
+    }
+}
+
 /// §17.4.55 tblLook: which of its style's conditional regions a table uses.
 #[derive(Clone, Copy, Default)]
 struct TableLook {
@@ -1061,7 +1075,7 @@ struct CellPlace {
 
 /// The `tblStylePr` conditional regions that apply to a cell, ordered
 /// least→most specific (banding first, then first/last col, then first/last
-/// row). Callers iterate `.rev()` so the most specific region wins.
+/// row); `TableStyle::region_props` turns them into formatting sources.
 /// The header and total rows are outside the bands, and the first band
 /// starts under the header. DEVIATION, declared: §17.7.6 applies first/last
 /// column after first/last row; here the row regions win a corner cell.
@@ -1079,49 +1093,6 @@ fn conditional_regions(look: TableLook, at: CellPlace) -> Vec<ooxml_wml::types::
     if header { regions.push(FirstRow); }
     if total { regions.push(LastRow); }
     regions
-}
-
-fn resolve_conditional_cell_fill(
-    theme: &ThemeFonts,
-    look: TableLook, at: CellPlace,
-    overrides: &[ooxml_wml::types::TableStyleProperties],
-) -> Option<String> {
-    let regions = conditional_regions(look, at);
-    for region in regions.iter().rev() {
-        for ov in overrides {
-            if ov.r#type == *region {
-                if let Some(ref tcp) = ov.cell_properties {
-                    if let Some(ref shd) = tcp.shading {
-                        return theme.wml_shading(shd);
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn resolve_conditional_cell_valign(
-    look: TableLook, at: CellPlace,
-    overrides: &[ooxml_wml::types::TableStyleProperties],
-) -> CellVAlign {
-    let regions = conditional_regions(look, at);
-    for region in regions.iter().rev() {
-        for ov in overrides {
-            if ov.r#type == *region {
-                if let Some(ref tcp) = ov.cell_properties {
-                    if let Some(ref va) = tcp.v_align {
-                        return match va.value {
-                            ooxml_wml::types::STVerticalJc::Center => CellVAlign::Center,
-                            ooxml_wml::types::STVerticalJc::Bottom => CellVAlign::Bottom,
-                            _ => CellVAlign::Top,
-                        };
-                    }
-                }
-            }
-        }
-    }
-    CellVAlign::Top
 }
 
 /// Conditional border edges for a cell from `tblStylePr` regions.
@@ -1143,10 +1114,9 @@ type EdgeOverrides = (
 
 fn resolve_conditional_cell_borders(
     theme: &ThemeFonts,
-    look: TableLook, at: CellPlace,
-    overrides: &[ooxml_wml::types::TableStyleProperties],
+    at: CellPlace,
+    region_props: &[&ooxml_wml::types::TableStyleProperties],
 ) -> EdgeOverrides {
-    let regions = conditional_regions(look, at);
     let is_top = at.row_idx == 0;
     let is_bottom = at.row_idx + 1 >= at.num_rows;
     let is_left = at.col_idx == 0;
@@ -1157,91 +1127,46 @@ fn resolve_conditional_cell_borders(
     // A region that specifies an edge — drawn OR explicit-nil — records
     // Some(..) so the cell-resolution short-circuits the table default (a
     // firstRow region can thus explicitly REMOVE the header separator).
-    for region in regions.iter() {
+    for ov in region_props.iter().rev() {
         // Where this cell sits on the region's outline: a row region (the
         // header and total rows, a band) spans the row; a column region spans
         // the column.
         use ooxml_wml::types::STTblStyleOverrideType as R;
-        let (on_top, on_bottom, on_left, on_right) = match region {
+        let (on_top, on_bottom, on_left, on_right) = match ov.r#type {
             R::FirstCol | R::LastCol => (is_top, is_bottom, true, true),
             _ => (true, true, is_left, is_right),
         };
-        for ov in overrides {
-            if ov.r#type != *region { continue; }
-            // Region cell tcBorders: its top, bottom, left and right draw the
-            // region's outline, its insideH and insideV the edges between the
-            // region's cells (§17.7.6).
-            if let Some(ref tcp) = ov.cell_properties {
-                if let Some(ref b) = tcp.tc_borders {
-                    let start = || edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start));
-                    let end = || edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end));
-                    let pick = |outline: bool, edge: Option<Option<CellBorderEdge>>, inside: &Option<Box<ooxml_wml::types::CTBorder>>| {
-                        if outline { edge } else { edge_override(theme, inside) }
-                    };
-                    if let Some(v) = pick(on_top, edge_override(theme, &b.top), &b.inside_h) { top = Some(v); }
-                    if let Some(v) = pick(on_bottom, edge_override(theme, &b.bottom), &b.inside_h) { bottom = Some(v); }
-                    if let Some(v) = pick(on_left, start(), &b.inside_v) { left = Some(v); }
-                    if let Some(v) = pick(on_right, end(), &b.inside_v) { right = Some(v); }
-                }
+        // Region cell tcBorders: its top, bottom, left and right draw the
+        // region's outline, its insideH and insideV the edges between the
+        // region's cells (§17.7.6).
+        if let Some(ref tcp) = ov.cell_properties {
+            if let Some(ref b) = tcp.tc_borders {
+                let start = || edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start));
+                let end = || edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end));
+                let pick = |outline: bool, edge: Option<Option<CellBorderEdge>>, inside: &Option<Box<ooxml_wml::types::CTBorder>>| {
+                    if outline { edge } else { edge_override(theme, inside) }
+                };
+                if let Some(v) = pick(on_top, edge_override(theme, &b.top), &b.inside_h) { top = Some(v); }
+                if let Some(v) = pick(on_bottom, edge_override(theme, &b.bottom), &b.inside_h) { bottom = Some(v); }
+                if let Some(v) = pick(on_left, start(), &b.inside_v) { left = Some(v); }
+                if let Some(v) = pick(on_right, end(), &b.inside_v) { right = Some(v); }
             }
-            // Region tblPr tblBorders → outer edges + insideH/V for the region.
-            if let Some(ref tp) = ov.table_properties {
-                if let Some(ref b) = tp.tbl_borders {
-                    if is_top { if let Some(v) = edge_override(theme, &b.top) { top = Some(v); } }
-                    else if let Some(v) = edge_override(theme, &b.inside_h) { top = Some(v); }
-                    if is_bottom { if let Some(v) = edge_override(theme, &b.bottom) { bottom = Some(v); } }
-                    else if let Some(v) = edge_override(theme, &b.inside_h) { bottom = Some(v); }
-                    if is_left { if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { left = Some(v); } }
-                    else if let Some(v) = edge_override(theme, &b.inside_v) { left = Some(v); }
-                    if is_right { if let Some(v) = edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end)) { right = Some(v); } }
-                    else if let Some(v) = edge_override(theme, &b.inside_v) { right = Some(v); }
-                }
+        }
+        // Region tblPr tblBorders → outer edges + insideH/V for the region.
+        if let Some(ref tp) = ov.table_properties {
+            if let Some(ref b) = tp.tbl_borders {
+                if is_top { if let Some(v) = edge_override(theme, &b.top) { top = Some(v); } }
+                else if let Some(v) = edge_override(theme, &b.inside_h) { top = Some(v); }
+                if is_bottom { if let Some(v) = edge_override(theme, &b.bottom) { bottom = Some(v); } }
+                else if let Some(v) = edge_override(theme, &b.inside_h) { bottom = Some(v); }
+                if is_left { if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { left = Some(v); } }
+                else if let Some(v) = edge_override(theme, &b.inside_v) { left = Some(v); }
+                if is_right { if let Some(v) = edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end)) { right = Some(v); } }
+                else if let Some(v) = edge_override(theme, &b.inside_v) { right = Some(v); }
             }
         }
     }
     (top, bottom, left, right)
-}
-
-fn collect_conditional_para_properties(
-    look: TableLook, at: CellPlace,
-    overrides: &[ooxml_wml::types::TableStyleProperties],
-) -> Vec<&ooxml_wml::types::CTPPrGeneral> {
-    let regions = conditional_regions(look, at);
-
-    let mut result = Vec::new();
-    for region in regions.iter().rev() {
-        for ov in overrides {
-            if ov.r#type == *region {
-                if let Some(ref ppr) = ov.p_pr {
-                    result.push(ppr.as_ref());
-                }
-            }
-        }
-    }
-    result
-}
-
-fn collect_conditional_run_properties<'a>(
-    look: TableLook, at: CellPlace,
-    overrides: &'a [ooxml_wml::types::TableStyleProperties],
-    table_style_rpr: Option<&'a ooxml_wml::types::RunProperties>,
-) -> Vec<&'a ooxml_wml::types::RunProperties> {
-    let regions = conditional_regions(look, at);
-
-    let mut result = Vec::new();
-    for region in regions.iter().rev() {
-        for ov in overrides {
-            if ov.r#type == *region {
-                if let Some(ref rpr) = ov.r_pr {
-                    result.push(rpr.as_ref());
-                }
-            }
-        }
-    }
-    if let Some(rpr) = table_style_rpr {
-        result.push(rpr);
-    }
-    result
 }
 
 /// A table's rows, at any depth inside row-level content controls
@@ -1432,33 +1357,24 @@ fn edge_override(theme: &ThemeFonts, b: &Option<Box<ooxml_wml::types::CTBorder>>
     b.as_ref().map(|bd| border_value(theme, bd))
 }
 
+/// The table's own borders: each edge from the table's tblBorders, else
+/// from its style hierarchy's (§17.4.38); the nearest that names the edge
+/// decides, a nil there removing it.
 fn extract_table_border_edges(
     theme: &ThemeFonts,
     props: &ooxml_wml::types::TableProperties,
-    tbl_style_id: Option<&str>,
-    style_ctx: &StyleContext,
+    style: &TableStyle,
 ) -> TableBorderEdges {
-    let borders = props.tbl_borders.as_ref()
-        .or_else(|| {
-            tbl_style_id
-                .and_then(|id| style_ctx.style(id))
-                .and_then(|s| s.table_properties.as_ref())
-                .and_then(|tp| tp.tbl_borders.as_ref())
-        });
-    match borders {
-        Some(b) => TableBorderEdges {
-            top: border_to_edge(theme, &b.top),
-            bottom: border_to_edge(theme, &b.bottom),
-            left: border_to_edge(theme, &b.left).or_else(|| border_to_edge(theme, &b.start)),
-            right: border_to_edge(theme, &b.right).or_else(|| border_to_edge(theme, &b.end)),
-            inside_h: border_to_edge(theme, &b.inside_h),
-            inside_v: border_to_edge(theme, &b.inside_v),
-        },
-        None => TableBorderEdges {
-            top: None, bottom: None, left: None, right: None,
-            inside_h: None, inside_v: None,
-        },
+    let mut e = TableBorderEdges { top: None, bottom: None, left: None, right: None, inside_h: None, inside_v: None };
+    for b in style.tbl_prs().filter_map(|tp| tp.tbl_borders.as_deref()).chain(props.tbl_borders.as_deref()) {
+        if let Some(v) = edge_override(theme, &b.top) { e.top = v; }
+        if let Some(v) = edge_override(theme, &b.bottom) { e.bottom = v; }
+        if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { e.left = v; }
+        if let Some(v) = edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end)) { e.right = v; }
+        if let Some(v) = edge_override(theme, &b.inside_h) { e.inside_h = v; }
+        if let Some(v) = edge_override(theme, &b.inside_v) { e.inside_v = v; }
     }
+    e
 }
 
 #[allow(clippy::too_many_arguments)] // positional orchestrator args (deferred)

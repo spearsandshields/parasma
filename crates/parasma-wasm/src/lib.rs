@@ -131,7 +131,7 @@ use wml::linebreak::{
 };
 use wml::loader::{
     build_numbering_lookup, build_sections, extract_core_date, extract_hdr_ftr_images,
-    inject_builtin_hdr_ftr_styles, register_default_paragraph_style, Section,
+    inject_builtin_hdr_ftr_styles, register_default_styles, Section,
 };
 // Re-export so `crate::Item` keeps resolving for `wml::bidi` and `wml::float`
 // (a canary: bidi.rs's `use crate::Item;` must compile unedited) and for
@@ -2341,7 +2341,7 @@ impl Viewer {
         // over the eagerly-parsed styles; `from_styles` deep-clones into an owned
         // map, so the borrow ends before the `&mut doc` calls below).
         let mut style_ctx = StyleContext::from_styles(doc.styles());
-        register_default_paragraph_style(&mut style_ctx, doc.styles());
+        register_default_styles(&mut style_ctx, doc.styles());
         // Synthesize Word's built-in Header/Footer styles when styles.xml
         // does not define them (insert-only-when-absent — see the fn docs).
         // BEFORE build_numbering_lookup is harmless: the injected ids are
@@ -3126,7 +3126,7 @@ impl Viewer {
                         let cache = layout_paragraph(
                             &self.font_cache, p, content_width, marker.as_ref(),
                             &w.style_ctx, w.default_ppr.as_ref(),
-                            w.default_tab_stop_px, &w.theme_fonts, None, &[], &[],
+                            w.default_tab_stop_px, &w.theme_fonts, &[], &[],
                             if w.grid_enabled { geo.grid_pitch_px } else { None },
                             false,
                             Some(&mut cap),

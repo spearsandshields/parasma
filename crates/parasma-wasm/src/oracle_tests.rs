@@ -11945,3 +11945,56 @@ fn restart_cant_split_row_taller_than_a_page() {
     assert!(log_has(&log, |r| matches!(r, super::ResumeAt::RowWhole { .. })), "the row is pushed whole first");
     assert!(log_has(&log, |r| matches!(r, super::ResumeAt::RowSplit { .. })), "and then splits");
 }
+
+// ── Table style inheritance (§17.7.6, §17.7.4.3 basedOn) ────────────────────
+
+const ALL_SINGLE: &str = r#"<w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders>"#;
+
+/// `Base` rules a grid, pads the left side, enlarges the text and fills the
+/// header; `Derived` is based on it and adds only a first band.
+fn derived_styles() -> String {
+    format!(
+        r#"<w:style w:type="table" w:styleId="Base"><w:name w:val="Base"/><w:pPr><w:spacing w:after="400"/></w:pPr><w:rPr><w:sz w:val="48"/></w:rPr><w:tblPr>{ALL_SINGLE}<w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:val="clear" w:fill="111111"/></w:tcPr></w:tblStylePr></w:style><w:style w:type="table" w:styleId="Derived"><w:name w:val="Derived"/><w:basedOn w:val="Base"/><w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:val="clear" w:fill="AAAAAA"/></w:tcPr></w:tblStylePr></w:style>"#
+    )
+}
+
+fn two_rows(tbl_pr: &str, styles: &str) -> Vec<PagedTableRow> {
+    let row = format!("{}{}", bcell("", "a"), bcell("", "b"));
+    table_rows_of(&layout(bordered_table_docx(tbl_pr, &[&row, &row], styles)))
+}
+
+/// A table style takes everything it does not set from the style it is
+/// based on: borders, cell margins, conditional regions, text formatting.
+#[test]
+fn a_table_style_inherits_through_based_on() {
+    let rows = two_rows(r#"<w:tblStyle w:val="Derived"/><w:tblLook w:firstRow="1"/>"#, &derived_styles());
+    let plain = two_rows("", "");
+    let cell = &rows[0].cells[0];
+    assert!(cell.border_top.is_some() && cell.border_right.is_some(), "the base style's grid");
+    assert_px(cell.lines[0].content_left - cell.x, 500.0 * PX_PER_TWIP, "the base style's left margin");
+    assert_eq!(cell.fill_color, fill("111111"), "the base style's header fill");
+    assert_eq!(rows[1].cells[0].fill_color, fill("AAAAAA"), "the derived style's own band");
+    assert!(cell.lines[0].line_height > plain[0].cells[0].lines[0].line_height * 1.5, "the base style's 24pt text");
+    assert!(rows[0].height_px > cell.lines[0].line_height + 20.0, "the base style's space after the paragraph");
+}
+
+/// §17.7.4.17: a table that names no style uses the default table style.
+#[test]
+fn a_table_without_a_style_uses_the_default_table_style() {
+    let styles = derived_styles().replace(r#"w:styleId="Derived""#, r#"w:default="1" w:styleId="Derived""#);
+    let rows = two_rows("", &styles);
+    assert!(rows[0].cells[0].border_top.is_some(), "the default style's grid");
+    assert_eq!(rows[0].cells[0].fill_color, fill("AAAAAA"), "no table look: no header, bands on");
+}
+
+/// A direct tblBorders that names one edge keeps the style's other edges.
+#[test]
+fn direct_table_borders_override_the_style_edge_by_edge() {
+    let direct = r#"<w:tblStyle w:val="Derived"/><w:tblBorders><w:insideH w:val="nil"/><w:top w:val="single" w:sz="24" w:color="FF0000"/></w:tblBorders>"#;
+    let rows = two_rows(direct, &derived_styles());
+    let cell = &rows[0].cells[0];
+    assert_eq!(cell.border_top.as_ref().map(|e| e.color.as_str()), Some("#FF0000"), "the direct top");
+    assert!(cell.border_bottom.is_none(), "the direct nil removes the rule between rows");
+    assert!(cell.border_left.is_some() && cell.border_right.is_some(), "the style's left and insideV stay");
+    assert!(rows[1].cells[0].border_bottom.is_some(), "the style's bottom stays");
+}

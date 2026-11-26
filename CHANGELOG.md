@@ -278,6 +278,11 @@ are held stable regardless.
 - Tables: a row taller than a whole page (a one-cell layout table, a cell
   with a long text block) now continues on the next page instead of running
   off the bottom, also when the row is set not to break across pages.
+- Tables: a table style based on another style (a customised Grid or List
+  table style, for example) inherits that style's borders, padding, header
+  and band formatting and text formatting, instead of showing as a bare
+  grid. Tables with no style use the document's default table style, and a
+  table that overrides one border keeps the rest of its style's borders.
 
 ### Changed
 
