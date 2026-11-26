@@ -8937,12 +8937,16 @@ impl RunStyle {
         let auto_color = color.is_none();
         let color = color.unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_owned());
 
-        let underline = resolve_run_option(
+        // The style and its colour come from the same `w:u` (§17.3.2.40).
+        let (underline, underline_color) = resolve_run_option(
             &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
-            |rpr| rpr.underline.as_ref().and_then(|u| u.value),
+            |rpr| rpr.underline.as_ref().and_then(|u| u.value.map(|v| {
+                (map_underline(v), theme_fonts.wml_color(
+                    u.color.as_deref(), u.theme_color.as_ref(), u.theme_tint.as_deref(), u.theme_shade.as_deref(),
+                ))
+            })),
         )
-        .map(map_underline)
-        .unwrap_or(Underline::None);
+        .unwrap_or((Underline::None, None));
 
         let strikethrough = resolve_run_toggle(
             &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
@@ -9055,7 +9059,7 @@ impl RunStyle {
         .map(|half_pts| pt_to_px(half_pts / 2.0))
         .unwrap_or(0.0);
 
-        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, auto_color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None }
+        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, auto_color, underline, underline_color, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None }
     }
 
     fn font_css(&self) -> String {
@@ -9140,19 +9144,26 @@ pub(crate) fn collect_char_style_rprs<'a>(
 /// with the §17.9.24 numbering-marker rPr digest (`MarkerRunOverrides`).
 #[allow(unreachable_patterns)] // exhaustive today; `_` kept as the pre-extraction fallback
 pub(crate) fn map_underline(v: ooxml_wml::types::STUnderline) -> Underline {
+    use ooxml_wml::types::STUnderline as S;
     match v {
-        ooxml_wml::types::STUnderline::Single | ooxml_wml::types::STUnderline::Words => Underline::Single,
-        ooxml_wml::types::STUnderline::Double => Underline::Double,
-        ooxml_wml::types::STUnderline::Thick => Underline::Thick,
-        ooxml_wml::types::STUnderline::Dotted | ooxml_wml::types::STUnderline::DottedHeavy => Underline::Dotted,
-        ooxml_wml::types::STUnderline::Dash | ooxml_wml::types::STUnderline::DashedHeavy |
-        ooxml_wml::types::STUnderline::DashLong | ooxml_wml::types::STUnderline::DashLongHeavy |
-        ooxml_wml::types::STUnderline::DotDash | ooxml_wml::types::STUnderline::DashDotHeavy |
-        ooxml_wml::types::STUnderline::DotDotDash | ooxml_wml::types::STUnderline::DashDotDotHeavy => Underline::Dash,
-        ooxml_wml::types::STUnderline::Wave | ooxml_wml::types::STUnderline::WavyHeavy |
-        ooxml_wml::types::STUnderline::WavyDouble => Underline::Wave,
-        ooxml_wml::types::STUnderline::None => Underline::None,
-        _ => Underline::Single,
+        S::Single => Underline::Single,
+        S::Words => Underline::Words,
+        S::Double => Underline::Double,
+        S::Thick => Underline::Thick,
+        S::Dotted => Underline::Dotted,
+        S::DottedHeavy => Underline::DottedHeavy,
+        S::Dash => Underline::Dash,
+        S::DashedHeavy => Underline::DashedHeavy,
+        S::DashLong => Underline::DashLong,
+        S::DashLongHeavy => Underline::DashLongHeavy,
+        S::DotDash => Underline::DotDash,
+        S::DashDotHeavy => Underline::DashDotHeavy,
+        S::DotDotDash => Underline::DotDotDash,
+        S::DashDotDotHeavy => Underline::DashDotDotHeavy,
+        S::Wave => Underline::Wave,
+        S::WavyHeavy => Underline::WavyHeavy,
+        S::WavyDouble => Underline::WavyDouble,
+        S::None => Underline::None,
     }
 }
 

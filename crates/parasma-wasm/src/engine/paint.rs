@@ -31,15 +31,57 @@ use web_sys::{CanvasRenderingContext2d, ImageBitmap};
 
 use super::units::pt_to_px;
 
+/// An underline style (§17.18.99 `ST_Underline`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Underline {
     None,
     Single,
+    /// Under the words, not the spaces between them.
+    Words,
     Double,
     Thick,
     Dotted,
+    DottedHeavy,
     Dash,
+    DashedHeavy,
+    DashLong,
+    DashLongHeavy,
+    DotDash,
+    DashDotHeavy,
+    DotDotDash,
+    DashDotDotHeavy,
     Wave,
+    WavyHeavy,
+    WavyDouble,
+}
+
+impl Underline {
+    /// The seven families the clipboard's HTML flavour distinguishes.
+    pub(crate) fn family(self) -> Underline {
+        use Underline as U;
+        match self {
+            U::Words => U::Single,
+            U::DottedHeavy => U::Dotted,
+            U::DashedHeavy | U::DashLong | U::DashLongHeavy | U::DotDash | U::DashDotHeavy
+            | U::DotDotDash | U::DashDotDotHeavy => U::Dash,
+            U::WavyHeavy | U::WavyDouble => U::Wave,
+            other => other,
+        }
+    }
+
+    /// The style's name in `ST_Underline`.
+    pub(crate) fn name(self) -> &'static str {
+        use Underline as U;
+        match self {
+            U::None => "none", U::Single => "single", U::Words => "words",
+            U::Double => "double", U::Thick => "thick", U::Dotted => "dotted",
+            U::DottedHeavy => "dottedHeavy", U::Dash => "dash", U::DashedHeavy => "dashedHeavy",
+            U::DashLong => "dashLong", U::DashLongHeavy => "dashLongHeavy", U::DotDash => "dotDash",
+            U::DashDotHeavy => "dashDotHeavy", U::DotDotDash => "dotDotDash",
+            U::DashDotDotHeavy => "dashDotDotHeavy", U::Wave => "wave",
+            U::WavyHeavy => "wavyHeavy", U::WavyDouble => "wavyDouble",
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -126,6 +168,9 @@ pub(crate) struct RunStyle {
     /// white over a dark background.
     pub(crate) auto_color: bool,
     pub(crate) underline: Underline,
+    /// The underline's own colour (§17.3.2.40 `w:u@color`); `None` is the
+    /// text colour.
+    pub(crate) underline_color: Option<String>,
     pub(crate) strikethrough: bool,
     pub(crate) double_strike: bool,
     pub(crate) vert_align: VertAlign,
@@ -173,6 +218,7 @@ impl Default for RunStyle {
             color: crate::DEFAULT_TEXT_COLOR.to_owned(),
             auto_color: true,
             underline: Underline::None,
+            underline_color: None,
             strikethrough: false,
             double_strike: false,
             vert_align: VertAlign::Baseline,
@@ -217,21 +263,14 @@ impl RunStyle {
             // An input to `color`: the page pass has already turned automatic
             // text white where it sits on a dark background, so `col` shows it.
             auto_color: _,
+            underline_color,
         } = self;
         let kern = match glyph_features.kerning {
             Kerning::HostDefault => "host",
             Kerning::Off => "off",
             Kerning::On => "on",
         };
-        let u = match underline {
-            Underline::None => "none",
-            Underline::Single => "single",
-            Underline::Double => "double",
-            Underline::Thick => "thick",
-            Underline::Dotted => "dotted",
-            Underline::Dash => "dash",
-            Underline::Wave => "wave",
-        };
+        let u = underline.name();
         let va = match vert_align {
             VertAlign::Baseline => "base",
             VertAlign::Superscript => "sup",
@@ -252,6 +291,9 @@ impl RunStyle {
         // Written only when set, so every run without one dumps as before.
         if let Some(m) = line_metrics_family {
             let _ = write!(out, " lmf{m:?}");
+        }
+        if let Some(c) = underline_color {
+            let _ = write!(out, " ulc{c:?}");
         }
     }
 }

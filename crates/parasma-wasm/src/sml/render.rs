@@ -828,6 +828,7 @@ fn cell_text_style(family: &str) -> RunStyle {
         run_is_complex: false,
         color: CELL_TEXT_COLOR.to_string(),
         auto_color: false,
+        underline_color: None,
         underline: Underline::None,
         strikethrough: false,
         double_strike: false,

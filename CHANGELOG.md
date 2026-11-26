@@ -55,6 +55,11 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: underlined tabs are drawn, so fill-in blanks ("Name: ____")
+  reappear. Dotted, dashed, dot-dash, long-dash and wavy underlines, and their
+  heavy and double variants, draw in their own style instead of as a plain
+  line; an underline's own colour is used; and "words only" underlines skip
+  the spaces.
 - Documents: shading draws its pattern: "solid" shading in its foreground
   colour (it was missing), percentage shading as the right shade of grey or
   colour, and stripes and crosses as their average tone. Shading, borders

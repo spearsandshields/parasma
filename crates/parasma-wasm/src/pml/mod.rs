@@ -1641,6 +1641,7 @@ fn run_style(run: &SlideRun) -> RunStyle {
         run_is_complex: false,
         color: run.color.clone(),
         auto_color: false,
+        underline_color: None,
         underline: Underline::None,
         strikethrough: false,
         double_strike: false,

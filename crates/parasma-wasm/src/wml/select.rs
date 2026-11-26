@@ -1010,16 +1010,10 @@ impl FragTable {
     }
 }
 
+/// The clipboard's underline token: one of seven families, so the HTML
+/// flavour's fixed token map stays complete.
 fn underline_str(u: Underline) -> &'static str {
-    match u {
-        Underline::None => "none",
-        Underline::Single => "single",
-        Underline::Double => "double",
-        Underline::Thick => "thick",
-        Underline::Dotted => "dotted",
-        Underline::Dash => "dash",
-        Underline::Wave => "wave",
-    }
+    u.family().name()
 }
 
 fn vert_align_str(v: VertAlign) -> &'static str {

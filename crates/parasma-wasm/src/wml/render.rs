@@ -559,28 +559,20 @@ pub(crate) fn render_line(
             && std::ptr::eq(item, seg.items.last().unwrap());
         let deco_w = decoration_width(item, is_line_final, ul_trail_space);
 
-        // Draw underline
-        if item.style.underline != Underline::None && item.image.is_none() && item.tab.is_none() {
-            p.set_stroke_style_str(&item.style.color);
-            let font_px = pt_to_px(item.style.font_pt);
-            let underline_y = line.baseline_y + font_px * 0.15;
-            let line_w = match item.style.underline {
-                Underline::Thick => 1.5,
-                Underline::Double => 0.7,
-                _ => 1.0,
+        // Underline. Tabs are underlined too (fill-in blanks are underlined
+        // tabs), over their whole width; "words" skips the spaces.
+        let ul = item.style.underline;
+        if ul != Underline::None && item.image.is_none() && !(ul == Underline::Words && item.tab.is_some()) {
+            let width = if item.tab.is_some() {
+                item.width
+            } else if ul == Underline::Words {
+                item.content_width
+            } else {
+                deco_w
             };
-            p.set_line_width(line_w);
-            p.begin_path();
-            p.move_to(x, underline_y);
-            p.line_to(x + deco_w, underline_y);
-            p.stroke();
-            if item.style.underline == Underline::Double {
-                let y2 = underline_y + 2.0;
-                p.begin_path();
-                p.move_to(x, y2);
-                p.line_to(x + deco_w, y2);
-                p.stroke();
-            }
+            let colour = item.style.underline_color.as_deref().unwrap_or(&item.style.color);
+            let font_px = pt_to_px(item.style.font_pt);
+            paint_underline(p, ul, colour, x, line.baseline_y + font_px * 0.15, width);
         }
 
         // Draw strikethrough
@@ -627,6 +619,75 @@ pub(crate) fn render_line(
       }
     }
     Ok(())
+}
+
+/// Draw an underline of style `ul` from `x` to `x + width` at `y`
+/// (§17.18.99). Dotted and dashed styles are dash patterns in units of the
+/// line width; wavy ones are a run of half-wave curves.
+///
+/// Declared: position and thickness are fixed fractions of the font size,
+/// not the font's own underline metrics.
+fn paint_underline(p: &dyn Painter, ul: Underline, colour: &str, x: f64, y: f64, width: f64) {
+    use Underline as U;
+    if width <= 0.0 {
+        return;
+    }
+    let heavy = matches!(ul, U::DottedHeavy | U::DashedHeavy | U::DashLongHeavy | U::DashDotHeavy | U::DashDotDotHeavy | U::WavyHeavy);
+    let t = match ul {
+        U::Thick => 1.5,
+        U::Double => 0.7,
+        _ if heavy => 2.0,
+        _ => 1.0,
+    };
+    p.set_stroke_style_str(colour);
+    p.set_line_width(t);
+    let straight = |y: f64| {
+        p.begin_path();
+        p.move_to(x, y);
+        p.line_to(x + width, y);
+        p.stroke();
+    };
+    let wave = |y: f64| {
+        let half = 2.0 * t + 1.0;
+        let amp = t + 0.5;
+        p.begin_path();
+        p.move_to(x, y);
+        let mut cx = x;
+        let mut up = true;
+        while cx < x + width {
+            let next = (cx + half).min(x + width);
+            p.quadratic_curve_to((cx + next) / 2.0, if up { y - amp } else { y + amp }, next, y);
+            cx = next;
+            up = !up;
+        }
+        p.stroke();
+    };
+    let dash: &[f64] = match ul {
+        U::Dotted | U::DottedHeavy => &[1.0, 2.0],
+        U::Dash | U::DashedHeavy => &[4.0, 3.0],
+        U::DashLong | U::DashLongHeavy => &[8.0, 4.0],
+        U::DotDash | U::DashDotHeavy => &[4.0, 2.0, 1.0, 2.0],
+        U::DotDotDash | U::DashDotDotHeavy => &[4.0, 2.0, 1.0, 2.0, 1.0, 2.0],
+        _ => &[],
+    };
+    match ul {
+        U::Wave | U::WavyHeavy => wave(y),
+        U::WavyDouble => {
+            wave(y);
+            wave(y + 2.5);
+        }
+        U::Double => {
+            straight(y);
+            straight(y + 2.0);
+        }
+        _ if !dash.is_empty() => {
+            let segments: Vec<f64> = dash.iter().map(|d| d * t).collect();
+            p.set_line_dash(&segments);
+            straight(y);
+            p.clear_line_dash();
+        }
+        _ => straight(y),
+    }
 }
 
 /// Horizontal extent of an item's text decorations (underline/strike).

@@ -10439,6 +10439,37 @@ fn shading_patterns_and_theme_colours() {
     assert_eq!(line("Border").border_top.as_ref().map(|b| b.color.as_str()), Some("#ED7D31"));
 }
 
+/// §17.3.2.40 underlines: an underlined tab is a fill-in blank and is drawn;
+/// dotted and dashed styles are dash patterns, wavy ones curves, and the
+/// underline takes its own colour.
+#[test]
+fn underlines_draw_tabs_styles_and_their_own_colour() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let strokes_for = |run: &str| {
+        let v = layout(numbering_docx("", "", &format!("<w:p>{run}</w:p>")));
+        let rec = RecordingPainter::new();
+        v.paint_wml_page(0, &rec, None).expect("paint");
+        let cmds: Vec<DrawCmd> = rec.cmds().to_vec();
+        cmds
+    };
+    let u = |val: &str, extra: &str, content: &str| format!(r#"<w:r><w:rPr><w:u w:val="{val}"{extra}/></w:rPr>{content}</w:r>"#);
+    // "Name:" then two underlined tabs: the blank must be ruled.
+    let tab = strokes_for(&format!("<w:r><w:t>Name:</w:t></w:r>{}", u("single", "", "<w:tab/><w:tab/>")));
+    let lines: Vec<_> = tab.windows(2).filter_map(|w| match (&w[0], &w[1]) {
+        (DrawCmd::MoveTo { x: x0, .. }, DrawCmd::LineTo { x: x1, .. }) => Some(x1 - x0),
+        _ => None,
+    }).collect();
+    assert!(lines.iter().any(|w| *w > 40.0), "the tabs are underlined: {lines:?}");
+
+    let dotted = strokes_for(&u("dotted", r#" w:color="FF0000""#, "<w:t>Dotted</w:t>"));
+    assert!(dotted.iter().any(|c| matches!(c, DrawCmd::SetLineDash(d) if d == &vec![1.0, 2.0])));
+    assert!(dotted.iter().any(|c| matches!(c, DrawCmd::SetStrokeStyle(s) if s == "#FF0000")), "its own colour");
+    assert!(dotted.iter().any(|c| matches!(c, DrawCmd::ClearLineDash)), "the dash is cleared after");
+
+    let wavy = strokes_for(&u("wave", "", "<w:t>Wavy</w:t>"));
+    assert!(wavy.iter().any(|c| matches!(c, DrawCmd::QuadraticCurveTo { .. })));
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);
