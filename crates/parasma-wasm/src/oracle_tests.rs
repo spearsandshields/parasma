@@ -10296,6 +10296,55 @@ fn a_section_break_inside_a_content_control_still_splits_the_document() {
     assert_eq!(v.pages.borrow().len(), 2, "a next-page section break");
 }
 
+/// §17.6.23: a section's `vAlign` places its pages' text vertically between
+/// the top and bottom margins, as cover pages use.
+#[test]
+fn a_section_aligned_to_the_centre_or_bottom_moves_its_text_down() {
+    let first_baseline = |valign: &str, page: usize| {
+        let cover = format!(
+            r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>{valign}</w:sectPr></w:pPr><w:r><w:t>Cover</w:t></w:r></w:p>"#
+        );
+        let v = layout(numbering_docx("", "", &(cover + &para("Body"))));
+        let pages = v.pages.borrow();
+        pages[page].elements.iter().find_map(|e| match e {
+            PageElement::Line(l) => Some(l.baseline_y),
+            _ => None,
+        }).expect("a line")
+    };
+    // Content area: 96 px to 960 px.
+    let top = first_baseline("", 0);
+    assert!(top < 130.0, "top-aligned by default: {top}");
+    let centre = first_baseline(r#"<w:vAlign w:val="center"/>"#, 0);
+    assert!((500.0..560.0).contains(&centre), "centred: {centre}");
+    let bottom = first_baseline(r#"<w:vAlign w:val="bottom"/>"#, 0);
+    assert!((920.0..960.0).contains(&bottom), "bottom: {bottom}");
+    // The next section is not aligned.
+    assert!(first_baseline(r#"<w:vAlign w:val="center"/>"#, 1) < 130.0);
+}
+
+/// §17.2.1: the document's page colour fills every page, under its content.
+/// A page colour given as a theme colour takes the theme's value.
+#[test]
+fn the_page_colour_fills_the_page() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let first_fill = |background: &str| {
+        let docx = numbering_docx("", "", &para("Text"));
+        let docx = unzip_replace(docx, "word/document.xml", "<w:body>", &format!("{background}<w:body>"));
+        let v = layout(docx);
+        let rec = RecordingPainter::new();
+        v.paint_wml_page(0, &rec, None).expect("paint");
+        let cmds = rec.cmds();
+        let fill = cmds.iter().find_map(|c| match c {
+            DrawCmd::SetFillStyle(f) => Some(f.clone()),
+            _ => None,
+        });
+        let strokes = cmds.iter().filter(|c| matches!(c, DrawCmd::StrokeRect { .. })).count();
+        (fill.expect("a fill"), strokes)
+    };
+    assert_eq!(first_fill(""), ("#ffffff".to_owned(), 0), "white, and no margin box");
+    assert_eq!(first_fill(r#"<w:background w:color="FFF2CC"/>"#).0, "#FFF2CC");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

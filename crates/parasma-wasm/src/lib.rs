@@ -109,7 +109,7 @@ static ALLOC_CENSUS: alloc_census::Counting = alloc_census::Counting;
 #[cfg(test)]
 mod ground_truth;
 
-use engine::color::{apply_tint_shade, highlight_color_to_css, ooxml_color_to_css};
+use engine::color::{highlight_color_to_css, ooxml_color_to_css};
 use engine::fonts::{
     parse_theme_fonts, resolve_font_with_fallbacks,
     text_has_complex, text_has_east_asia, DEFAULT_COMPLEX_FAMILY, DEFAULT_EAST_ASIA_FAMILY,
@@ -759,6 +759,10 @@ pub(crate) struct WmlRenderer {
     /// Document watermark (§ VML WordArt in a header), if any. Drawn page-centered
     /// behind body content. One per document (first found across section headers).
     watermark: Option<Watermark>,
+    /// The page colour (§17.2.1 `w:background`), drawn under everything on
+    /// every page; `None` is white. Declared: the background's fill drawing
+    /// (gradient, texture, picture) is not drawn, only its colour.
+    page_color: Option<String>,
     default_tab_stop_px: f64,
     /// Whether the document grid's line pitch may be applied to (Latin) body
     /// text. True only when the document does NOT use Far-East layout
@@ -1074,6 +1078,23 @@ fn effective_margin_top(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
         geo.header_margin_px + header_height
     } else {
         geo.margin_top_px
+    }
+}
+
+/// Move every line and table row in a page's body down by `dy`.
+fn shift_page_body(page: &mut PageLayout, dy: f64) {
+    for element in &mut page.elements {
+        match element {
+            PageElement::Line(line) => line.baseline_y += dy,
+            PageElement::TableRow(row) => {
+                row.y_top += dy;
+                for cell in &mut row.cells {
+                    for line in &mut cell.lines {
+                        line.baseline_y += dy;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2429,10 +2450,15 @@ impl Viewer {
             .find_map(|blocks| find_watermark_in_blocks(blocks, parts, &image_keys))
         });
 
+        let page_color = doc.gen_doc().background.as_deref().and_then(|bg| {
+            theme_fonts.wml_color(bg.color.as_deref(), bg.theme_color.as_ref(), bg.theme_tint.as_deref(), bg.theme_shade.as_deref())
+        });
+
         self.loaded = LoadedDoc::Wml(WmlRenderer {
             doc,
             sections,
             watermark,
+            page_color,
             default_tab_stop_px,
             grid_enabled,
             ul_trail_space,
@@ -3172,9 +3198,21 @@ impl Viewer {
 
             let hf_font_cache = &self.font_cache;
             let finish_page = |current: &mut PageLayout, section_page_idx: &mut usize,
-                               global_page_idx: &mut usize, _y_in_page: &mut f64,
+                               global_page_idx: &mut usize, y_in_page: &mut f64,
                                laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry|
                                -> Result<(), JsValue> {
+                // §17.6.23 vertical alignment: move the page's text down by the
+                // given share of the space left below it. Declared: only on
+                // one-column pages without notes, and floating objects keep
+                // their positions.
+                if geo.v_align > 0.0 && geo.columns.len() == 1
+                    && current.footnote_ids.is_empty() && current.endnote_ids.is_empty()
+                {
+                    let free = effective_content_height(laid_out_hf, geo, *section_page_idx) - *y_in_page;
+                    if free > 0.0 {
+                        shift_page_body(current, free * geo.v_align);
+                    }
+                }
                 // Stamp header/footer lines onto the page
                 let page_num = *global_page_idx + 1;
                 if let Some(hdr) = laid_out_hf.header_for_page(*section_page_idx) {
@@ -6615,20 +6653,10 @@ impl Viewer {
         // stays bounded by the SLICE at high zoom (the offset alone would leave it
         // page-sized and still overflow Skia). `clip == None` returns the full
         // page box → byte-identical.
-        p.set_fill_style_str("#ffffff");
+        p.set_fill_style_str(wml.and_then(|w| w.page_color.as_deref()).unwrap_or("#ffffff"));
         if let Some((bx, by, bw, bh)) = cull::bg_rect(clip, w, h) {
             p.fill_rect(bx, by, bw, bh);
         }
-
-        // Faint margin guide.
-        p.set_stroke_style_str("#e6edf3");
-        p.set_line_width(0.5);
-        p.stroke_rect(
-            geo.margin_left_px,
-            geo.margin_top_px,
-            geo.content_width_px(),
-            geo.content_height_px(),
-        );
 
         // §17.6.10 page borders. Drawn over the (empty) margin band, so the
         // simplified z-order (always front) is moot in practice. `space` is taken
@@ -8842,22 +8870,12 @@ impl RunStyle {
             &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
             |rpr| {
                 let c = rpr.color.as_ref()?;
-                // Theme color takes precedence if available, with themeTint /
-                // themeShade luminance modulation applied (§17.3.2.6).
-                if let Some(ref tc) = c.theme_color {
-                    if let Some(hex) = theme_fonts.resolve_color(tc) {
-                        return Some(apply_tint_shade(
-                            hex,
-                            c.theme_tint.as_deref(),
-                            c.theme_shade.as_deref(),
-                        ));
-                    }
-                }
-                Some(c.value.clone())
+                Some(theme_fonts.wml_color(
+                    Some(&c.value), c.theme_color.as_ref(), c.theme_tint.as_deref(), c.theme_shade.as_deref(),
+                ))
             },
         )
-        .filter(|h| h.as_bytes().iter().all(|b| b.is_ascii_hexdigit()))
-        .map(|h| format!("#{h}"))
+        .flatten()
         .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_owned());
 
         let underline = resolve_run_option(

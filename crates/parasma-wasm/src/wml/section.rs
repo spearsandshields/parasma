@@ -59,6 +59,12 @@ pub(crate) struct PageGeometry {
     /// Resolved page borders (§17.6.10 `w:pgBorders`). `None` = section draws no
     /// page border. Drawn per-page in `render_page`, gated by `display`.
     pub(crate) page_borders: Option<PageBorders>,
+    /// Where the text sits between the top and bottom margins (§17.6.23
+    /// `w:vAlign`): 0 = top, 0.5 = centre, 1 = bottom.
+    ///
+    /// Declared: `both` (spread the paragraphs over the page) is drawn top
+    /// aligned.
+    pub(crate) v_align: f64,
 }
 
 /// The largest page dimension rendered, per axis: 22" = 31 680 twips — Word's
@@ -105,6 +111,7 @@ impl PageGeometry {
             col_sep: false,
             grid_pitch_px: None,
             page_borders: None,
+            v_align: 0.0,
         }
     }
 
@@ -202,6 +209,11 @@ impl PageGeometry {
                     .unwrap_or(ooxml_wml::types::STPageBorderDisplay::AllPages),
             })
         });
+        let v_align = match sect_pr.v_align.as_deref().map(|v| v.value) {
+            Some(ooxml_wml::types::STVerticalJc::Center) => 0.5,
+            Some(ooxml_wml::types::STVerticalJc::Bottom) => 1.0,
+            _ => 0.0,
+        };
         Self {
             width_px: twips_to_px(width_twips),
             height_px: twips_to_px(height_twips),
@@ -215,6 +227,7 @@ impl PageGeometry {
             col_sep,
             grid_pitch_px,
             page_borders,
+            v_align,
         }
     }
 

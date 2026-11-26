@@ -55,6 +55,14 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: sections set to centre or bottom-align their text vertically,
+  as cover and title pages often are, now place it there instead of at the
+  top. Text spread over the page ("justified") still starts at the top.
+- Documents: the page colour set in Word's Design > Page Color is drawn. Page
+  backgrounds made of a gradient, texture or picture show only their solid
+  colour, if they have one.
+- Documents: the faint grey rectangle around the text area is gone; Word
+  does not show one.
 - Colours: lighter and darker theme colour variants made with a tint or
   shade are mixed with white or black as the standard defines, so the banded
   rows of PowerPoint's table styles and other tinted fills are pale, not

@@ -68,6 +68,24 @@ impl ThemeFonts {
         self.colors.get(key).map(|s| s.as_str())
     }
 
+    /// A WML colour (§17.18.38 `ST_HexColor` with the theme attributes of
+    /// §17.3.2.6): `themeColor`, adjusted by `themeTint` / `themeShade`, wins
+    /// over the literal value. Returns `#RRGGBB`, or `None` for `auto` and
+    /// anything that is not a colour.
+    pub(crate) fn wml_color(
+        &self,
+        value: Option<&str>,
+        theme_color: Option<&ooxml_wml::types::STThemeColor>,
+        tint: Option<&[u8]>,
+        shade: Option<&[u8]>,
+    ) -> Option<String> {
+        let hex = match theme_color.and_then(|tc| self.resolve_color(tc)) {
+            Some(base) => crate::engine::color::apply_tint_shade(base, tint, shade),
+            None => value?.to_owned(),
+        };
+        (hex.len() == 6 && hex.bytes().all(|b| b.is_ascii_hexdigit())).then(|| format!("#{hex}"))
+    }
+
     /// A theme holding only these scheme colours (`slot`, hex without `#`).
     #[cfg(test)]
     pub(crate) fn with_colors(colors: &[(&str, &str)]) -> Self {
