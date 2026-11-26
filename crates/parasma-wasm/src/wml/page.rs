@@ -169,10 +169,12 @@ pub(crate) struct PagedLine {
     pub(crate) line_height: f64,
     pub(crate) content_left: f64,
     pub(crate) content_right: f64,
-    pub(crate) border_top: Option<BorderEdge>,
-    pub(crate) border_bottom: Option<BorderEdge>,
-    pub(crate) border_left: Option<BorderEdge>,
-    pub(crate) border_right: Option<BorderEdge>,
+    /// Boxed: few lines have borders, and a line is the page's commonest
+    /// element.
+    pub(crate) border_top: Option<Box<BorderEdge>>,
+    pub(crate) border_bottom: Option<Box<BorderEdge>>,
+    pub(crate) border_left: Option<Box<BorderEdge>>,
+    pub(crate) border_right: Option<Box<BorderEdge>>,
     /// Absolute page-x of each bar-tab rule (§17.18.84 "bar") crossing this
     /// line: a vertical line spanning the line box on EVERY line of the
     /// paragraph, never a text-advance stop. Empty for the overwhelming

@@ -73,10 +73,10 @@ pub(crate) fn border_element_line(
 pub(crate) fn resolve_border_edge(
     border: Option<&ooxml_wml::types::CTBorder>,
     theme: &crate::engine::fonts::ThemeFonts,
-) -> Option<BorderEdge> {
+) -> Option<Box<BorderEdge>> {
     let b = border?;
     let line = border_element_line(b, theme)?;
-    Some(BorderEdge { line, space_px: pt_to_px(b.space.unwrap_or(0) as f64) })
+    Some(Box::new(BorderEdge { line, space_px: pt_to_px(b.space.unwrap_or(0) as f64) }))
 }
 
 /// §17.6.10 `w:pgBorders` resolved for rendering: up to four edges plus the

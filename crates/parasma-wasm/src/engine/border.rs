@@ -32,8 +32,8 @@ pub(crate) struct Edge {
 }
 
 /// A border's line style (§17.18.2 `ST_Border`, the line values; the art
-/// borders are not drawn as art). Ordered as Word's conflict precedence lists
-/// them, first highest.
+/// borders are not drawn as art), in the order of Word's conflict
+/// precedence list ([MS-OI29500] §17.4.66), first highest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum LineStyle {
     #[default]
@@ -82,39 +82,6 @@ pub(crate) struct LinePart {
     pub dash: Option<Vec<f64>>,
     pub tone: Tone,
     pub wave: bool,
-}
-
-impl LineStyle {
-    /// Word's border number for the conflict weight ([MS-OI29500] §17.4.66).
-    pub(crate) fn number(self) -> f64 {
-        use LineStyle as S;
-        match self {
-            S::Single => 1.0,
-            S::Thick => 2.0,
-            S::Double => 3.0,
-            S::Dotted | S::Dashed => 0.0,
-            S::DotDash => 8.0,
-            S::DotDotDash => 9.0,
-            S::Triple => 10.0,
-            S::ThinThickSmallGap => 11.0,
-            S::ThickThinSmallGap => 12.0,
-            S::ThinThickThinSmallGap => 13.0,
-            S::ThinThickMediumGap => 14.0,
-            S::ThickThinMediumGap => 15.0,
-            S::ThinThickThinMediumGap => 16.0,
-            S::ThinThickLargeGap => 17.0,
-            S::ThickThinLargeGap => 18.0,
-            S::ThinThickThinLargeGap => 19.0,
-            S::Wave => 20.0,
-            S::DoubleWave => 21.0,
-            S::DashSmallGap => 22.0,
-            S::DashDotStroked => 23.0,
-            S::ThreeDEmboss => 24.0,
-            S::ThreeDEngrave => 25.0,
-            S::Outset => 26.0,
-            S::Inset => 27.0,
-        }
-    }
 }
 
 impl Edge {
