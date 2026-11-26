@@ -126,6 +126,11 @@ are held stable regardless.
   in Office and keep their colours; 3-D bar, line and area charts are drawn
   flat instead of not at all; doughnuts with several series draw every
   ring.
+- Charts (all formats): value-axis labels use the chart's number format, or
+  the data's (percentages show as 50%, currency keeps its symbol and
+  thousands separators); display units such as millions divide the labels
+  and show their caption; categories that are dates or numbers show in their
+  format.
 - Charts (all formats): series, points and chart backgrounds given as theme
   colours use the document's theme, and series without a colour cycle the
   theme's accents as Office does, so charts in documents with a non-Office

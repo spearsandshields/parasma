@@ -15,6 +15,9 @@ pub(crate) mod color;
 /// natively testable.
 pub(crate) mod displaylist;
 pub(crate) mod fonts;
+/// Number-format interpreter (§18.8.30): spreadsheet cells and chart axis and
+/// category labels.
+pub(crate) mod numfmt;
 /// The flavor-neutral extraction schema — `DocFragment` + its
 /// satellite types + `SelRect`. Built by WML and PML selection, serialized by
 /// `lib.rs`; moving it here deleted the crate's only cross-format lateral

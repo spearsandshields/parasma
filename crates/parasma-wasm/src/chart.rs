@@ -158,6 +158,12 @@ struct Axis {
     /// `tickLblPos none`: no labels.
     no_labels: bool,
     gridlines: bool,
+    /// The labels' own format code (§21.2.2.121 `numFmt`), `None` when the
+    /// axis takes its data's format (`sourceLinked`) or names none.
+    num_fmt: Option<String>,
+    /// Display units (§21.2.2.46): the divisor, and the caption to show
+    /// when the chart asks for one (`dispUnitsLbl`).
+    unit: Option<(f64, Option<&'static str>)>,
 }
 
 struct Legend {
@@ -185,6 +191,9 @@ struct ChartModel {
     /// is its own colour and the legend lists the categories.
     vary_colors: bool,
     marker_default: bool,
+    /// The first series' value format code (its cache's `formatCode`), what
+    /// a source-linked axis shows.
+    value_format: Option<String>,
     /// The chart area's fill and border (chartSpace `spPr`) and the plot
     /// area's; `None` draws nothing.
     chart_ground: Ground,
@@ -452,6 +461,7 @@ impl ChartModel {
                 _ => vary.unwrap_or(false) && raw.len() == 1 && kind == ChartType::Bar,
             },
             marker_default,
+            value_format: raw.iter().find_map(|s| value_format(s.val)),
             // The chart area is white unless its spPr says otherwise (Office's
             // automatic chart fill); the plot area is clear.
             chart_ground: ground(cs.sp_pr.as_deref(), Some("#FFFFFF")),
@@ -563,6 +573,12 @@ fn series_marker(m: Option<&ooxml_dml::types::ChartMarker>, chart_default: bool)
     (symbol, size * 96.0 / 72.0)
 }
 
+/// A value source's format code, unless it is General.
+fn value_format(val: Option<&ooxml_dml::types::NumericDataSource>) -> Option<String> {
+    let data = val?.num_ref.as_ref().and_then(|r| r.num_cache.as_deref()).or(val?.num_lit.as_deref())?;
+    data.format_code.as_ref().map(|c| c.to_string()).filter(|c| !c.eq_ignore_ascii_case("general"))
+}
+
 /// How many points a value source holds: its `ptCount`, else one past the
 /// highest point index.
 fn point_count(val: Option<&ooxml_dml::types::NumericDataSource>) -> usize {
@@ -611,7 +627,16 @@ fn category_labels(cat: Option<&ooxml_dml::types::AxisDataSource>) -> Option<Vec
         return Some(place(sd.pt.iter().map(|p| (p.idx, p.v.to_string())).collect(), sd.pt_count.as_ref().map(|c| c.value)));
     }
     if let Some(nd) = cat.num_ref.as_ref().and_then(|r| r.num_cache.as_deref()).or(cat.num_lit.as_deref()) {
-        return Some(place(nd.pt.iter().map(|p| (p.idx, p.v.to_string())).collect(), nd.pt_count.as_ref().map(|c| c.value)));
+        // Numbers and dates show in their format (a point's own, else the
+        // cache's), as the sheet does.
+        let shown = |p: &ooxml_dml::types::NumericValue| {
+            let code = p.format_code.as_deref().or(nd.format_code.as_deref()).filter(|c| !c.eq_ignore_ascii_case("general"));
+            match (code, p.v.trim().parse::<f64>()) {
+                (Some(code), Ok(v)) => crate::engine::numfmt::format_value(&crate::engine::numfmt::RawValue::Number(v), code),
+                _ => p.v.to_string(),
+            }
+        };
+        return Some(place(nd.pt.iter().map(|p| (p.idx, shown(p))).collect(), nd.pt_count.as_ref().map(|c| c.value)));
     }
     let ml = cat.multi_lvl_str_ref.as_ref()?.multi_lvl_str_cache.as_deref()?;
     let level = ml.lvl.first()?;
@@ -638,6 +663,10 @@ fn axes(plot: &ooxml_dml::types::PlotArea) -> (Axis, Axis) {
             log_base, reversed,
             no_labels: no_labels(v.tick_lbl_pos.as_deref()),
             gridlines: v.major_gridlines.is_some(),
+            num_fmt: v.num_fmt.as_ref()
+                .filter(|f| !f.source_linked.unwrap_or(false))
+                .map(|f| f.format_code.to_string()),
+            unit: display_units(v.disp_units.as_deref()),
         }
     }).unwrap_or(Axis { gridlines: true, ..Axis::default() });
     let cat = plot.cat_ax.first().map(|c| {
@@ -651,6 +680,27 @@ fn axes(plot: &ooxml_dml::types::PlotArea) -> (Axis, Axis) {
         }
     }).unwrap_or_default();
     (val, cat)
+}
+
+/// Display units (§21.2.2.46): a built-in unit or a custom divisor, with the
+/// caption Office shows when `dispUnitsLbl` is present. Declared: a caption
+/// with its own text (`dispUnitsLbl/tx`) shows the built-in name.
+fn display_units(d: Option<&ooxml_dml::types::DisplayUnits>) -> Option<(f64, Option<&'static str>)> {
+    use ooxml_dml::types::BuiltInUnitType as U;
+    let d = d?;
+    let (div, name) = match d.built_in_unit.as_deref().and_then(|b| b.value.as_ref()) {
+        Some(U::Hundreds) => (1e2, "Hundreds"),
+        Some(U::Thousands) => (1e3, "Thousands"),
+        Some(U::TenThousands) => (1e4, "Ten Thousands"),
+        Some(U::HundredThousands) => (1e5, "Hundred Thousands"),
+        Some(U::Millions) => (1e6, "Millions"),
+        Some(U::TenMillions) => (1e7, "Ten Millions"),
+        Some(U::HundredMillions) => (1e8, "Hundred Millions"),
+        Some(U::Billions) => (1e9, "Billions"),
+        Some(U::Trillions) => (1e12, "Trillions"),
+        None => (d.cust_unit.as_ref().map(|c| c.value).filter(|v| *v > 0.0)?, ""),
+    };
+    Some((div, d.disp_units_lbl.as_ref().map(|_| name).filter(|n| !n.is_empty())))
 }
 
 /// The legend (§21.2.2.93), or `None` when the chart has none.
@@ -828,10 +878,25 @@ fn nice_step(range: f64) -> f64 {
     step * mag
 }
 
-fn label(v: f64, percent: bool) -> String {
-    if percent {
-        return format!("{}%", (v * 100.0).round() as i64);
+impl ChartModel {
+    /// A value-axis label: the value in display units, in the axis's format
+    /// (or its data's, or a percentage for a 100 % stack).
+    fn value_label(&self, v: f64, percent: bool) -> String {
+        let v = v / self.val_axis.unit.map_or(1.0, |u| u.0);
+        let code = if percent {
+            Some("0%".to_owned())
+        } else {
+            self.val_axis.num_fmt.clone().or_else(|| self.value_format.clone())
+        };
+        match code.filter(|c| !c.eq_ignore_ascii_case("general")) {
+            Some(code) => crate::engine::numfmt::format_value(&crate::engine::numfmt::RawValue::Number(v), &code),
+            None => label(v),
+        }
     }
+}
+
+/// A number in General style: no trailing zeros, at most two decimals.
+fn label(v: f64) -> String {
     if (v - v.round()).abs() < 1e-9 {
         format!("{}", v.round() as i64)
     } else {
@@ -979,13 +1044,22 @@ impl ChartModel {
                 if self.horizontal {
                     p.set_text_align("center");
                     p.set_text_baseline("top");
-                    let _ = p.fill_text(&label(t, percent), at, plot.y + plot.h + 4.0);
+                    let _ = p.fill_text(&self.value_label(t, percent), at, plot.y + plot.h + 4.0);
                 } else {
                     p.set_text_align("right");
                     p.set_text_baseline("middle");
-                    let _ = p.fill_text(&label(t, percent), plot.x - 5.0, at);
+                    let _ = p.fill_text(&self.value_label(t, percent), plot.x - 5.0, at);
                 }
             }
+        }
+
+        // The display-units caption (§21.2.2.46 dispUnitsLbl). Declared: drawn
+        // horizontally above the value labels, not rotated beside the axis.
+        if let (true, Some((_, Some(name)))) = (val_labels, self.val_axis.unit) {
+            p.set_fill_style_str(LABEL_COLOR);
+            p.set_text_align("left");
+            p.set_text_baseline("bottom");
+            let _ = p.fill_text(name, area.x, plot.y);
         }
 
         // Series.

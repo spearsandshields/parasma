@@ -28,7 +28,6 @@ pub(crate) mod drawings;
 pub(crate) mod grid;
 pub(crate) mod index;
 pub(crate) mod model;
-pub(crate) mod numfmt;
 pub(crate) mod pane;
 pub(crate) mod render;
 pub(crate) mod select;

@@ -924,7 +924,7 @@ const RENDERER_GEOMETRY_HASH: u64 = 0xcf4880dcd43c59e9;
 
 #[cfg(test)]
 mod numfmt_tests {
-    use crate::sml::numfmt::{format_value, resolve_format_code, RawValue};
+    use crate::engine::numfmt::{format_value, resolve_format_code, RawValue};
     use ooxml_sml::workbook::excel_date_to_ymd;
 
     /// Format a numeric value through a format code.

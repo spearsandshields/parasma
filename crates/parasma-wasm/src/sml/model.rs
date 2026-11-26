@@ -19,7 +19,7 @@ use ooxml_sml::types::{Cell, Stylesheet};
 
 use crate::engine::fonts::{self, FontCache};
 
-use super::numfmt::{self, RawValue};
+use crate::engine::numfmt::{self, RawValue};
 
 /// Documented fallback Maximum Digit Width when the normal-style font is not
 /// loaded (§18.3.1.13). Calibri 11pt @96dpi measures 7px; Excel's worked

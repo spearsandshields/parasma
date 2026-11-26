@@ -215,3 +215,33 @@ fn a_pie_without_varied_colours_is_one_colour() {
     let m = model(&xml);
     assert_ne!(m.point_color(0, 0), m.point_color(0, 1));
 }
+
+/// §21.2.2.121 numFmt: axis labels use the axis format, or the data's when
+/// source-linked; display units divide them; date categories show as dates.
+#[test]
+fn axis_and_category_label_formats() {
+    let s = ser(0, 0, "", "", &[(0, "0.25"), (1, "0.5")], 2);
+    let with_fmt = |fmt: &str| bar("col", "clustered", &s, "").replace(
+        r#"<c:majorGridlines/>"#,
+        &format!(r#"<c:majorGridlines/><c:numFmt formatCode="{fmt}" sourceLinked="0"/>"#),
+    );
+    let m = model(&chart_xml(&with_fmt("0%"), ""));
+    assert_eq!(m.value_label(0.5, false), "50%");
+
+    let money = ser(0, 0, "", "", &[(0, "1500000")], 1).replace("<c:formatCode>General</c:formatCode>", r##"<c:formatCode>"$"#,##0</c:formatCode>"##);
+    let m = model(&chart_xml(&bar("col", "clustered", &money, ""), ""));
+    assert_eq!(m.value_label(1_500_000.0, false), "$1,500,000", "no axis format: the data's");
+
+    let millions = bar("col", "clustered", &money, "").replace(
+        r#"<c:majorGridlines/>"#,
+        r#"<c:majorGridlines/><c:numFmt formatCode="0.0" sourceLinked="0"/><c:dispUnits><c:builtInUnit val="millions"/><c:dispUnitsLbl/></c:dispUnits>"#,
+    );
+    let m = model(&chart_xml(&millions, ""));
+    assert_eq!(m.value_label(1_500_000.0, false), "1.5");
+    assert_eq!(m.val_axis.unit, Some((1e6, Some("Millions"))));
+
+    // Date serials as categories, in the cache's date format.
+    let dates = r#"<c:cat><c:numRef><c:f>S!A1</c:f><c:numCache><c:formatCode>mmm-yy</c:formatCode><c:ptCount val="1"/><c:pt idx="0"><c:v>45292</c:v></c:pt></c:numCache></c:numRef></c:cat>"#;
+    let m = model(&chart_xml(&bar("col", "clustered", &ser(0, 0, "", dates, &[(0, "1")], 1), ""), ""));
+    assert_eq!(m.categories, vec!["Jan-24"]);
+}

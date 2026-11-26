@@ -1,4 +1,5 @@
-//! Excel number-format interpreter.
+//! Excel number-format interpreter, shared by spreadsheet cells and chart
+//! labels (chart `numFmt`, §21.2.2.121, uses the same format codes).
 //!
 //! Turns a cell's raw value (a number serial, a boolean, a string) into its
 //! *displayed* text by applying the `numFmt` format code resolved from the
@@ -37,11 +38,10 @@ use ooxml_sml::workbook::{builtin_format_code, excel_date_to_ymd, excel_datetime
 
 /// A raw cell value, value-kind tagged, as the model hands it to the formatter.
 /// Numbers carry the raw serial (a date is just a number until a date format
-/// code interprets it); booleans/errors/strings pass through untouched.
+/// code interprets it); errors and strings pass through untouched.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum RawValue<'a> {
     Number(f64),
-    Boolean(bool),
     /// Shared/inline string or error text — never numeric-formatted; only the
     /// `@` text-section (if present) wraps it.
     Text(&'a str),
@@ -104,20 +104,15 @@ pub(crate) fn format_value(value: &RawValue, code: &str) -> String {
                 None => s.to_string(),
             }
         }
-        RawValue::Boolean(b) => {
-            // Booleans are not numeric-formatted; display canonically.
-            (if b { "TRUE" } else { "FALSE" }).to_string()
-        }
         RawValue::Number(n) => format_number_sections(n, &sections),
     }
 }
 
 /// The "General" representation (§18.8.30 General Format): integers print
-/// without a trailing `.0`, fractionals print terse; strings/bools pass through.
+/// without a trailing `.0`, fractionals print terse; strings pass through.
 fn general(value: &RawValue) -> String {
     match *value {
         RawValue::Text(s) => s.to_string(),
-        RawValue::Boolean(b) => (if b { "TRUE" } else { "FALSE" }).to_string(),
         RawValue::Number(n) => general_number(n),
     }
 }
