@@ -82,6 +82,7 @@ pub(crate) struct AnchoredImageInfo {
 /// (§17.16 fields / §17.13.4 comments). Named fields close the tuple hazard: the
 /// two adjacent `Option<String>` slots (`link` vs `text_override`) were
 /// position-swappable and silently miscarry if crossed.
+#[derive(Clone)]
 struct RunEntry<'a> {
     run: &'a ooxml_wml::types::Run,
     field: Option<FieldCode>,
@@ -292,6 +293,10 @@ pub(crate) fn collect_items(
                 // first run, tagged; a document field's value replaces the
                 // first run's text; either way the rest are dropped.
                 if let Some(fld) = ctx.simple_field {
+                    let entry = RunEntry {
+                        link: field::link_target(&fld.instr).map(link_string).or(entry.link),
+                        ..entry
+                    };
                     let field = resolve_field_code(&fld.instr);
                     if let Some(code) = field {
                         if simple_field_done != Some(fld as *const _) {
@@ -309,56 +314,71 @@ pub(crate) fn collect_items(
                     }
                     return;
                 }
-                // fldChar marker run → drive the state machine, never render.
-                if let Some(fc_type) = run_fld_char_type(r) {
-                    match fc_type {
-                        ooxml_wml::types::STFldCharType::Begin => {
-                            field_stack.push(FieldFrame::default());
-                        }
-                        ooxml_wml::types::STFldCharType::Separate => {
-                            if let Some(frame) = field_stack.last_mut() {
-                                frame.in_result = true;
-                                frame.code = resolve_field_code(&frame.instr);
-                                if frame.code.is_none() {
-                                    frame.static_value =
-                                        field::resolve_doc_field(&frame.instr, &doc_dates);
+                // Field characters and instruction text drive the complex-
+                // field state machine (§17.16.18) and never render. They are
+                // read in order within the run: generators (python-docx's page
+                // number recipe) put begin, the instruction and end in one run.
+                // Declared: ordinary text sharing a run with field characters
+                // is dropped, as is instruction text outside any field.
+                use ooxml_wml::types::{RunContent, STFldCharType};
+                if r.run_content.iter().any(|rc| matches!(rc, RunContent::FldChar(_) | RunContent::InstrText(_))) {
+                    for rc in &r.run_content {
+                        match rc {
+                            RunContent::FldChar(fc) => match fc.fld_char_type {
+                                STFldCharType::Begin => field_stack.push(FieldFrame::default()),
+                                STFldCharType::Separate => {
+                                    if let Some(frame) = field_stack.last_mut() {
+                                        frame.resolve(&doc_dates);
+                                        frame.in_result = true;
+                                    }
+                                }
+                                STFldCharType::End => {
+                                    let Some(mut frame) = field_stack.pop() else { continue };
+                                    if !frame.in_result {
+                                        frame.resolve(&doc_dates);
+                                    }
+                                    // A live or document field with no stored
+                                    // result still shows its value, in the
+                                    // end mark's formatting.
+                                    let visible = field_stack.iter().all(|f| f.in_result);
+                                    if visible && !frame.emitted {
+                                        if let Some(text_override) = frame.value() {
+                                            runs_to_process.push(Pending::Run(RunEntry {
+                                                field: frame.code, text_override: Some(text_override),
+                                                link: frame.link.clone().or(entry.link.clone()), ..entry.clone()
+                                            }));
+                                        }
+                                    }
+                                }
+                            },
+                            RunContent::InstrText(t) => {
+                                if let Some(frame) = field_stack.last_mut().filter(|f| !f.in_result) {
+                                    frame.instr.push_str(t.text.as_deref().unwrap_or(""));
                                 }
                             }
-                        }
-                        ooxml_wml::types::STFldCharType::End => {
-                            field_stack.pop();
+                            _ => {}
                         }
                     }
                     return;
                 }
-                // instrText run → accumulate instruction, never render.
-                if let Some(instr) = run_instr_text(r) {
-                    if let Some(frame) = field_stack.last_mut() {
-                        if !frame.in_result {
-                            frame.instr.push_str(&instr);
-                        }
+                // Ordinary run: plain text, or a field's result region. A run
+                // inside any enclosing field's instruction (a nested field's
+                // result is part of the outer field's code) is not shown.
+                if !field_stack.is_empty() {
+                    if !field_stack.iter().all(|f| f.in_result) {
+                        return;
                     }
-                    return;
-                }
-                // Ordinary run: plain text, or a field's result region.
-                if let Some(frame) = field_stack.last_mut() {
-                    if frame.in_result {
-                        if let Some(code) = frame.code {
-                            if !frame.emitted {
-                                frame.emitted = true;
-                                let text_override = page_field_text(code);
-                                runs_to_process.push(Pending::Run(RunEntry { field: Some(code), text_override, ..entry }));
-                            }
-                        } else if let Some(val) = frame.static_value.clone() {
-                            if !frame.emitted {
-                                frame.emitted = true;
-                                runs_to_process.push(Pending::Run(RunEntry { text_override: Some(val), ..entry }));
-                            }
-                        } else {
-                            runs_to_process.push(Pending::Run(entry));
+                    let frame = field_stack.last_mut().expect("non-empty");
+                    let entry = RunEntry { link: frame.link.clone().or(entry.link), ..entry };
+                    if frame.code.is_some() || frame.static_value.is_some() {
+                        if !frame.emitted {
+                            frame.emitted = true;
+                            let text_override = frame.value();
+                            runs_to_process.push(Pending::Run(RunEntry { field: frame.code, text_override, ..entry }));
                         }
+                    } else {
+                        runs_to_process.push(Pending::Run(entry));
                     }
-                    // else: instruction-region run without instrText — suppress
                     return;
                 }
                 runs_to_process.push(Pending::Run(entry));
@@ -2014,21 +2034,47 @@ struct FieldFrame {
     instr: String,
     /// True once the `fldChar(separate)` marker has been seen.
     in_result: bool,
-    /// Resolved live field code (PAGE/NUMPAGES), set at `separate`.
+    /// Resolved page-dependent field code, set when the instruction ends.
     code: Option<FieldCode>,
     /// Document-level field resolved to a string at collect time
     /// (DATE/TIME/CREATEDATE/SAVEDATE).
     static_value: Option<String>,
+    /// The field's link (HYPERLINK, or `\h` on a reference), stamped on its
+    /// result runs.
+    link: Option<String>,
     /// True once the live value has been emitted for one result run.
     emitted: bool,
 }
 
-/// The `fldChar` type carried by a run, if any (begin/separate/end marker).
-fn run_fld_char_type(run: &ooxml_wml::types::Run) -> Option<ooxml_wml::types::STFldCharType> {
-    run.run_content.iter().find_map(|rc| match rc {
-        ooxml_wml::types::RunContent::FldChar(fc) => Some(fc.fld_char_type),
-        _ => None,
-    })
+impl FieldFrame {
+    /// Read the finished instruction: its page-dependent code, else its
+    /// document value, and its link.
+    fn resolve(&mut self, dates: &field::DocDates) {
+        self.code = resolve_field_code(&self.instr);
+        if self.code.is_none() {
+            self.static_value = field::resolve_doc_field(&self.instr, dates);
+        }
+        self.link = field::link_target(&self.instr).map(link_string);
+    }
+
+    /// The text the field shows in place of its stored result, if it has
+    /// one: a page-dependent field's value under `with_page_fields`, else a
+    /// placeholder its page substitutes later; a document field's value.
+    fn value(&self) -> Option<String> {
+        match self.code {
+            Some(code) => Some(page_field_text(code).unwrap_or_else(|| "1".to_string())),
+            None => self.static_value.clone(),
+        }
+    }
+}
+
+/// A field link in the form runs carry (`url:` or `anchor:`), as
+/// `hyperlink_target` writes them.
+fn link_string(link: field::FieldLink) -> String {
+    match link {
+        field::FieldLink::Url(u) => format!("url:{u}"),
+        field::FieldLink::Anchor(a) => format!("anchor:{a}"),
+    }
 }
 
 /// A stretch of a run's text that draws in a face other than the run's own.
@@ -2247,21 +2293,6 @@ fn hyperlink_target(h: &ooxml_wml::types::Hyperlink) -> Option<String> {
         Some(ref rid) => HYPERLINK_RELS.with(|m| m.borrow().get(rid).map(|u| format!("url:{u}"))),
         None => h.anchor.as_ref().map(|a| format!("anchor:{a}")),
     }
-}
-
-/// Concatenated `instrText` content of a run, or None if it has none.
-fn run_instr_text(run: &ooxml_wml::types::Run) -> Option<String> {
-    let mut out = String::new();
-    let mut found = false;
-    for rc in &run.run_content {
-        if let ooxml_wml::types::RunContent::InstrText(t) = rc {
-            if let Some(ref text) = t.text {
-                out.push_str(text);
-            }
-            found = true;
-        }
-    }
-    found.then_some(out)
 }
 
 /// Re-measure an item's text the same way `collect_items` did, so a field whose

@@ -213,6 +213,12 @@ are held stable regardless.
   and right text) lay out as designed: the alignment tabs they use now move
   to the centre and the right margin, with their dotted or dashed leaders,
   whatever tab stops the paragraph has.
+- Fields: page numbers written by document generators (python-docx and
+  others that store the whole field in one piece, or no result at all) now
+  appear. A field inside another field's instructions no longer leaks its
+  saved value as stray text, so footers such as "Continued" show cleanly.
+  Links written as HYPERLINK fields, and page references marked as links,
+  can be clicked.
 
 ### Changed
 

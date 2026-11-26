@@ -11301,3 +11301,59 @@ fn an_absolute_tab_behind_the_pen_goes_to_the_next_line() {
     let next = spans.iter().find(|(s, ..)| s == "Next").unwrap();
     assert!((next.1 - 96.0).abs() < 0.5, "Next starts at the margin: {}", next.1);
 }
+
+// ── Complex fields: one-run fields, missing results, nesting, field links ───
+
+fn fld_char(kind: &str) -> String {
+    format!(r#"<w:fldChar w:fldCharType="{kind}"/>"#)
+}
+
+fn instr(code: &str) -> String {
+    format!(r#"<w:instrText xml:space="preserve"> {code} </w:instrText>"#)
+}
+
+/// python-docx's page-number recipe puts begin, the instruction and end in
+/// one run with no stored result; the footer still shows the number.
+#[test]
+fn a_one_run_page_field_without_a_result_shows_the_number() {
+    let footer = format!("<w:p><w:r>{}{}{}</w:r></w:p>", fld_char("begin"), instr("PAGE"), fld_char("end"));
+    let body = format!("{}{}", p("", &r("", "one")), page_break_p("two"));
+    let v = layout(hf_docx(HF_STYLES_NO_HEADER, "<w:p/>", &footer, &body));
+    assert_eq!(footer_texts(&v), ["1", "2"]);
+}
+
+/// A field nested in another field's instruction is part of that code: in
+/// { IF { PAGE } < { NUMPAGES } "Continued" "" } only the outer result shows.
+#[test]
+fn a_field_nested_in_an_instruction_shows_nothing() {
+    let nested = |code: &str| format!(
+        "<w:r>{}</w:r><w:r>{}</w:r><w:r>{}</w:r><w:r><w:t>9</w:t></w:r><w:r>{}</w:r>",
+        fld_char("begin"), instr(code), fld_char("separate"), fld_char("end"),
+    );
+    let runs = format!(
+        r#"<w:r>{}</w:r><w:r>{}</w:r>{}<w:r>{}</w:r>{}<w:r>{}</w:r><w:r>{}</w:r><w:r><w:t>Continued</w:t></w:r><w:r>{}</w:r>"#,
+        fld_char("begin"), instr("IF"), nested("PAGE"), instr("&lt;"), nested("NUMPAGES"),
+        instr(r#""Continued" """#), fld_char("separate"), fld_char("end"),
+    );
+    let v = layout(numbering_docx("", "", &format!("<w:p>{runs}</w:p>")));
+    assert_eq!(page_texts(&v), ["Continued"]);
+}
+
+/// HYPERLINK fields and \h references link like w:hyperlink does.
+#[test]
+fn hyperlink_and_page_reference_fields_are_links() {
+    let field = |code: &str, text: &str| format!(
+        "<w:r>{}</w:r><w:r>{}</w:r><w:r>{}</w:r><w:r><w:t>{text}</w:t></w:r><w:r>{}</w:r>",
+        fld_char("begin"), instr(code), fld_char("separate"), fld_char("end"),
+    );
+    let body = format!(
+        "<w:p>{}</w:p><w:p>{}</w:p>",
+        field(r#"HYPERLINK "https://example.com""#, "site"),
+        field(r"PAGEREF _Toc1 \h", "3"),
+    );
+    let v = layout(numbering_docx("", "", &body));
+    let lines = body_lines(&v);
+    let link_of = |l: &PagedLine| l.segments[0].items[0].link.clone();
+    assert_eq!(link_of(&lines[0]).as_deref(), Some("url:https://example.com"));
+    assert_eq!(link_of(&lines[1]).as_deref(), Some("anchor:_Toc1"));
+}

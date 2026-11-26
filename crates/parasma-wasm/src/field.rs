@@ -272,6 +272,58 @@ pub fn parse(input: &str) -> FieldInstruction {
     }
 }
 
+/// Where a field links to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FieldLink {
+    Url(String),
+    /// A bookmark in the document.
+    Anchor(String),
+}
+
+/// The link a field makes, if any: HYPERLINK (§17.16.5.25) to its URL, its
+/// `\l` bookmark, or both; PAGEREF, NOTEREF and REF with `\h` to the
+/// bookmark they name.
+pub fn link_target(instr: &str) -> Option<FieldLink> {
+    let tokens = tokenize(instr);
+    let mut iter = tokens.iter().peekable();
+    let keyword = match iter.next() {
+        Some(Token::Word(w)) => w.to_ascii_uppercase(),
+        _ => return None,
+    };
+    match keyword.as_str() {
+        "HYPERLINK" => {
+            let (mut url, mut anchor) = (None, None);
+            while let Some(tok) = iter.next() {
+                match tok {
+                    Token::Switch('l') => anchor = next_value(&mut iter),
+                    // \o (tooltip) and \t (target frame) take a value.
+                    Token::Switch('o' | 't') => {
+                        let _ = next_value(&mut iter);
+                    }
+                    Token::Word(w) | Token::Quoted(w) if url.is_none() => url = Some(w.clone()),
+                    _ => {}
+                }
+            }
+            match (url, anchor) {
+                (Some(u), Some(a)) => Some(FieldLink::Url(format!("{u}#{a}"))),
+                (Some(u), None) => Some(FieldLink::Url(u)),
+                (None, Some(a)) => Some(FieldLink::Anchor(a)),
+                (None, None) => None,
+            }
+        }
+        "PAGEREF" | "NOTEREF" | "REF" => {
+            let rest: Vec<&Token> = iter.collect();
+            let linked = rest.iter().any(|t| matches!(t, Token::Switch('h')));
+            let bookmark = rest.iter().find_map(|t| match t {
+                Token::Word(w) | Token::Quoted(w) => Some(w.clone()),
+                _ => None,
+            })?;
+            linked.then_some(FieldLink::Anchor(bookmark))
+        }
+        _ => None,
+    }
+}
+
 fn next_value<'a, I: Iterator<Item = &'a Token>>(
     iter: &mut std::iter::Peekable<I>,
 ) -> Option<String> {
@@ -706,6 +758,17 @@ mod tests {
     }
     fn sw_numeric(p: &str) -> CommonSwitches {
         CommonSwitches { numeric: Some(p.to_string()), ..Default::default() }
+    }
+
+    #[test]
+    fn fields_that_link() {
+        use FieldLink::{Anchor, Url};
+        assert_eq!(link_target(r#" HYPERLINK "https://example.com" "#), Some(Url("https://example.com".into())));
+        assert_eq!(link_target(r#" HYPERLINK \l "_Toc1" \o "tip" "#), Some(Anchor("_Toc1".into())));
+        assert_eq!(link_target(r#" HYPERLINK "a.htm" \l "x" "#), Some(Url("a.htm#x".into())));
+        assert_eq!(link_target(" PAGEREF _Toc123 \\h "), Some(Anchor("_Toc123".into())));
+        assert_eq!(link_target(" PAGEREF _Toc123 "), None, "no \\h, no link");
+        assert_eq!(link_target(" PAGE "), None);
     }
 
     #[test]
