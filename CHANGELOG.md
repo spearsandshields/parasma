@@ -55,6 +55,12 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: hanging indents (references, glossaries, definitions) line up
+  as in Word: a hanging indent replaces a style's first-line indent instead
+  of adding to it, a tab after the term goes to the hanging indent, and
+  tabs on the first line are measured from where that line starts.
+  Automatic tab stops in an indented paragraph fall on the same grid as
+  Word's ruler, measured from the margin.
 - Documents: "Don't add space between paragraphs of the same style" now
   works as in Word: between list items, between paragraphs that use the
   default style, in table cells and in headers, and when only the earlier

@@ -10580,6 +10580,48 @@ fn contextual_spacing_drops_spacing_between_paragraphs_of_one_style() {
     assert!((row_height(&styles("")) - row_height(&styles(flag)) - 32.0).abs() < 0.01, "two gaps of 16 px");
 }
 
+/// The page x of each text item's start on the first body line.
+fn item_xs(v: &Viewer) -> Vec<(String, f64)> {
+    let line = body_lines(v).into_iter().next().expect("a line");
+    let mut out = Vec::new();
+    for seg in &line.segments {
+        let mut x = seg.x_start;
+        for it in &seg.items {
+            if !it.text.trim().is_empty() {
+                out.push((it.text.trim().to_owned(), x));
+            }
+            x += it.width;
+        }
+    }
+    out
+}
+
+/// §17.3.1.12 and §17.15.1.25: hanging wins over a style's first-line
+/// indent; a hanging indent's implicit stop takes the first line's tab; and
+/// automatic stops are counted from the margin, not the indent.
+#[test]
+fn indents_and_tab_stops_follow_word() {
+    let x_of = |styles: &str, ppr: &str, runs: &str, word: &str| {
+        let v = layout(numbering_docx(styles, "", &format!("<w:p><w:pPr>{ppr}</w:pPr>{runs}</w:p>")));
+        item_xs(&v).into_iter().find(|(t, _)| t == word).map(|(_, x)| x - 96.0).expect(word)
+    };
+    let t = |s: &str| format!(r#"<w:r><w:t xml:space="preserve">{s}</w:t></w:r>"#);
+    let tab = "<w:r><w:tab/></w:r>";
+
+    // A style indents the first line by 0.5"; the paragraph hangs by 0.25".
+    let style = r#"<w:style w:type="paragraph" w:styleId="Ind"><w:name w:val="Ind"/><w:pPr><w:ind w:left="1440" w:firstLine="720"/></w:pPr></w:style>"#;
+    let x = x_of(style, r#"<w:pStyle w:val="Ind"/><w:ind w:hanging="360"/>"#, &t("Start"), "Start");
+    assert!((x - 72.0).abs() < 0.5, "1in - 0.25in = 72 px, not 1.5in - 0.25in: {x}");
+
+    // Hanging 1.5" with no custom stops: the tab goes to the left indent.
+    let x = x_of("", r#"<w:ind w:left="2160" w:hanging="2160"/>"#, &[t("T"), tab.into(), t("Def")].concat(), "Def");
+    assert!((x - 144.0).abs() < 0.5, "the implicit stop at the 1.5in indent: {x}");
+
+    // Indented 0.25": the default 0.5" stops are at 0.5", 1", ... from the margin.
+    let x = x_of("", r#"<w:ind w:left="360"/>"#, &[t("a"), tab.into(), t("b")].concat(), "b");
+    assert!((x - 48.0).abs() < 0.5, "first automatic stop at 0.5in from the margin: {x}");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

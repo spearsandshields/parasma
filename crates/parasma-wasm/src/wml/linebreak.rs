@@ -1345,11 +1345,12 @@ pub(crate) fn pack_lines(items: Vec<Item>, available_width: f64, first_line_inde
     let line_width = |idx: usize| -> f64 {
         available_width - if idx == 0 { first_line_indent } else { 0.0 }
     };
-    // A line's leading edge in the paragraph's logical advance space: only the
-    // FIRST line carries the first-line indent (§17.3.1.12), and only a positive
-    // one — a hanging indent starts the line at the leading edge.
+    // Where a line starts in the paragraph's logical advance space (x = 0 at
+    // the leading indent): only the FIRST line carries the first-line offset
+    // (§17.3.1.12), which a hanging indent makes negative — that line is drawn
+    // starting left of the indent, so its tabs are measured from there.
     let leading = |idx: usize| -> f64 {
-        if idx == 0 { first_line_indent.max(0.0) } else { 0.0 }
+        if idx == 0 { first_line_indent } else { 0.0 }
     };
 
     let trail_reserve = trailing_blank_reserve();

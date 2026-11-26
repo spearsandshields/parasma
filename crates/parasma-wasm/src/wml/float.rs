@@ -944,7 +944,7 @@ mod packer_conservation_tests {
     /// The default stop chain: no custom stops, Word's 0.5in default interval.
     /// These unit tests carry no tab items, so it is never consulted.
     fn no_tabs() -> ResolvedTabStops {
-        ResolvedTabStops { custom: Vec::new(), bars: Vec::new(), default_interval: 48.0 }
+        ResolvedTabStops { custom: Vec::new(), bars: Vec::new(), default_interval: 48.0, default_origin: 0.0 }
     }
 
     // ResumeToken precondition: `pack_lines_around_floats` conserves

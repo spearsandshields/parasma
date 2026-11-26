@@ -78,6 +78,10 @@ pub(crate) struct ResolvedTabStops {
     /// `custom` (never advance text) and painted per line at these positions.
     pub(crate) bars: Vec<f64>,
     pub(crate) default_interval: f64,
+    /// Where the margin lies in this frame's advance space: the leading
+    /// indent. Automatic stops fall at multiples of `default_interval` from
+    /// it (§17.15.1.25).
+    pub(crate) default_origin: f64,
 }
 
 impl ResolvedTabStops {
@@ -93,8 +97,8 @@ impl ResolvedTabStops {
                 return (pos, align, leader);
             }
         }
-        let n = (current_x / self.default_interval).floor() as i64 + 1;
-        (n as f64 * self.default_interval, TabAlignment::Left, TabLeader::None)
+        let n = ((current_x + self.default_origin) / self.default_interval).floor() as i64 + 1;
+        (n as f64 * self.default_interval - self.default_origin, TabAlignment::Left, TabLeader::None)
     }
 
     /// Absolute page-x of each bar-tab rule for one placed line. §17.3.1.37:
@@ -391,11 +395,27 @@ pub(crate) fn layout_paragraph(
     // every hdr/ftr default-tab and body tab in the oracle snapshots) are untouched:
     // the two frames coincide, so the render is byte-identical.
     let leading_indent = if layout.base_rtl { layout.indent_right_px } else { layout.indent_left_px };
+    // A hanging first line starts left of the leading edge, so stops between
+    // its start and the edge are live on it.
+    let first_line_start = layout.indent_first_line_px.min(0.0);
     if leading_indent.abs() > 0.5 {
-        tab_stops.custom.retain_mut(|(pos, _, _)| { *pos -= leading_indent; *pos > 0.5 });
+        tab_stops.custom.retain_mut(|(pos, _, _)| { *pos -= leading_indent; *pos > first_line_start + 0.5 });
         for pos in tab_stops.bars.iter_mut() { *pos -= leading_indent; }
         tab_stops.bars.retain(|&pos| pos > 0.5);
+    } else {
+        tab_stops.custom.retain(|(pos, _, _)| *pos > first_line_start + 0.5);
     }
+    // §17.3.1.12: a hanging indent sets an implicit stop at the left indent,
+    // where the first line's text after a tab begins. A numbered paragraph's
+    // marker already ends there (`marker_slot_width`), so the stop is inert
+    // for it: the cursor is not left of it.
+    if layout.indent_first_line_px < -0.5 && !tab_stops.custom.iter().any(|(pos, _, _)| pos.abs() < 0.5) {
+        tab_stops.custom.push((0.0, TabAlignment::Left, TabLeader::None));
+        tab_stops.custom.sort_by(|a, b| a.0.total_cmp(&b.0));
+    }
+    // §17.15.1.25: automatic stops are multiples of the default interval
+    // measured from the margin, not from this paragraph's indent.
+    tab_stops.default_origin = leading_indent;
     let available = content_width - layout.indent_left_px - layout.indent_right_px;
     // `pack_lines` reorders each finished line into UAX#9 VISUAL order, so
     // its output is no longer a faithful logical stream. Every re-pack site (the
@@ -549,33 +569,6 @@ fn resolve_paragraph_tab_stops(
 
     let mut custom = Vec::new();
 
-    // Implicit tab stop at the left indent position when hanging indent is present
-    // (per §17.3.1.12: content after a tab in hanging indent area aligns at left indent)
-    let ind = paragraph.p_pr.as_ref()
-        .and_then(|ppr| ppr.indentation.as_ref())
-        .or_else(|| {
-            for ppr in &style_pprs {
-                if ppr.indentation.is_some() {
-                    return ppr.indentation.as_ref();
-                }
-            }
-            None
-        });
-    if let Some(ind) = ind {
-        let has_hanging = ind.hanging.as_deref()
-            .and_then(|h| h.parse::<i64>().ok())
-            .unwrap_or(0) > 0;
-        if has_hanging {
-            let left_twips = ind.left.as_deref()
-                .or(ind.start.as_deref())
-                .and_then(|s| s.parse::<i64>().ok())
-                .unwrap_or(0);
-            if left_twips > 0 {
-                custom.push((twips_to_px(left_twips), TabAlignment::Left, TabLeader::None));
-            }
-        }
-    }
-
     let mut bars = Vec::new();
     for (&pos_twips, stop) in &merged {
         match stop {
@@ -590,6 +583,7 @@ fn resolve_paragraph_tab_stops(
         custom,
         bars,
         default_interval: default_tab_stop_px,
+        default_origin: 0.0,
     }
 }
 
@@ -779,16 +773,19 @@ impl ParagraphLayout {
             }))
             .unwrap_or(0);
 
-        let first_line = paragraph.indent_first_line()
-            .or_else(|| resolve_ppr_indent(&style_pprs, default_ppr, |ind| {
-                ind.first_line.as_deref().and_then(|s| s.parse().ok())
-            }))
-            .unwrap_or(0);
-
-        let hanging = paragraph.indent_hanging()
-            .or_else(|| resolve_ppr_indent(&style_pprs, default_ppr, |ind| {
-                ind.hanging.as_deref().and_then(|s| s.parse().ok())
-            }))
+        // §17.3.1.12: firstLine and hanging are one setting, the first line's
+        // offset from the left indent. The nearest level that sets either
+        // decides, and on one element hanging wins ("the firstLine attribute
+        // is ignored"). Resolving them apart let a style's firstLine add to a
+        // direct hanging.
+        let first_line_offset = |ind: &ooxml_wml::types::CTInd| -> Option<i64> {
+            ind.hanging.as_deref().and_then(|s| s.parse::<i64>().ok()).map(|h| -h)
+                .or_else(|| ind.first_line.as_deref().and_then(|s| s.parse().ok()))
+        };
+        let first_line = paragraph.p_pr.as_ref()
+            .and_then(|ppr| ppr.indentation.as_deref())
+            .and_then(first_line_offset)
+            .or_else(|| resolve_ppr_indent(&style_pprs, default_ppr, first_line_offset))
             .unwrap_or(0);
 
         // Each w:spacing attribute inherits *independently*: a direct pPr that
@@ -926,7 +923,7 @@ impl ParagraphLayout {
             indent_left_px: twips_to_px(indent_left),
             indent_left_explicit: indent_left_opt.is_some(),
             indent_right_px: twips_to_px(indent_right),
-            indent_first_line_px: twips_to_px(first_line - hanging),
+            indent_first_line_px: twips_to_px(first_line),
             space_before_px: twips_to_px(space_before),
             before_auto,
             space_after_px: twips_to_px(space_after),
