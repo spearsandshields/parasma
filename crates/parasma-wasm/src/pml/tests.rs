@@ -1958,6 +1958,40 @@ fn chart_xfrm_box_and_namespaced_key() {
     assert_eq!(ch.chart_key, "chart::pml::0::rId2", "slide-namespaced chart key");
 }
 
+/// A chart inside a group (§19.3.1.22) is drawn, at the box its group's
+/// transform gives it: here a group that halves its child space.
+#[test]
+fn a_chart_inside_a_group_is_drawn_through_the_group_transform() {
+    use crate::engine::fonts::FontCache;
+    use crate::engine::units::emu_to_px;
+    let frame_start = CHART_SLIDE.find("<p:graphicFrame>").unwrap();
+    let frame_end = CHART_SLIDE.find("</p:graphicFrame>").unwrap() + "</p:graphicFrame>".len();
+    let frame = &CHART_SLIDE[frame_start..frame_end];
+    let group = format!(
+        r#"<p:grpSp><p:nvGrpSpPr><p:cNvPr id="9" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="4572000" cy="3429000"/><a:chOff x="0" y="0"/><a:chExt cx="9144000" cy="6858000"/></a:xfrm></p:grpSpPr>{frame}</p:grpSp>"#
+    );
+    let slide = format!("{}{group}{}", &CHART_SLIDE[..frame_start], &CHART_SLIDE[frame_end..]);
+    let pptx = build_pptx(&[
+        ("[Content_Types].xml", CONTENT_TYPES_CHART),
+        ("_rels/.rels", ROOT_RELS),
+        ("ppt/presentation.xml", PRESENTATION),
+        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
+        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
+        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
+        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
+        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
+        ("ppt/slides/slide1.xml", &slide),
+        ("ppt/slides/_rels/slide1.xml.rels", CHART_SLIDE_RELS),
+        ("ppt/charts/chart1.xml", CHART_PART),
+    ]);
+    let mut renderer = PmlRenderer::from_pptx(pptx).expect("pptx loads");
+    let pages = renderer.build_pages_for_test(&FontCache::new());
+    assert_eq!(pages[0].charts.len(), 1, "the grouped chart is drawn");
+    let ch = &pages[0].charts[0];
+    assert!((ch.x - emu_to_px(457_200)).abs() < 0.01 && (ch.w - emu_to_px(2_743_200)).abs() < 0.01, "half scale: {} {}", ch.x, ch.w);
+    assert!(renderer.take_charts().iter().any(|(k, _)| k == "chart::pml::0::rId2"), "its XML is loaded");
+}
+
 #[test]
 fn chart_part_xml_extracted_and_parses_with_series() {
     // The renderer collects the chart part XML at load (OPC self-parse: slide

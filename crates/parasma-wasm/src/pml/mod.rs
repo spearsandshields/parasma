@@ -1527,19 +1527,32 @@ fn slide_table_items(slide: &ooxml_pml::Slide) -> Vec<table::TableItem> {
 /// `p:graphicFrame` via `c:chart@r:id`, §19.3.1.16 → §21.2), pairing each
 /// chart's r:id with its containing graphicFrame `a:xfrm` box.
 ///
-/// The fork's `Slide::chart_rel_ids()` returns the chart r:ids but NOT the frame
-/// box (the table situation), so we walk the `shape_tree.graphic_frame` list
+/// The fork's `Slide::chart_rel_ids()` returns the top-level chart r:ids but NOT
+/// the frame box, nor charts inside groups, so we walk the graphic frames
 /// ourselves: for each frame whose `extra_children` contain a `c:chart` element,
 /// capture its r:id + the frame `xfrm` off/ext. A frame may carry MULTIPLE
 /// charts (rare) — we emit one item per `c:chart`, all sharing that frame's box.
 /// The chart key is slide-namespaced (`chart::pml::{slide_idx}::{relId}`) because
 /// rel ids restart per slide.
 fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::ChartItem> {
-    if slide.chart_rel_ids().is_empty() {
-        return Vec::new();
+    // Frames at the top of the shape tree, and inside groups (§19.3.1.22)
+    // through each group's cumulative transform.
+    fn frames<'a>(
+        group: &'a ooxml_pml::types::GroupShape,
+        xf: shape::GroupTransform,
+        out: &mut Vec<(&'a ooxml_pml::types::GraphicalObjectFrame, shape::GroupTransform)>,
+    ) {
+        for f in &group.graphic_frame {
+            out.push((f, xf));
+        }
+        for g in &group.group_shape {
+            frames(g, xf.compose(&shape::group_transform(g)), out);
+        }
     }
+    let mut all = Vec::new();
+    frames(&slide.inner().common_slide_data.shape_tree, shape::GroupTransform::IDENTITY, &mut all);
     let mut out = Vec::new();
-    for frame in &slide.inner().common_slide_data.shape_tree.graphic_frame {
+    for (frame, xf) in all {
         let mut rel_ids = Vec::new();
         for n in &frame.extra_children {
             collect_chart_rel_ids(&n.node, &mut rel_ids);
@@ -1558,12 +1571,13 @@ fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::C
             .as_deref()
             .map(|e| (e.cx, e.cy))
             .unwrap_or((0, 0));
+        let b = xf.apply_box(off_x, off_y, ext_cx, ext_cy);
         for rel in rel_ids {
             out.push(shape::ChartItem {
-                off_x,
-                off_y,
-                ext_cx,
-                ext_cy,
+                off_x: b.off_x,
+                off_y: b.off_y,
+                ext_cx: b.ext_cx,
+                ext_cy: b.ext_cy,
                 chart_key: shape::chart_key(slide_idx, &rel),
             });
         }

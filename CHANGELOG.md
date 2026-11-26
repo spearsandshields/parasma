@@ -126,6 +126,12 @@ are held stable regardless.
   in Office and keep their colours; 3-D bar, line and area charts are drawn
   flat instead of not at all; doughnuts with several series draw every
   ring.
+- Charts: charts in Word headers, footers and text boxes appear, floating
+  charts in Word are positioned and wrapped like floating pictures instead
+  of sitting in the text, and charts inside PowerPoint groups are drawn. A
+  Word chart that cannot be drawn shows the picture saved with it, when
+  there is one. Pie-of-pie, stock and bubble charts are drawn as a pie,
+  lines and a scatter; surface charts are not drawn yet.
 - Charts (all formats): pies and doughnuts start their first slice where the
   chart says, pull out exploded slices, and draw the doughnut hole at its
   set size.

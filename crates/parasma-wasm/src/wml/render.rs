@@ -22,7 +22,6 @@ use ooxml_wml::types::CTTxbxContent;
 
 use crate::chart;
 use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
-use crate::engine::images::draw_image_placeholder;
 use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::pt_to_px;
 use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
@@ -466,8 +465,11 @@ pub(crate) fn render_line(
                     crate::emf::note_request(&img.rel_id, img_w, img.height_px);
                     p.draw_image(&crate::emf::pic_key(&img.rel_id), img_x, top, img_w, img.height_px)?;
                 } else if let Some(chart_bytes) = charts.get(&img.rel_id) {
+                    // A chart that can't be drawn shows the fallback picture
+                    // its part carries (stored under the same key), else the
+                    // placeholder.
                     if !chart::render_chart(chart_bytes, p, img_x, top, img_w, img.height_px) {
-                        draw_image_placeholder(p, img_x, top, img_w, img.height_px)?;
+                        p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
                     }
                 } else {
                     p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
@@ -476,7 +478,7 @@ pub(crate) fn render_line(
             #[cfg(not(feature = "emf"))]
             if let Some(chart_bytes) = charts.get(&img.rel_id) {
                 if !chart::render_chart(chart_bytes, p, img_x, top, img_w, img.height_px) {
-                    draw_image_placeholder(p, img_x, top, img_w, img.height_px)?;
+                    p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
                 }
             } else {
                 p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;

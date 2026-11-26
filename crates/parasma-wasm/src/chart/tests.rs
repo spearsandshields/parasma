@@ -269,3 +269,16 @@ fn pie_and_doughnut_geometry() {
         .collect();
     assert!((centres[0].0 - centres[1].0).abs() > 1.0, "the first slice's centre moved: {centres:?}");
 }
+
+/// Pie-of-pie, stock and bubble charts draw as a pie, lines and a scatter.
+#[test]
+fn more_chart_types_draw_as_their_nearest() {
+    let s = ser(0, 0, "", &str_cats(&["a", "b"]), &[(0, "1"), (1, "2")], 2);
+    let of_pie = chart_xml(&format!(r#"<c:ofPieChart><c:ofPieType val="pie"/><c:varyColors val="1"/>{s}</c:ofPieChart>"#), "");
+    assert_eq!(model(&of_pie).kind, ChartType::Pie);
+    let stock = chart_xml(&format!(r#"<c:stockChart>{s}<c:axId val="1"/><c:axId val="2"/></c:stockChart>{AXES}"#), "");
+    assert_eq!(model(&stock).kind, ChartType::Line);
+    let bubble_ser = r#"<c:ser><c:idx val="0"/><c:order val="0"/><c:yVal><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>3</c:v></c:pt></c:numLit></c:yVal></c:ser>"#;
+    let bubble = chart_xml(&format!(r#"<c:bubbleChart>{bubble_ser}<c:axId val="1"/><c:axId val="2"/></c:bubbleChart>{AXES}"#), "");
+    assert_eq!(model(&bubble).kind, ChartType::Scatter);
+}

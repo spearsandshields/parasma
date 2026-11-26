@@ -10690,6 +10690,48 @@ fn a_smartart_diagram_takes_its_space() {
     assert!(y("After") - y("Before") > 192.0, "2 in = 192 px between them: {} -> {}", y("Before"), y("After"));
 }
 
+const MINIMAL_CHART: &str = r#"<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:ser><c:idx val="0"/><c:order val="0"/><c:val><c:numLit><c:ptCount val="1"/><c:pt idx="0"><c:v>1</c:v></c:pt></c:numLit></c:val></c:ser><c:axId val="1"/><c:axId val="2"/></c:barChart></c:plotArea></c:chart></c:chartSpace>"#;
+
+fn chart_drawing(anchored: bool, rel: &str) -> String {
+    let graphic = format!(r#"<wp:extent cx="2743200" cy="1828800"/>{}<wp:docPr id="3" name="Chart"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="{rel}"/></a:graphicData></a:graphic>"#,
+        if anchored { r#"<wp:wrapSquare wrapText="bothSides"/>"# } else { "" });
+    let wp = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing""#;
+    if anchored {
+        format!(r#"<w:r><w:drawing><wp:anchor {wp} distL="114300" distR="114300" behindDoc="0" simplePos="0" relativeHeight="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>{graphic}</wp:anchor></w:drawing></w:r>"#)
+    } else {
+        format!(r#"<w:r><w:drawing><wp:inline {wp}>{graphic}</wp:inline></w:drawing></w:r>"#)
+    }
+}
+
+/// §20.4.2.3: a floating chart is positioned like a floating picture, not
+/// laid out in the line.
+#[test]
+fn a_floating_chart_floats() {
+    let body = format!("<w:p>{}<w:r><w:t>Beside the chart</w:t></w:r></w:p>", chart_drawing(true, "rId30"));
+    let docx = unzip_replace(numbering_docx("", "", &body), "word/_rels/document.xml.rels", "</Relationships>",
+        r#"<Relationship Id="rId30" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart1.xml"/></Relationships>"#);
+    let v = layout(unzip_add(docx, "word/charts/chart1.xml", MINIMAL_CHART));
+    assert!(v.chart_xml.borrow().contains_key("chart::rId30"));
+    let pages = v.pages.borrow();
+    assert!(pages[0].anchored_images.iter().any(|a| a.rel_id == "chart::rId30"), "anchored, not inline");
+}
+
+/// A chart in a header loads from the header part's own relationships.
+#[test]
+fn a_header_chart_loads_from_its_own_part() {
+    let header = format!(r#"<w:hdr {W_NS} {R_NS}><w:p>{}</w:p></w:hdr>"#, chart_drawing(false, "rId1"));
+    let docx = numbering_docx("", "", &para("Body"));
+    let docx = unzip_replace(docx, "word/document.xml", "<w:pgSz", r#"<w:headerReference w:type="default" r:id="rId10"/><w:pgSz"#);
+    let docx = unzip_replace(docx, "word/_rels/document.xml.rels", "</Relationships>",
+        r#"<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#);
+    let docx = unzip_add(docx, "word/header1.xml", &header);
+    let docx = unzip_add(docx, "word/_rels/header1.xml.rels", r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart2.xml"/></Relationships>"#);
+    let v = layout(unzip_add(docx, "word/charts/chart2.xml", MINIMAL_CHART));
+    let key = "chart::word/header1.xml::rId1";
+    assert!(v.chart_xml.borrow().contains_key(key), "loaded under its namespaced key");
+    assert_eq!(header_pictures(&v, 0), vec![key.to_owned()], "the header item names it");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

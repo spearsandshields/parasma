@@ -2329,19 +2329,21 @@ impl Viewer {
         // that may reference a fallback PNG. We store these with a namespaced
         // key and record the mapping so collect_items can resolve chart drawings.
         {
-            let mut chart_rel_ids: Vec<String> = Vec::new();
-            let mut collect_charts = |p: &ooxml_wml::types::Paragraph| {
-                for run in crate::wml::content_walk::paragraph_runs(p) {
-                    for drawing in run.drawings() {
-                        for rel_id in drawing.all_chart_rel_ids() {
-                            chart_rel_ids.push(rel_id.to_string());
+            // Charts in the body at any depth, and in its text boxes.
+            fn collect_charts(blocks: &[ooxml_wml::types::BlockContent], out: &mut Vec<String>) {
+                for p in all_paragraphs(blocks) {
+                    for run in crate::wml::content_walk::paragraph_runs(p) {
+                        for drawing in run.drawings() {
+                            out.extend(drawing.all_chart_rel_ids().into_iter().map(str::to_string));
+                            if let Some(tb) = crate::wml::drawing::extract_drawing_text_box(drawing, &ThemeFonts::empty()) {
+                                collect_charts(&tb.content.block_content, out);
+                            }
                         }
                     }
                 }
-            };
-            for p in all_paragraphs(&doc.body().block_content) {
-                collect_charts(p);
             }
+            let mut chart_rel_ids: Vec<String> = Vec::new();
+            collect_charts(&doc.body().block_content, &mut chart_rel_ids);
 
             for chart_rel_id in chart_rel_ids {
                 let chart_path = match doc.doc_relationships().get(&chart_rel_id) {
@@ -2504,7 +2506,7 @@ impl Viewer {
         // to avoid collisions with document-level rIds.
         for section in &mut sections {
             extract_hdr_ftr_images(
-                &mut doc, &mut section.hdr_ftr, &mut self.images.borrow_mut(),
+                &mut doc, &mut section.hdr_ftr, &mut self.images.borrow_mut(), &mut self.chart_xml.borrow_mut(),
             );
         }
 
@@ -6918,10 +6920,19 @@ impl Viewer {
             cull::keep(clip, tb.x, tb.y, tb.x + tb.width_px, tb.y + tb.height_px)
         };
 
+        // A floating chart draws through the chart painter; anything else is a
+        // picture.
+        let paint_anchored = |ai: &AnchoredImageLayout| match charts.get(&ai.rel_id) {
+            Some(xml) => {
+                let _ = crate::chart::render_chart(xml, p, ai.x, ai.y, ai.width_px, ai.height_px);
+            }
+            None => render_anchored_image(p, ai, &bitmaps),
+        };
+
         // Render behind-text anchored images and text boxes
         for ai in &page.anchored_images {
             if ai.behind_text && keep_ai(ai) {
-                render_anchored_image(p, ai, &bitmaps);
+                paint_anchored(ai);
             }
         }
         for tb in &page.positioned_text_boxes {
@@ -7244,7 +7255,7 @@ impl Viewer {
         // Render in-front anchored images and text boxes
         for ai in &page.anchored_images {
             if !ai.behind_text && keep_ai(ai) {
-                render_anchored_image(p, ai, &bitmaps);
+                paint_anchored(ai);
             }
         }
         for tb in &page.positioned_text_boxes {

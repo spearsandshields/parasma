@@ -4,7 +4,9 @@
 //! Parses chart XML via ooxml-dml's typed API into a [`ChartModel`] and
 //! paints it. Supports bar/column (clustered, stacked, 100 % stacked,
 //! horizontal), line, area, pie, doughnut, scatter and radar charts; the 3-D
-//! bar, line and area types are drawn as their flat counterparts.
+//! bar, line and area types are drawn as their flat counterparts, and
+//! pie-of-pie, stock and bubble charts as a pie, lines and a scatter.
+//! Declared: surface charts are not drawn.
 //!
 //! Entry point: `render_chart()` takes the chart XML bytes, a painter and a
 //! bounding rectangle, and draws the chart.
@@ -403,6 +405,19 @@ impl ChartModel {
             } else if let Some(r) = plot.radar_chart.first() {
                 (ChartType::Radar, raw_series!(r.ser, cat, value, marker),
                  false, Grouping::Clustered, None, None, chart_bool(r.vary_colors.as_deref()), true)
+            } else if let Some(o) = plot.of_pie_chart.first() {
+                // Pie-of-pie and bar-of-pie (§21.2.2.126): the main pie only.
+                (ChartType::Pie, raw_series!(o.ser, cat, value, explode),
+                 false, Grouping::Clustered, None, None, chart_bool(o.vary_colors.as_deref()).or(Some(true)), false)
+            } else if let Some(st) = plot.stock_chart.first() {
+                // Stock (§21.2.2.199): its series as lines, without high-low
+                // lines or up-down bars.
+                (ChartType::Line, raw_series!(st.ser, cat, value, marker, smooth),
+                 false, Grouping::Clustered, None, None, None, true)
+            } else if let Some(bu) = plot.bubble_chart.first() {
+                // Bubble (§21.2.2.20): its points as a scatter, without sizes.
+                (ChartType::Scatter, raw_series!(bu.ser, x_val, y_val),
+                 false, Grouping::Clustered, None, None, chart_bool(bu.vary_colors.as_deref()), true)
             } else {
                 return None;
             };

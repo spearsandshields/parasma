@@ -590,9 +590,12 @@ pub(crate) fn extract_hdr_ftr_images<R: std::io::Read + std::io::Seek>(
     doc: &mut ooxml_wml::Document<R>,
     hdr_ftr: &mut SectionHdrFtr,
     images: &mut HashMap<String, ImageBytes>,
+    charts: &mut HashMap<String, Vec<u8>>,
 ) {
-    // Each part's image relationships, namespaced as `<part>::<rId>` so two
-    // parts that both use `rId1` stay apart.
+    // Each part's image and chart relationships, namespaced as
+    // `<part>::<rId>` so two parts that both use `rId1` stay apart. A chart
+    // part's XML is stored under `chart::<part>::<rId>`, the key its drawing
+    // resolves to once rewritten.
     let mut remaps: HashMap<String, HashMap<String, String>> = HashMap::new();
     for part_path in hdr_ftr.part_paths.clone() {
         let part_rels = match doc.package_mut().read_part_relationships(&part_path) {
@@ -603,6 +606,21 @@ pub(crate) fn extract_hdr_ftr_images<R: std::io::Read + std::io::Seek>(
         let mut remap: HashMap<String, String> = HashMap::new();
 
         for rel in part_rels.iter() {
+            let target_path = || if rel.target.starts_with('/') {
+                rel.target.trim_start_matches('/').to_string()
+            } else if let Some(slash) = part_path.rfind('/') {
+                format!("{}/{}", &part_path[..slash], &rel.target)
+            } else {
+                rel.target.clone()
+            };
+            if rel.relationship_type.ends_with("/chart") {
+                let namespaced_id = format!("{}::{}", part_path, rel.id);
+                remap.insert(rel.id.clone(), namespaced_id.clone());
+                if let Ok(xml) = doc.package_mut().read_part(&target_path()) {
+                    charts.insert(format!("chart::{namespaced_id}"), xml);
+                }
+                continue;
+            }
             if !rel.relationship_type.contains("/image") { continue; }
 
             let namespaced_id = format!("{}::{}", part_path, rel.id);
@@ -610,13 +628,7 @@ pub(crate) fn extract_hdr_ftr_images<R: std::io::Read + std::io::Seek>(
 
             if images.contains_key(&namespaced_id) { continue; }
 
-            let image_path = if rel.target.starts_with('/') {
-                rel.target.trim_start_matches('/').to_string()
-            } else if let Some(slash) = part_path.rfind('/') {
-                format!("{}/{}", &part_path[..slash], &rel.target)
-            } else {
-                rel.target.clone()
-            };
+            let image_path = target_path();
 
             match doc.package_mut().read_part(&image_path) {
                 Ok(data) => {
@@ -665,12 +677,19 @@ pub(crate) fn extract_hdr_ftr_images<R: std::io::Read + std::io::Seek>(
     }
 }
 
+/// Rewrite a drawing's relationship references through `remap`: a picture's
+/// `a:blip@r:embed` and a chart's `c:chart@r:id` (§21.2.2.27).
 pub(crate) fn rewrite_blip_embed_ids(elem: &mut ooxml_xml::RawXmlElement, remap: &HashMap<String, String>) {
     let local = elem.name.rsplit_once(':').map(|(_, l)| l).unwrap_or(&elem.name);
-    if local == "blip" {
+    let reference = match local {
+        "blip" => Some("embed"),
+        "chart" => Some("id"),
+        _ => None,
+    };
+    if let Some(reference) = reference {
         for (attr_name, attr_val) in &mut elem.attributes {
             let attr_local = attr_name.rsplit_once(':').map(|(_, l)| l).unwrap_or(attr_name);
-            if attr_local == "embed" {
+            if attr_local == reference {
                 if let Some(new_id) = remap.get(attr_val.as_str()) {
                     *attr_val = new_id.clone();
                 }

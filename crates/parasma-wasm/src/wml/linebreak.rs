@@ -700,6 +700,23 @@ pub(crate) fn collect_items(
                     Some((cx, cy)) => (emu_to_px(cx), emu_to_px(cy)),
                     None => (400.0, 300.0),
                 };
+                // A floating chart is positioned and wrapped like a floating
+                // picture (§20.4.2.3); it was laid out in the line.
+                if crate::wml::drawing::is_anchored(drawing) {
+                    let (h_pos, v_pos, h_rel, v_rel, behind, wrap) = parse_anchor_position(drawing, cw, ch);
+                    anchored_images.push(AnchoredImageInfo {
+                        rel_id: fallback_key,
+                        width_px: cw,
+                        height_px: ch,
+                        pos_h: h_pos,
+                        pos_v: v_pos,
+                        h_relative_from: h_rel,
+                        v_relative_from: v_rel,
+                        behind_text: behind,
+                        wrap,
+                    });
+                    continue;
+                }
                 items.push(Item {
                     style: style.clone(),
                     width: cw,
