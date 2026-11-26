@@ -92,7 +92,7 @@ fn layout_hdr_ftr_blocks(
     // Header/footer tables don't carry list markers in practice; pass empty
     // numbering so `layout_table` resolves no counters (§17.9 not exercised here).
     let numbering_levels = HashMap::new();
-    let mut list_counters = HashMap::new();
+    let mut list_counters = crate::wml::numbering::ListCounters::default();
     for block in &flat {
         match block {
             FlatBlock::Para(p) => {

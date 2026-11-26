@@ -149,12 +149,11 @@ use wml::page::{
 };
 // Re-export paragraph-cluster symbols at the crate root so the unedited
 // `crate::X` imports in sibling modules keep resolving (canaries):
-// `wml::table` → `layout_paragraph`; `wml::numbering` →
-// `collect_paragraph_style_chain`; `wml::linebreak` →
+// `wml::table` → `layout_paragraph`; `wml::linebreak` →
 // `collect_paragraph_style_rprs`/`ResolvedTabStops`/`TabAlignment`/`TabLeader`.
 // lib.rs's own page-assembly/render code also uses several of these.
 pub(crate) use wml::paragraph::{
-    collect_paragraph_style_chain, collect_paragraph_style_rprs, gap_prev, layout_paragraph, paragraph_gap,
+    collect_paragraph_style_rprs, gap_prev, layout_paragraph, paragraph_gap,
     ParagraphCache, ResolvedTabStops, TabAlignment, TabLeader,
 };
 use wml::render::{layout_text_box, render_line, render_table_row, render_text_box, substitute_page_fields};
@@ -3118,7 +3117,7 @@ impl Viewer {
         };
 
         let mut global_page_idx: usize = 0;
-        let mut list_counters: HashMap<(i64, i64), i64> = HashMap::new();
+        let mut list_counters = wml::numbering::ListCounters::default();
         // Document-order paragraph id counter + ParaMeta sink,
         // threaded as an EXPLICIT parameter (never a thread-local) through the
         // cache-build walk only. Declared beside `list_counters`, OUTSIDE the

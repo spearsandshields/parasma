@@ -22,7 +22,7 @@ use ooxml_wml::types::{STBorder, STJcTable, STTblWidth};
 use crate::engine::color::ooxml_color_to_css;
 use crate::engine::fonts::{FontCache, ThemeFonts, DEFAULT_FONT_PT};
 use crate::engine::units::twips_to_px;
-use crate::wml::numbering::{resolve_numbering_marker, NumberingLevelDef};
+use crate::wml::numbering::{resolve_numbering_marker, ListCounters, NumberingLevelDef};
 use crate::{
     layout_paragraph, CellBlock, Item, DEFAULT_CELL_MARGIN_H_TWIPS, DEFAULT_CELL_MARGIN_V_TWIPS,
 };
@@ -483,7 +483,7 @@ pub(crate) fn layout_table(
     default_tab_stop_px: f64,
     theme_fonts: &ThemeFonts,
     numbering_levels: &HashMap<(i64, i64), NumberingLevelDef>,
-    list_counters: &mut HashMap<(i64, i64), i64>,
+    list_counters: &mut ListCounters,
     // Selection capture — `Some` on the body cache-build walk (threaded from
     // `run_layout_impl`); cell paragraphs are captured with a `TableCell`
     // location. `None` on the hdr/ftr build. The incoming location's `sec`/
@@ -1208,6 +1208,7 @@ mod tests {
     };
     use crate::engine::fonts::{FontCache, ThemeFonts};
     use crate::engine::fragment::Block;
+    use crate::wml::numbering::ListCounters;
     use crate::wml::select::{extract_range_impl, ParaCapture, ParaLocation, ParaMeta, TextPos};
     use ooxml_wml::ext::StyleContext;
     use ooxml_wml::types::{
@@ -1307,7 +1308,7 @@ mod tests {
         let style_ctx = StyleContext::default();
         let theme_fonts = ThemeFonts::empty();
         let numbering_levels = HashMap::new();
-        let mut list_counters = HashMap::new();
+        let mut list_counters = ListCounters::default();
 
         let mut next_id = 0u32;
         let mut sink: Vec<ParaMeta> = Vec::new();
@@ -1489,7 +1490,7 @@ mod tests {
         let style_ctx = StyleContext::default();
         let theme_fonts = ThemeFonts::empty();
         let numbering_levels = HashMap::new();
-        let mut list_counters = HashMap::new();
+        let mut list_counters = ListCounters::default();
         let cache = layout_table(
             &font_cache, &table, 400.0, &style_ctx, None, 48.0,
             &theme_fonts, &numbering_levels, &mut list_counters, None,
@@ -1530,7 +1531,7 @@ mod tests {
         let style_ctx = StyleContext::default();
         let theme_fonts = ThemeFonts::empty();
         let numbering_levels = HashMap::new();
-        let mut list_counters = HashMap::new();
+        let mut list_counters = ListCounters::default();
         layout_table(
             &font_cache, table, 400.0, &style_ctx, None, 48.0,
             &theme_fonts, &numbering_levels, &mut list_counters, None,

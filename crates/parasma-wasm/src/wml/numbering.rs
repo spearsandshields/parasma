@@ -1,19 +1,18 @@
 //! Numbering / list support (§17.9) — layout-side marker resolution.
 //!
 //! Resolves a paragraph's numbering reference into a renderable marker:
-//! counter advancement, `lvlText` `%n` substitution, and the decimal/roman/
-//! letter number formatters. The load-side `word/numbering.xml` parse that
-//! builds the `(num_id, ilvl)` → `NumberingLevelDef` lookup stays in `lib.rs`
-//! as WML-loader plumbing (it walks the parsed package at load time); it
-//! constructs `NumberingLevelDef` via the now-`pub(crate)` fields here.
-//! Verbatim relocation from `lib.rs`.
+//! `numPr` resolution, the per-list counters, and `lvlText` `%n`
+//! substitution; the numbers themselves are written by the shared
+//! `engine::counter`. The load-side `word/numbering.xml` parse that builds
+//! the `(num_id, ilvl)` → `NumberingLevelDef` lookup is
+//! `wml::loader::build_numbering_lookup`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use ooxml_wml::ext::{ParagraphExt, StyleContext};
+use ooxml_wml::ext::StyleContext;
 use ooxml_wml::types::{STLevelSuffix, STNumberFormat};
 
-use crate::collect_paragraph_style_chain;
+use crate::wml::paragraph::paragraph_style_chain;
 use crate::engine::paint::Underline;
 use crate::wml::symbol_font::{SymbolFace, SymbolFont};
 
@@ -79,7 +78,16 @@ impl MarkerRunOverrides {
 pub(crate) struct NumberingLevelDef {
     pub(crate) format: STNumberFormat,
     pub(crate) lvl_text: String,
+    /// The abstract list whose counters this level advances: the num
+    /// instance's own `abstractNumId` (§17.9.26: instances of one abstract
+    /// list continue one sequence).
+    pub(crate) list: i64,
     pub(crate) start: i64,
+    /// §17.9.26 `startOverride`: the value the list's sequence is reset to
+    /// the first time this num instance uses the level.
+    pub(crate) start_override: Option<i64>,
+    /// §17.9.23 `pStyle`: the paragraph style this level is bound to.
+    pub(crate) p_style: Option<String>,
     /// §17.9.6 `w:lvlRestart` — 1-based index of the earliest level whose use
     /// restarts this level's counter. `None` = the default (restart whenever
     /// any earlier level is used). `Some(0)` = never restart.
@@ -89,6 +97,13 @@ pub(crate) struct NumberingLevelDef {
     /// `None` where the level sets none.
     pub(crate) indent_left_twips: Option<i64>,
     pub(crate) indent_first_twips: Option<i64>,
+    /// The level's own tab stops (§17.9.22 level pPr), typically the `num`
+    /// stop after the marker, merged under the paragraph's own. A `num` stop
+    /// past the hanging indent loses to the implicit stop at the hang, which
+    /// comes first; Word was not measured there. Of the rest of the level pPr
+    /// only `ind` is read; spacing, justification and right indent are not
+    /// (FLOOR).
+    pub(crate) tabs: Option<ooxml_wml::types::CTTabs>,
     /// §17.9.4 `isLgl`: every number in the label is written in decimal.
     pub(crate) legal: bool,
     /// §17.9.11 `lvlText@null`: the label is a null character: nothing is
@@ -111,6 +126,7 @@ pub(crate) struct NumberingMarker {
     /// See `NumberingLevelDef`.
     pub(crate) indent_left_twips: Option<i64>,
     pub(crate) indent_first_twips: Option<i64>,
+    pub(crate) tabs: Option<ooxml_wml::types::CTTabs>,
     /// The paragraph names its list itself (a direct `numPr`), rather than
     /// through its style: then the list's indents beat the style's.
     pub(crate) direct: bool,
@@ -133,35 +149,84 @@ pub(crate) struct NumberingMarker {
     pub(crate) rpr: MarkerRunOverrides,
 }
 
+/// The running list counters of one layout pass, keyed by `(list, ilvl)`.
+/// §17.9.26: every num instance of an abstract list continues one sequence,
+/// and an instance's `startOverride` resets it once, on that instance's first
+/// use of the level (measured in Word: 1, 2 · restart 1 · back on the first
+/// instance 2).
+#[derive(Default)]
+pub(crate) struct ListCounters {
+    values: HashMap<(i64, i64), i64>,
+    /// `(num_id, ilvl)` pairs whose `startOverride` has applied.
+    overridden: HashSet<(i64, i64)>,
+}
+
 /// Resolve the list marker for a paragraph: its rendered label string (`"1."`,
 /// `"a)"`, `"•"`, multi-level `"1.2.3"`) plus the marker's run overrides and
 /// indent, or `None` when the paragraph is not a list item. Advances the
-/// per-`(numId, ilvl)` counters as a side effect (so sequential list items
+/// list's counters as a side effect (so sequential list items
 /// number correctly). Governing spec: §17.9 numbering — `numFmt`, `lvlText`
 /// `%n` substitution (§17.9.11), and the level rPr digest (§17.9.24).
 pub(crate) fn resolve_numbering_marker(
     paragraph: &ooxml_wml::types::Paragraph,
     levels: &HashMap<(i64, i64), NumberingLevelDef>,
-    counters: &mut HashMap<(i64, i64), i64>,
+    counters: &mut ListCounters,
     style_ctx: &StyleContext,
 ) -> Option<NumberingMarker> {
-    let direct = paragraph.numbering();
-    let numbering = direct.or_else(|| {
-        let style_pprs = collect_paragraph_style_chain(paragraph, style_ctx);
-        for ppr in &style_pprs {
-            if let Some(ref num_pr) = ppr.num_pr {
-                let num_id = num_pr.num_id.as_deref()?.value;
-                let ilvl = num_pr.ilvl.as_deref().map(|i| i.value).unwrap_or(0);
-                return Some((num_id, ilvl));
-            }
-        }
-        None
-    });
-    let (num_id, ilvl) = numbering?;
-    if num_id == 0 { return None; }
+    let (num_id, ilvl, direct) = resolve_num_pr(paragraph, levels, style_ctx)?;
     let mut marker = resolve_marker_for(num_id, ilvl, levels, counters);
-    marker.direct = direct.is_some();
+    marker.direct = direct;
     Some(marker)
+}
+
+/// A paragraph's list and level, and whether it names the list itself.
+///
+/// `numId` and `ilvl` resolve separately (§17.3.1.19), each from the
+/// paragraph's own `numPr`, else the nearest style in its chain that sets
+/// it. `numId` 0 removes numbering (§17.9.18).
+///
+/// DEVIATION (measured in Word, against §17.3.1.19 and §17.9.23): a level's
+/// `pStyle` does not choose the level of a style-numbered paragraph. Word
+/// uses the style's `ilvl` when one is set, even if the binding names
+/// another level. With no `ilvl` anywhere, a direct `numId` numbers at level
+/// 0; a style's `numId` numbers at level 0 only when some level of the list
+/// is bound to that style, and otherwise not at all.
+fn resolve_num_pr(
+    paragraph: &ooxml_wml::types::Paragraph,
+    levels: &HashMap<(i64, i64), NumberingLevelDef>,
+    style_ctx: &StyleContext,
+) -> Option<(i64, i64, bool)> {
+    let own = paragraph.p_pr.as_deref().and_then(|p| p.num_pr.as_deref());
+    let chain = paragraph_style_chain(paragraph, style_ctx);
+
+    fn style_num_pr(style: &ooxml_wml::types::Style) -> Option<&ooxml_wml::types::NumberingProperties> {
+        style.p_pr.as_deref().and_then(|p| p.num_pr.as_deref())
+    }
+    let (num_id, direct, supplier) = match own.and_then(|n| n.num_id.as_deref()) {
+        Some(n) => (n.value, true, None),
+        None => chain.iter().find_map(|s| {
+            style_num_pr(s).and_then(|n| n.num_id.as_deref()).map(|n| (n.value, false, s.style_id.as_deref()))
+        })?,
+    };
+    if num_id == 0 {
+        return None;
+    }
+    let ilvl = own.and_then(|n| n.ilvl.as_deref())
+        .or_else(|| chain.iter().find_map(|s| style_num_pr(s).and_then(|n| n.ilvl.as_deref())))
+        .map(|i| i.value);
+    let ilvl = match ilvl {
+        Some(ilvl) => ilvl,
+        None if direct => 0,
+        None => {
+            let bound = levels.iter()
+                .any(|((n, _), l)| *n == num_id && l.p_style.is_some() && l.p_style.as_deref() == supplier);
+            if !bound {
+                return None;
+            }
+            0
+        }
+    };
+    Some((num_id, ilvl, direct))
 }
 
 /// Counter-advancing core (§17.9): given the resolved `(num_id, ilvl)`, advance
@@ -173,7 +238,7 @@ pub(crate) fn resolve_marker_for(
     num_id: i64,
     ilvl: i64,
     levels: &HashMap<(i64, i64), NumberingLevelDef>,
-    counters: &mut HashMap<(i64, i64), i64>,
+    counters: &mut ListCounters,
 ) -> NumberingMarker {
     // A paragraph can reference a level (num_id, ilvl) the abstractNum never
     // defines (e.g. a nested item whose `<w:lvl ilvl="1">` is missing). Word
@@ -186,10 +251,16 @@ pub(crate) fn resolve_marker_for(
             default_level = NumberingLevelDef {
                 format: STNumberFormat::Bullet,
                 lvl_text: "\u{2022}".to_string(),
+                // The instance's list, from any level it does define; a num
+                // with no levels at all counts on a key no list uses.
+                list: levels.iter().find(|((n, _), _)| *n == num_id).map_or(i64::MIN, |(_, l)| l.list),
                 start: 1,
+                start_override: None,
+                p_style: None,
                 lvl_restart: None,
                 indent_left_twips: Some(720 * (ilvl + 1)),
                 indent_first_twips: Some(-360),
+                tabs: None,
                 legal: false,
                 null_text: false,
                 suffix: STLevelSuffix::Tab,
@@ -201,7 +272,13 @@ pub(crate) fn resolve_marker_for(
 
     // Advance this level's counter (§17.9.11: the % number increments for each
     // subsequent paragraph of that level until its restart level intervenes).
-    let counter = counters.entry((num_id, ilvl)).or_insert(level.start - 1);
+    let list = level.list;
+    if let Some(start) = level.start_override {
+        if counters.overridden.insert((num_id, ilvl)) {
+            counters.values.insert((list, ilvl), start - 1);
+        }
+    }
+    let counter = counters.values.entry((list, ilvl)).or_insert(level.start - 1);
     *counter += 1;
     let current_count = *counter;
 
@@ -213,8 +290,8 @@ pub(crate) fn resolve_marker_for(
     // specified level is higher than the current level [N-1 ≥ L] the element is
     // ignored" → falls back to the default (always restart). We reset by
     // removing the counter entry so its next use re-seeds from `start - 1`.
-    let mut deeper: Vec<i64> = counters.keys()
-        .filter(|(nid, l)| *nid == num_id && *l > ilvl)
+    let mut deeper: Vec<i64> = counters.values.keys()
+        .filter(|(lst, l)| *lst == list && *l > ilvl)
         .map(|(_, l)| *l)
         .collect();
     deeper.sort_unstable();
@@ -225,7 +302,7 @@ pub(crate) fn resolve_marker_for(
             _ => true,                        // omitted, or specified ≥ L → default
         };
         if restarts {
-            counters.remove(&(num_id, l));
+            counters.values.remove(&(list, l));
         }
     }
 
@@ -266,7 +343,7 @@ pub(crate) fn resolve_marker_for(
                     let ref_counter = if lvl_ref == ilvl {
                         current_count
                     } else {
-                        counters.get(&(num_id, lvl_ref)).copied().unwrap_or_else(|| {
+                        counters.values.get(&(list, lvl_ref)).copied().unwrap_or_else(|| {
                             ref_def.map(|d| d.start).unwrap_or(1)
                         })
                     };
@@ -296,6 +373,7 @@ pub(crate) fn resolve_marker_for(
         symbol_face,
         indent_left_twips: level.indent_left_twips,
         indent_first_twips: level.indent_first_twips,
+        tabs: level.tabs.clone(),
         direct: false,
         suffix: level.suffix,
         // Capture the resolved list identity + live counter for copy.
@@ -333,7 +411,8 @@ fn decode_lvl_text_entities(s: &str) -> String {
 /// formatter. Declared: a custom format (`numFmt@format`) and the forms with
 /// no formatter here (Vietnamese and Hindi counting, Thai counting, Hindi
 /// vowels and consonants, Korean legal, Taiwanese digital, Chinese legal
-/// simplified) are written in decimal.
+/// simplified) are written in decimal, and letter formats always use the
+/// Latin alphabet whatever the run's language.
 pub(crate) fn format_number(n: i64, format: &STNumberFormat) -> String {
     crate::engine::counter::format(n, counter_style(format))
 }
@@ -411,10 +490,14 @@ mod tests {
         NumberingLevelDef {
             format: fmt,
             lvl_text: text.to_string(),
+            list: 0,
             start: 1,
+            start_override: None,
+            p_style: None,
             lvl_restart: restart,
             indent_left_twips: Some(720),
             indent_first_twips: Some(-360),
+            tabs: None,
             legal: false,
             null_text: false,
             suffix: STLevelSuffix::Tab,
@@ -432,8 +515,8 @@ mod tests {
         levels.insert((1, 0), def(STNumberFormat::Decimal, "%1", None));
         levels.insert((1, 1), def(STNumberFormat::Decimal, "%1.%2", None));
         levels.insert((1, 2), def(STNumberFormat::Decimal, "%1.%2.%3", None));
-        let mut c = HashMap::new();
-        let mark = |il, c: &mut HashMap<(i64, i64), i64>| {
+        let mut c = ListCounters::default();
+        let mark = |il, c: &mut ListCounters| {
             resolve_marker_for(1, il, &levels, c).text
         };
         assert_eq!(mark(0, &mut c), "1");
@@ -445,18 +528,31 @@ mod tests {
         assert_eq!(mark(1, &mut c), "2.1");
     }
 
-    /// §17.9.9 startOverride: the loader bakes the overridden start into the
-    /// level def's `start`, so level 0 begins at 5 → 5, 5.1.
+    /// §17.9.26, the three sequences measured in Word: instances of one
+    /// abstract list share its counters; a startOverride resets the shared
+    /// sequence once, on its instance's first use, and every instance then
+    /// continues from it.
     #[test]
-    fn start_override_offsets_first_counter() {
+    fn instances_share_the_abstract_list_sequence() {
+        let on = |list, start_override| NumberingLevelDef {
+            list,
+            start_override,
+            ..def(STNumberFormat::Decimal, "%1", None)
+        };
         let mut levels = HashMap::new();
-        let mut l0 = def(STNumberFormat::Decimal, "%1", None);
-        l0.start = 5;
-        levels.insert((2, 0), l0);
-        levels.insert((2, 1), def(STNumberFormat::Decimal, "%1.%2", None));
-        let mut c = HashMap::new();
-        assert_eq!(resolve_marker_for(2, 0, &levels, &mut c).text, "5");
-        assert_eq!(resolve_marker_for(2, 1, &levels, &mut c).text, "5.1");
+        levels.insert((5, 0), on(4, None));
+        levels.insert((6, 0), on(4, Some(1)));
+        levels.insert((7, 0), on(2, None));
+        levels.insert((8, 0), on(2, None));
+        levels.insert((9, 0), on(3, None));
+        levels.insert((10, 0), on(3, Some(5)));
+        let mut c = ListCounters::default();
+        let mut seq = |nums: &[i64]| -> Vec<String> {
+            nums.iter().map(|&n| resolve_marker_for(n, 0, &levels, &mut c).text).collect()
+        };
+        assert_eq!(seq(&[5, 5, 6, 5]), ["1", "2", "1", "2"], "the spec example");
+        assert_eq!(seq(&[7, 8, 7]), ["1", "2", "3"], "plain instances continue");
+        assert_eq!(seq(&[9, 10, 10, 9]), ["1", "5", "6", "7"], "an override resets once");
     }
 
     /// §17.9.6 lvlRestart=0 (the spec example): level 2 (lowerRoman) NEVER
@@ -468,8 +564,8 @@ mod tests {
         levels.insert((3, 0), def(STNumberFormat::Decimal, "%1)", None));
         levels.insert((3, 1), def(STNumberFormat::UpperLetter, "%2)", None));
         levels.insert((3, 2), def(STNumberFormat::LowerRoman, "%3)", Some(0)));
-        let mut c = HashMap::new();
-        let mark = |il, c: &mut HashMap<(i64, i64), i64>| {
+        let mut c = ListCounters::default();
+        let mark = |il, c: &mut ListCounters| {
             resolve_marker_for(3, il, &levels, c).text
         };
         assert_eq!(mark(0, &mut c), "1)");
@@ -556,7 +652,7 @@ mod tests {
         l0.start = 3;
         levels.insert((4, 0), l0);
         levels.insert((4, 1), def(STNumberFormat::Decimal, "%1.%2", None));
-        let mut c = HashMap::new();
+        let mut c = ListCounters::default();
         assert_eq!(resolve_marker_for(4, 1, &levels, &mut c).text, "3.1");
     }
 }

@@ -27,7 +27,7 @@ use crate::engine::units::pt_to_px;
 use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
 use crate::wml::content_walk::{flatten_blocks, FlatBlock};
 use crate::wml::linebreak::{measure_item_text, FieldCode, Item, LineSegment, CHAR_START_SENTINEL};
-use crate::wml::numbering::{resolve_numbering_marker, NumberingLevelDef};
+use crate::wml::numbering::{resolve_numbering_marker, ListCounters, NumberingLevelDef};
 use crate::wml::page::{PagedLine, PagedTableRow, PositionedTextBox, PARA_SENTINEL};
 use crate::wml::paragraph::{layout_paragraph, TabLeader};
 use crate::DEFAULT_TEXT_COLOR;
@@ -166,7 +166,7 @@ pub(crate) fn layout_text_box(
     let mut result = Vec::new();
     let mut y = 0.0_f64;
     let mut prev_space_after = 0.0_f64;
-    let mut list_counters: HashMap<(i64, i64), i64> = HashMap::new();
+    let mut list_counters = ListCounters::default();
     let ins = frame.insets;
     let inner_width = (width_px - ins.left - ins.right).max(10.0);
 

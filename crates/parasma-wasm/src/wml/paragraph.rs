@@ -255,7 +255,8 @@ pub(crate) fn layout_paragraph(
         None
     };
 
-    let mut tab_stops = resolve_paragraph_tab_stops(paragraph, style_ctx, default_ppr, default_tab_stop_px);
+    let list_tabs = marker.and_then(|m| m.tabs.as_ref());
+    let mut tab_stops = resolve_paragraph_tab_stops(paragraph, style_ctx, default_ppr, list_tabs, default_tab_stop_px);
     // §17.3.1.37 — a custom tab-stop `pos` is measured from the current PAGE
     // (leading text) MARGIN, but the advance/fit walk in `pack_lines` runs in the
     // paragraph's LEADING-EDGE frame (x=0 at the indented text start; see
@@ -524,6 +525,7 @@ fn resolve_paragraph_tab_stops(
     paragraph: &ooxml_wml::types::Paragraph,
     style_ctx: &StyleContext,
     default_ppr: Option<&ooxml_wml::types::CTPPrGeneral>,
+    list_tabs: Option<&ooxml_wml::types::CTTabs>,
     default_tab_stop_px: f64,
 ) -> ResolvedTabStops {
     let style_pprs = collect_paragraph_style_chain(paragraph, style_ctx);
@@ -531,16 +533,18 @@ fn resolve_paragraph_tab_stops(
     // §17.3.1.38: tab stops are ADDITIVE across the style hierarchy — "tab
     // stops at each level in the style hierarchy are added to each other to
     // determine the full set of tab stops for the paragraph" — keyed by
-    // POSITION. Walk base→derived (docDefaults → basedOn ancestors → the
-    // paragraph's own style → direct pPr): a stop at an already-seen position
+    // POSITION. Walk base→derived (docDefaults → the list level's own stops
+    // → basedOn ancestors → the paragraph's own style → direct pPr; §17.7.2
+    // puts numbering between defaults and styles): a stop at an already-seen position
     // OVERRIDES it, a different position ACCUMULATES, and val="clear" REMOVES
     // the inherited stop at its position without rendering itself (§17.18.84:
     // "cleared and shall be removed and ignored when processing").
     // `collect_paragraph_style_chain` returns derived-first, hence `.rev()`.
     let mut merged: std::collections::BTreeMap<i64, MergedStop> = std::collections::BTreeMap::new();
-    let sources = default_ppr.and_then(|d| d.tabs.as_ref()).into_iter()
-        .chain(style_pprs.iter().rev().filter_map(|ppr| ppr.tabs.as_ref()))
-        .chain(paragraph.p_pr.as_ref().and_then(|ppr| ppr.tabs.as_ref()));
+    let sources = default_ppr.and_then(|d| d.tabs.as_deref()).into_iter()
+        .chain(list_tabs)
+        .chain(style_pprs.iter().rev().filter_map(|ppr| ppr.tabs.as_deref()))
+        .chain(paragraph.p_pr.as_ref().and_then(|ppr| ppr.tabs.as_deref()));
     for tab_list in sources {
         for tab in &tab_list.tab {
             let pos_twips: i64 = tab.pos.parse().unwrap_or(0);
@@ -1276,60 +1280,42 @@ mod line_height_tests {
     }
 }
 
-pub(crate) fn collect_paragraph_style_chain<'a>(
+/// The paragraph's style and its `basedOn` ancestors, nearest first. A
+/// paragraph with no pStyle starts from the document's default paragraph
+/// style (§17.7.4.17). At most 20 styles, so a `basedOn` cycle ends.
+pub(crate) fn paragraph_style_chain<'a>(
     paragraph: &ooxml_wml::types::Paragraph,
     ctx: &'a StyleContext,
-) -> Vec<&'a ooxml_wml::types::CTPPrGeneral> {
+) -> Vec<&'a ooxml_wml::types::Style> {
     let style_id = paragraph.p_pr.as_ref()
         .and_then(|ppr| ppr.paragraph_style.as_ref())
         .map(|ps| ps.value.as_str());
-
-    // No pStyle: the document's default paragraph style (§17.7.4.17).
     let mut current_id = style_id.unwrap_or(DEFAULT_PARAGRAPH_STYLE_KEY).to_owned();
 
     let mut result = Vec::new();
-    let mut depth = 0;
-    loop {
-        if depth >= 20 { break; }
+    while result.len() < 20 {
         let Some(style) = ctx.style(&current_id) else { break };
-        if let Some(ref ppr) = style.p_pr {
-            result.push(ppr.as_ref());
-        }
+        result.push(style);
         match style.based_on.as_ref() {
             Some(base) => current_id = base.value.clone(),
             None => break,
         }
-        depth += 1;
     }
     result
+}
+
+pub(crate) fn collect_paragraph_style_chain<'a>(
+    paragraph: &ooxml_wml::types::Paragraph,
+    ctx: &'a StyleContext,
+) -> Vec<&'a ooxml_wml::types::CTPPrGeneral> {
+    paragraph_style_chain(paragraph, ctx).into_iter().filter_map(|s| s.p_pr.as_deref()).collect()
 }
 
 pub(crate) fn collect_paragraph_style_rprs<'a>(
     paragraph: &ooxml_wml::types::Paragraph,
     ctx: &'a StyleContext,
 ) -> Vec<&'a ooxml_wml::types::RunProperties> {
-    let style_id = paragraph.p_pr.as_ref()
-        .and_then(|ppr| ppr.paragraph_style.as_ref())
-        .map(|ps| ps.value.as_str());
-
-    // No pStyle: the document's default paragraph style (§17.7.4.17).
-    let mut current_id = style_id.unwrap_or(DEFAULT_PARAGRAPH_STYLE_KEY).to_owned();
-
-    let mut result = Vec::new();
-    let mut depth = 0;
-    loop {
-        if depth >= 20 { break; }
-        let Some(style) = ctx.style(&current_id) else { break };
-        if let Some(ref rpr) = style.r_pr {
-            result.push(rpr.as_ref());
-        }
-        match style.based_on.as_ref() {
-            Some(base) => current_id = base.value.clone(),
-            None => break,
-        }
-        depth += 1;
-    }
-    result
+    paragraph_style_chain(paragraph, ctx).into_iter().filter_map(|s| s.r_pr.as_deref()).collect()
 }
 
 fn resolve_ppr_option<T>(

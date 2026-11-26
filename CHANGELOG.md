@@ -179,6 +179,15 @@ are held stable regardless.
   numerals and syllables, Hebrew, Arabic, Russian, Thai and Hindi letters and
   digits. Letters continue past z as aa, bb, as in Word; this also changes
   the ALPHABETIC field format, which counted on like spreadsheet columns.
+- Lists: numbering continues across separate lists built on the same list
+  definition, as Word does after copy and paste or merged documents, and
+  "restart numbering" restarts the shared count once instead of starting a
+  separate list.
+- Lists: a paragraph can take its list from its style and its level from
+  itself, or the other way round; a list number switched off on the paragraph
+  stays off; and heading styles that name a list but no level are numbered,
+  or not, as in Word. Tab stops a list level defines now position the text
+  after its number.
 
 ### Changed
 

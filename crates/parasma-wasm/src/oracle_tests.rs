@@ -5367,10 +5367,10 @@ fn num_style_link_resolves_through_numbering_style() {
 /// the REFERENCING num (numId=1); it starts fresh at "3)".
 ///
 /// Scope: this topology has two DISTINCT abstractNum ids (one linking), where
-/// independent counters match Word. It says nothing about two nums sharing
-/// the SAME abstract, where the §17.9.26 example shows Word CONTINUING the
-/// count across instances — that continuity gap is #30/#31 counter territory,
-/// untouched here. Note this test does not detect chase removal (numId=2
+/// independent counters match Word: counters belong to the instance's own
+/// abstract list, not the one the chase reaches. Two nums on the SAME
+/// abstract share one count (`num_instances_continue_their_abstract_list`).
+/// Note this test does not detect chase removal (numId=2
 /// resolves directly either way) — that is T1's job; this pins counter
 /// non-aliasing only.
 #[test]
@@ -10912,4 +10912,121 @@ fn list_markers_use_the_shared_counter_formats() {
         let lines = body_lines(&layout(list_docx(&lvl(0, fmt, "%1.", 720, 360, ""), "", &list_p(0, "", "Item"))));
         assert_eq!(lines[0].segments[0].items[0].text, want, "{fmt}");
     }
+}
+
+// ── Lists: counters per abstract list, numPr resolution (measured in Word) ──
+
+/// Decimal levels 0-2 ("%1.", "%1.%2.", "%1.%2.%3."), each optionally bound
+/// to a paragraph style.
+fn abstract_list(id: i64, binds: &[(u8, &str)]) -> String {
+    let levels: String = (0u8..3)
+        .map(|i| {
+            let text: Vec<String> = (1..=i + 1).map(|k| format!("%{k}")).collect();
+            let bind = binds.iter().find(|(l, _)| *l == i)
+                .map(|(_, s)| format!(r#"<w:pStyle w:val="{s}"/>"#)).unwrap_or_default();
+            format!(
+                r#"<w:lvl w:ilvl="{i}"><w:start w:val="1"/>{bind}<w:numFmt w:val="decimal"/><w:lvlText w:val="{}."/><w:pPr><w:ind w:left="{}" w:hanging="360"/></w:pPr></w:lvl>"#,
+                text.join("."), 720 * (i as i64 + 1)
+            )
+        })
+        .collect();
+    format!(r#"<w:abstractNum w:abstractNumId="{id}">{levels}</w:abstractNum>"#)
+}
+
+fn num_instance(num_id: i64, abstract_id: i64, start_override: Option<i64>) -> String {
+    let ov = start_override
+        .map(|v| format!(r#"<w:lvlOverride w:ilvl="0"><w:startOverride w:val="{v}"/></w:lvlOverride>"#))
+        .unwrap_or_default();
+    format!(r#"<w:num w:numId="{num_id}"><w:abstractNumId w:val="{abstract_id}"/>{ov}</w:num>"#)
+}
+
+fn numbered_style(id: &str, num_pr: &str, based_on: Option<&str>) -> String {
+    let based = based_on.map(|b| format!(r#"<w:basedOn w:val="{b}"/>"#)).unwrap_or_default();
+    format!(r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{id}"/>{based}<w:pPr>{num_pr}</w:pPr></w:style>"#)
+}
+
+fn num_pr(num_id: Option<i64>, ilvl: Option<i64>) -> String {
+    let ilvl = ilvl.map(|i| format!(r#"<w:ilvl w:val="{i}"/>"#)).unwrap_or_default();
+    let num = num_id.map(|n| format!(r#"<w:numId w:val="{n}"/>"#)).unwrap_or_default();
+    format!("<w:numPr>{ilvl}{num}</w:numPr>")
+}
+
+/// Each paragraph's marker, or "-" for a paragraph without one.
+fn markers(docx: Vec<u8>, texts: &[&str]) -> Vec<String> {
+    let lines = body_lines(&layout(docx));
+    assert_eq!(lines.len(), texts.len());
+    lines.iter().zip(texts)
+        .map(|(l, t)| {
+            let first = &l.segments[0].items[0].text;
+            if first.starts_with(t) { "-".to_string() } else { first.clone() }
+        })
+        .collect()
+}
+
+/// §17.9.26, the sequences Word shows: instances of one abstract list
+/// continue one count; a startOverride resets it once, on its instance's
+/// first use, and every instance then continues from there.
+#[test]
+fn num_instances_continue_their_abstract_list() {
+    let numbering = [
+        abstract_list(1, &[]), abstract_list(2, &[]), abstract_list(3, &[]),
+        num_instance(5, 1, None), num_instance(6, 1, Some(1)),
+        num_instance(7, 2, None), num_instance(8, 2, None),
+        num_instance(9, 3, None), num_instance(10, 3, Some(5)),
+    ].concat();
+    let paras = [(5, "a"), (5, "b"), (6, "c"), (5, "d"), (7, "e"), (8, "f"), (7, "g"), (9, "h"), (10, "i"), (10, "j"), (9, "k")];
+    let body: String = paras.iter().map(|(n, t)| p(&num_pr(Some(*n), Some(0)), &r("", t))).collect();
+    let texts: Vec<&str> = paras.iter().map(|(_, t)| *t).collect();
+    assert_eq!(
+        markers(numbering_docx("", &numbering, &body), &texts),
+        ["1.", "2.", "1.", "2.", "1.", "2.", "3.", "1.", "5.", "6.", "7."]
+    );
+}
+
+/// numId and ilvl resolve separately, through the paragraph and its style
+/// chain; numId 0 removes numbering; a style's ilvl beats a pStyle binding;
+/// a style numId with no ilvl numbers at level 0 only when bound. Every
+/// expectation is what Word shows for the same document.
+#[test]
+fn num_pr_resolves_each_attribute_as_word_does() {
+    let numbering = [
+        abstract_list(1, &[(2, "Bound")]), abstract_list(2, &[]), abstract_list(3, &[(0, "Picky")]),
+        num_instance(1, 1, None), num_instance(2, 2, None), num_instance(3, 3, None),
+    ].concat();
+    let styles = [
+        numbered_style("Bound", &num_pr(Some(1), None), None),
+        numbered_style("Unbound", &num_pr(Some(1), None), None),
+        numbered_style("Child", &num_pr(None, Some(2)), Some("Bound")),
+        numbered_style("List", &num_pr(Some(2), Some(0)), None),
+        numbered_style("Picky", &num_pr(Some(3), Some(1)), None),
+    ].concat();
+    let sp = |s: &str| format!(r#"<w:pStyle w:val="{s}"/>"#);
+    let paras: Vec<(String, &str)> = vec![
+        (num_pr(Some(1), Some(0)), "a"),               // 1.
+        (sp("Bound"), "b"),                            // bound to level 2, numbered at 0: 2.
+        (sp("Unbound"), "c"),                          // no ilvl, no binding: none
+        (sp("Child"), "d"),                            // numId from Bound, ilvl 2: 2.1.1.
+        (format!("{}{}", sp("List"), num_pr(Some(0), None)), "e"), // numId 0 removes it
+        (num_pr(Some(2), None), "f"),                  // direct numId alone: level 0
+        (format!("{}{}", sp("List"), num_pr(None, Some(1))), "g"), // direct ilvl, style numId: 1.1.
+        (num_pr(Some(3), Some(0)), "h"),               // 1.
+        (sp("Picky"), "i"),                            // style ilvl 1 beats the level-0 binding: 1.1.
+    ];
+    let body: String = paras.iter().map(|(ppr, t)| p(ppr, &r("", t))).collect();
+    let texts: Vec<&str> = paras.iter().map(|(_, t)| *t).collect();
+    assert_eq!(
+        markers(numbering_docx(&styles, &numbering, &body), &texts),
+        ["1.", "2.", "-", "2.1.1.", "-", "1.", "1.1.", "1.", "1.1."]
+    );
+}
+
+/// §17.9.22: the level's own tab stops join the paragraph's. A `num` stop
+/// inside the hang sets the text there, before the implicit hang stop.
+#[test]
+fn level_num_tab_sets_the_text_after_the_marker() {
+    let level = lvl(0, "decimal", "%1.", 1440, 720, "")
+        .replace("<w:pPr>", r#"<w:pPr><w:tabs><w:tab w:val="num" w:pos="1080"/></w:tabs>"#);
+    let lines = body_lines(&layout(list_docx(&level, "", &list_p(0, "", "Text"))));
+    let x = text_start(&lines[0]);
+    assert!((x - (96.0 + 72.0)).abs() < 0.5, "text at {x}, expected the num stop at 168");
 }

@@ -100,6 +100,7 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
 
     // Build one `NumberingLevelDef` from a `<w:lvl>` definition (§17.9.6).
     let build_level = |level: &ooxml_wml::types::Level,
+                       list: i64,
                        start_override: Option<i64>| -> NumberingLevelDef {
         let format = level.num_fmt.as_ref()
             .map(|f| f.value)
@@ -108,10 +109,7 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
             .and_then(|t| t.value.as_deref())
             .unwrap_or("")
             .to_string();
-        // §17.9.9 startOverride replaces the abstract level's w:start value.
-        let start = start_override
-            .or_else(|| level.start.as_ref().map(|s| s.value))
-            .unwrap_or(1);
+        let start = level.start.as_ref().map(|s| s.value).unwrap_or(1);
         // §17.9.6 lvlRestart: 1-based index of the earliest level whose use
         // restarts this level. Omitted → restart on any earlier level (None
         // here, resolved at counter time). 0 → never restart.
@@ -136,10 +134,14 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
         NumberingLevelDef {
             format,
             lvl_text,
+            list,
             start,
+            start_override,
+            p_style: level.paragraph_style.as_ref().map(|s| s.value.clone()),
             lvl_restart,
             indent_left_twips: indent_left,
             indent_first_twips: indent_first,
+            tabs: level.p_pr.as_ref().and_then(|p| p.tabs.as_deref()).cloned(),
             legal: crate::check_toggle(&level.is_lgl).unwrap_or(false),
             null_text: level.lvl_text.as_ref().and_then(|t| t.null.as_deref()).is_some_and(crate::on_off),
             suffix,
@@ -192,7 +194,11 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
         }
 
         // §17.9.8/9 instance overrides keyed by ilvl: an optional whole-level
-        // `<w:lvl>` replacement and/or a `<w:startOverride>` start value.
+        // `<w:lvl>` replacement and/or a `<w:startOverride>` restart value
+        // (§17.9.26). A replacement level's own `w:start` seeds the list's
+        // sequence only when this instance is the first to use the level;
+        // unlike startOverride it does not reset a running one (not measured
+        // in Word).
         // FLOOR: overrides stay keyed on the REFERENCING instance and apply to
         // the (possibly chased) abstract's levels; lvlOverrides on the
         // intermediate/DEFINING num are NOT merged — Word emits bare
@@ -216,7 +222,9 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
             let il = level.ilvl;
             let src = override_lvl.get(&il).copied().unwrap_or(level);
             let start_ov = override_start.get(&il).copied();
-            map.insert((inst.num_id, il), build_level(src, start_ov));
+            // Counters belong to the instance's own abstract list, not the one
+            // a numStyleLink chase reached (a distinct abstract id).
+            map.insert((inst.num_id, il), build_level(src, abs_id, start_ov));
         }
     }
 
