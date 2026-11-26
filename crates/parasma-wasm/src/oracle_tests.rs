@@ -5346,11 +5346,11 @@ fn num_style_link_resolves_through_numbering_style() {
     let m0 = &lines[0].segments[0].items[0];
     let m1 = &lines[1].segments[0].items[0];
     assert_eq!(
-        m0.text, "3)\u{a0}",
+        m0.text, "3)",
         "first marker must be the chased level's lvlText at start=3 (§17.9.21) — \
          a default bullet means the numStyleLink chase failed"
     );
-    assert_eq!(m1.text, "4)\u{a0}", "second marker must advance the counter");
+    assert_eq!(m1.text, "4)", "second marker must advance the counter");
     // Chased level geometry: page margin 1440tw (96px) + ind left 1440tw (96px)
     // − hanging 360tw (24px) = 168px. The default-bullet fallback (left 720tw)
     // would start at 120px.
@@ -5379,7 +5379,7 @@ fn defining_num_keeps_independent_counter() {
     let lines = body_lines(&viewer);
     let m2 = &lines[2].segments[0].items[0];
     assert_eq!(
-        m2.text, "3)\u{a0}",
+        m2.text, "3)",
         "numId=2 must keep its own counter (no aliasing with the referencing num)"
     );
 }
@@ -5412,7 +5412,7 @@ fn num_style_link_cycle_terminates() {
     let lines = body_lines(&viewer);
     let marker = &lines[0].segments[0].items[0];
     assert_eq!(
-        marker.text, "\u{2022}\u{a0}",
+        marker.text, "\u{2022}",
         "cyclic chase must terminate at the default synthesized bullet"
     );
 }
@@ -5498,7 +5498,7 @@ fn symbol_family_kept_but_size_applies() {
     let seg = &lines[0].segments[0];
     let marker = &seg.items[0];
     let text_item = &seg.items[1];
-    assert_eq!(marker.text, "\u{2022}\u{a0}", "PUA bullet must remap to •");
+    assert_eq!(marker.text, "\u{2022}", "PUA bullet must remap to •");
     assert_eq!(
         marker.style.family, text_item.style.family,
         "Symbol is not shipped → try_resolve_font misses → marker keeps the run-derived family"
@@ -9901,12 +9901,12 @@ fn bulleted(lvl_text: &str, font: &str) -> Viewer {
 fn wingdings_bullets_are_the_shapes_word_draws() {
     let square = bulleted("&#xF0A7;", "Wingdings");
     let marker = &text_items(&square)[0];
-    assert_eq!(marker.text, "\u{25AA}\u{a0}", "Wingdings § is the small square, not •");
+    assert_eq!(marker.text, "\u{25AA}", "Wingdings § is the small square, not •");
     assert_eq!(marker.style.line_metrics_family, None, "every text face has ▪: the marker keeps the run face");
 
     let arrow = bulleted("\u{D8}", "Wingdings");
     let items = text_items(&arrow);
-    assert_eq!(items[0].text, "\u{2B9A}\u{a0}");
+    assert_eq!(items[0].text, "\u{2B9A}");
     assert_eq!(items[0].style.family, SYMBOLS_FAMILY);
     assert_eq!(items[0].style.line_metrics_family.as_deref(), Some(items[1].style.family.as_str()));
 }
@@ -10748,4 +10748,168 @@ fn a_watermark_inside_a_content_control_is_found() {
     let wrapped = unzip_replace(docx, "word/header1.xml", "<w:p>", "<w:sdt><w:sdtPr/><w:sdtContent><w:p>");
     let wrapped = unzip_replace(wrapped, "word/header1.xml", "</w:p>", "</w:p></w:sdtContent></w:sdt>");
     assert!(layout(wrapped).wml().expect("wml").watermark.is_some());
+}
+
+// ── Lists: indent precedence, marker suffix, label substitution ─────────────
+
+/// One abstract list (numId 1) whose levels are given as raw `<w:lvl>` XML.
+fn list_docx(levels: &str, styles_extra: &str, body: &str) -> Vec<u8> {
+    let numbering = format!(
+        r#"<w:abstractNum w:abstractNumId="0">{levels}</w:abstractNum>
+  <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>"#
+    );
+    numbering_docx(styles_extra, &numbering, body)
+}
+
+/// A decimal level `%1.`-style level at `left`/`hanging` twips.
+fn lvl(ilvl: u8, fmt: &str, text: &str, left: i64, hanging: i64, extra: &str) -> String {
+    format!(
+        r#"<w:lvl w:ilvl="{ilvl}"><w:start w:val="1"/><w:numFmt w:val="{fmt}"/><w:lvlText w:val="{text}"/>{extra}<w:pPr><w:ind w:left="{left}" w:hanging="{hanging}"/></w:pPr></w:lvl>"#
+    )
+}
+
+fn list_p(ilvl: u8, ppr: &str, text: &str) -> String {
+    p(
+        &format!(r#"{ppr}<w:numPr><w:ilvl w:val="{ilvl}"/><w:numId w:val="1"/></w:numPr>"#),
+        &r("", text),
+    )
+}
+
+/// Where the paragraph text starts: the line start plus the marker slot.
+fn text_start(line: &PagedLine) -> f64 {
+    let seg = &line.segments[0];
+    seg.x_start + seg.items[0].width
+}
+
+/// §17.7.2: with a DIRECT numPr the numbering level's indent sits above the
+/// paragraph style's. ListParagraph (ind left=720) must not collapse a
+/// level-1 item onto level 0.
+#[test]
+fn nested_levels_indent_past_list_paragraph_style() {
+    let levels = format!(
+        "{}{}",
+        lvl(0, "decimal", "%1.", 720, 360, ""),
+        lvl(1, "lowerLetter", "%2.", 1440, 360, "")
+    );
+    let style = r#"<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>"#;
+    let sty = r#"<w:pStyle w:val="ListParagraph"/>"#;
+    let body = format!("{}{}", list_p(0, sty, "Outer"), list_p(1, sty, "Inner"));
+    let lines = body_lines(&layout(list_docx(&levels, style, &body)));
+    // Margin 96 + left − hanging: 96+48−24 = 120 and 96+96−24 = 168.
+    assert!((lines[0].segments[0].x_start - 120.0).abs() < 0.5, "level 0 at {}", lines[0].segments[0].x_start);
+    assert!((lines[1].segments[0].x_start - 168.0).abs() < 0.5, "level 1 at {}", lines[1].segments[0].x_start);
+    assert_eq!(lines[1].segments[0].items[0].text, "a.");
+}
+
+/// §17.7.2: document defaults sit BELOW numbering, so a docDefaults indent
+/// does not move a numbered paragraph.
+#[test]
+fn doc_defaults_indent_does_not_beat_the_list_level() {
+    let docx = list_docx(&lvl(0, "decimal", "%1.", 720, 360, ""), "", &list_p(0, "", "Item"));
+    let docx = unzip_replace(
+        docx,
+        "word/styles.xml",
+        "<w:pPrDefault><w:pPr/></w:pPrDefault>",
+        r#"<w:pPrDefault><w:pPr><w:ind w:left="2880"/></w:pPr></w:pPrDefault>"#,
+    );
+    let lines = body_lines(&layout(docx));
+    assert!((lines[0].segments[0].x_start - 120.0).abs() < 0.5, "at {}", lines[0].segments[0].x_start);
+}
+
+/// §17.3.1.12: firstLine and hanging are ONE setting. A direct hanging=0
+/// replaces the level's hang; it is not "absent".
+#[test]
+fn explicit_zero_hanging_cancels_the_level_hang() {
+    let body = list_p(0, r#"<w:ind w:hanging="0"/>"#, "Flush");
+    let lines = body_lines(&layout(list_docx(&lvl(0, "decimal", "%1.", 720, 360, ""), "", &body)));
+    assert!((lines[0].segments[0].x_start - 144.0).abs() < 0.5, "at {}", lines[0].segments[0].x_start);
+}
+
+/// A style firstLine under a direct hanging: the hang wins outright rather
+/// than the two adding up.
+#[test]
+fn direct_hanging_replaces_a_style_first_line() {
+    let style = r#"<w:style w:type="paragraph" w:styleId="Body"><w:name w:val="Body"/><w:pPr><w:ind w:firstLine="720"/></w:pPr></w:style>"#;
+    let body = p(r#"<w:pStyle w:val="Body"/><w:ind w:left="720" w:hanging="360"/>"#, &r("", "Entry"));
+    let lines = body_lines(&layout(numbering_docx(style, "", &body)));
+    assert!((lines[0].segments[0].x_start - 120.0).abs() < 0.5, "at {}", lines[0].segments[0].x_start);
+}
+
+/// §17.9.28: suff=space and suff=nothing set the text right after the
+/// marker (a space is a character of the marker); only suff=tab pads to a
+/// tab stop.
+#[test]
+fn space_and_nothing_suffixes_are_not_padded_to_the_hang() {
+    let mut widths = Vec::new();
+    for (suff, text) in [("space", "1.\u{a0}"), ("nothing", "1.")] {
+        let level = lvl(0, "decimal", "%1.", 1440, 1080, &format!(r#"<w:suff w:val="{suff}"/>"#));
+        let lines = body_lines(&layout(list_docx(&level, "", &list_p(0, "", "Text"))));
+        let marker = &lines[0].segments[0].items[0];
+        assert_eq!(marker.text, text, "{suff}");
+        assert!(marker.width < 30.0, "{suff}: slot {} padded towards the 72px hang", marker.width);
+        widths.push(marker.width);
+    }
+    assert!(widths[0] > widths[1] + 1.0, "the space suffix adds a gap: {widths:?}");
+}
+
+/// §17.9.11 lvlText@null: no label, but the tab suffix still sets the text
+/// at the hang stop (an empty lvlText gives no slot at all).
+#[test]
+fn null_level_text_keeps_its_tab_slot() {
+    let level = r#"<w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="" w:null="1"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl>"#;
+    let lines = body_lines(&layout(list_docx(level, "", &list_p(0, "", "Text"))));
+    let x = text_start(&lines[0]);
+    assert!((x - 144.0).abs() < 0.5, "text at {x}, expected the hang stop 144");
+}
+
+/// §17.9.28 + §17.15.1.25: a tab suffix follows tab rules. A marker wider
+/// than the hang skips the implicit hanging stop and lands on the next
+/// default stop, instead of sitting one space after the marker.
+#[test]
+fn wide_marker_tabs_to_the_next_default_stop() {
+    let level = lvl(0, "decimal", "Article %1.", 720, 360, "");
+    let lines = body_lines(&layout(list_docx(&level, "", &list_p(0, "", "Text"))));
+    // Marker starts 24px into the text area; default stops every 48px from
+    // the margin: the hang stop (48) is passed, so the text sits at 96.
+    let x = text_start(&lines[0]);
+    assert!((x - (96.0 + 96.0)).abs() < 0.5, "text at {x}");
+}
+
+/// §17.9.4: isLgl draws every level reference in decimal.
+#[test]
+fn legal_numbering_writes_ancestors_in_decimal() {
+    let levels = format!(
+        "{}{}",
+        lvl(0, "upperRoman", "%1.", 720, 360, ""),
+        lvl(1, "decimal", "%1.%2.", 1440, 720, r#"<w:isLgl/>"#)
+    );
+    let body = format!("{}{}", list_p(0, "", "Part"), list_p(1, "", "Clause"));
+    let lines = body_lines(&layout(list_docx(&levels, "", &body)));
+    assert_eq!(lines[0].segments[0].items[0].text, "I.");
+    assert_eq!(lines[1].segments[0].items[0].text, "1.1.");
+}
+
+/// §17.9.11: a %n naming a level deeper than the current one is dropped.
+#[test]
+fn deeper_level_references_are_dropped() {
+    let lines = body_lines(&layout(list_docx(&lvl(0, "decimal", "%1.%2", 720, 360, ""), "", &list_p(0, "", "Item"))));
+    assert_eq!(lines[0].segments[0].items[0].text, "1.");
+}
+
+/// An empty lvlText draws no marker, bullet level or not: no synthesized •.
+#[test]
+fn empty_level_text_draws_no_marker() {
+    let lines = body_lines(&layout(list_docx(&lvl(0, "bullet", "", 720, 360, ""), "", &list_p(0, "", "Bare"))));
+    let marker = &lines[0].segments[0].items[0];
+    assert!(marker.text.is_empty() && marker.width == 0.0, "marker {:?} w{}", marker.text, marker.width);
+    assert!((text_start(&lines[0]) - 120.0).abs() < 0.5, "text at {}", text_start(&lines[0]));
+}
+
+/// §17.18.59 formats reach list markers through the shared counter.
+#[test]
+fn list_markers_use_the_shared_counter_formats() {
+    for (fmt, want) in [("decimalZero", "01."), ("ordinal", "1st."), ("cardinalText", "One."), ("decimalEnclosedCircle", "\u{2460}.")] {
+        let lines = body_lines(&layout(list_docx(&lvl(0, fmt, "%1.", 720, 360, ""), "", &list_p(0, "", "Item"))));
+        assert_eq!(lines[0].segments[0].items[0].text, want, "{fmt}");
+    }
 }

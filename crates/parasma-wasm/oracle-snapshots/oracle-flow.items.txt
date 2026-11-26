@@ -963,7 +963,7 @@ L19 p16 f0 l1 segs1
     i3 y4 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
 L20 p17 f1 l1 segs1
   S0 n12
-    i0 y2 w24.00 cw24.00 c- "1.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "1." sh2g adv12.23 r0 s1
     i1 y2 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
     i2 y2 w43.21 cw39.14 c4+7 "layout " sh7g adv43.21 r0 s1
     i3 y2 w48.12 cw44.04 c11+7 "engine " sh7g adv48.12 r0 s1
@@ -977,7 +977,7 @@ L20 p17 f1 l1 segs1
     i11 y2 w45.64 cw41.57 c60+8 "exists. " sh8g adv45.64 r0 s1
 L21 p18 f1 l0 segs1
   S0 n14
-    i0 y2 w24.00 cw24.00 c- "2.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "2." sh2g adv12.23 r0 s1
     i1 y2 w79.90 cw75.83 c0+11 "Paragraphs " sh11g adv79.90 r0 s1
     i2 y2 w30.16 cw26.08 c11+5 "flow " sh5g adv30.16 r0 s1
     i3 y2 w47.27 cw43.20 c16+7 "across " sh7g adv47.27 r0 s1
@@ -999,7 +999,7 @@ L22 p18 f0 l1 segs1
     i3 y2 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
 L23 p19 f1 l0 segs1
   S0 n16
-    i0 y2 w24.00 cw24.00 c- "3.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "3." sh2g adv12.23 r0 s1
     i1 y2 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i2 y2 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i3 y2 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
@@ -1023,7 +1023,7 @@ L24 p19 f0 l1 segs1
     i3 y2 w40.78 cw36.70 c100+6 "page. " sh6g adv40.78 r0 s1
 L25 p20 f1 l0 segs1
   S0 n13
-    i0 y2 w24.00 cw24.00 c- "4.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "4." sh2g adv12.23 r0 s1
     i1 y2 w72.55 cw68.48 c0+9 "Numbered " sh9g adv72.55 r0 s1
     i2 y2 w39.12 cw35.04 c9+6 "items " sh6g adv39.12 r0 s1
     i3 y2 w59.53 cw55.45 c15+8 "advance " sh8g adv59.53 r0 s1
@@ -1045,7 +1045,7 @@ L26 p20 f0 l1 segs1
     i4 y2 w26.07 cw22.00 c96+6 "list. " sh6g adv26.07 r0 s1
 L27 p21 f1 l0 segs1
   S0 n14
-    i0 y2 w24.00 cw24.00 c- "5.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "5." sh2g adv12.23 r0 s1
     i1 y2 w59.51 cw55.44 c0+8 "Headers " sh8g adv59.51 r0 s1
     i2 y2 w28.55 cw24.47 c8+4 "and " sh4g adv28.55 r0 s1
     i3 y2 w48.91 cw44.84 c12+8 "footers " sh8g adv48.91 r0 s1
@@ -1066,7 +1066,7 @@ L28 p21 f0 l1 segs1
     i2 y2 w40.76 cw36.68 c91+6 "them. " sh6g adv40.76 r0 s1
 L29 p22 f1 l1 segs1
   S0 n12
-    i0 y2 w24.00 cw24.00 c- "6.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "6." sh2g adv12.23 r0 s1
     i1 y2 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
     i2 y2 w43.21 cw39.14 c4+7 "layout " sh7g adv43.21 r0 s1
     i3 y2 w48.12 cw44.04 c11+7 "engine " sh7g adv48.12 r0 s1
@@ -1080,7 +1080,7 @@ L29 p22 f1 l1 segs1
     i11 y2 w45.64 cw41.57 c60+8 "exists. " sh8g adv45.64 r0 s1
 L30 p23 f1 l0 segs1
   S0 n14
-    i0 y2 w24.00 cw24.00 c- "7.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "7." sh2g adv12.23 r0 s1
     i1 y2 w79.90 cw75.83 c0+11 "Paragraphs " sh11g adv79.90 r0 s1
     i2 y2 w30.16 cw26.08 c11+5 "flow " sh5g adv30.16 r0 s1
     i3 y2 w47.27 cw43.20 c16+7 "across " sh7g adv47.27 r0 s1
@@ -1102,7 +1102,7 @@ L31 p23 f0 l1 segs1
     i3 y2 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
 L32 p24 f1 l0 segs1
   S0 n16
-    i0 y2 w24.00 cw24.00 c- "8.\u{a0}" sh3g adv16.31 r0 s1
+    i0 y2 w24.00 cw24.00 c- "8." sh2g adv12.23 r0 s1
     i1 y2 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i2 y2 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i3 y2 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1
@@ -1126,7 +1126,7 @@ L33 p24 f0 l1 segs1
     i3 y2 w40.78 cw36.70 c100+6 "page. " sh6g adv40.78 r0 s1
 L34 p25 f1 l0 segs1
   S0 n13
-    i0 y2 w24.00 cw24.00 c- "•\u{a0}" sh2g adv9.21 r0 s1
+    i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w72.55 cw68.48 c0+9 "Numbered " sh9g adv72.55 r0 s1
     i2 y2 w39.12 cw35.04 c9+6 "items " sh6g adv39.12 r0 s1
     i3 y2 w59.53 cw55.45 c15+8 "advance " sh8g adv59.53 r0 s1
@@ -1148,7 +1148,7 @@ L35 p25 f0 l1 segs1
     i4 y2 w26.07 cw22.00 c96+6 "list. " sh6g adv26.07 r0 s1
 L36 p26 f1 l0 segs1
   S0 n14
-    i0 y2 w24.00 cw24.00 c- "•\u{a0}" sh2g adv9.21 r0 s1
+    i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w59.51 cw55.44 c0+8 "Headers " sh8g adv59.51 r0 s1
     i2 y2 w28.55 cw24.47 c8+4 "and " sh4g adv28.55 r0 s1
     i3 y2 w48.91 cw44.84 c12+8 "footers " sh8g adv48.91 r0 s1
@@ -1179,7 +1179,7 @@ L0 p26 f0 l1 segs1
     i2 y2 w40.76 cw36.68 c91+6 "them. " sh6g adv40.76 r0 s1
 L1 p27 f1 l1 segs1
   S0 n12
-    i0 y2 w24.00 cw24.00 c- "•\u{a0}" sh2g adv9.21 r0 s1
+    i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
     i2 y2 w43.21 cw39.14 c4+7 "layout " sh7g adv43.21 r0 s1
     i3 y2 w48.12 cw44.04 c11+7 "engine " sh7g adv48.12 r0 s1
@@ -1193,7 +1193,7 @@ L1 p27 f1 l1 segs1
     i11 y2 w45.64 cw41.57 c60+8 "exists. " sh8g adv45.64 r0 s1
 L2 p28 f1 l0 segs1
   S0 n14
-    i0 y2 w24.00 cw24.00 c- "•\u{a0}" sh2g adv9.21 r0 s1
+    i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w79.90 cw75.83 c0+11 "Paragraphs " sh11g adv79.90 r0 s1
     i2 y2 w30.16 cw26.08 c11+5 "flow " sh5g adv30.16 r0 s1
     i3 y2 w47.27 cw43.20 c16+7 "across " sh7g adv47.27 r0 s1
@@ -1215,7 +1215,7 @@ L3 p28 f0 l1 segs1
     i3 y2 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
 L4 p29 f1 l0 segs1
   S0 n16
-    i0 y2 w24.00 cw24.00 c- "•\u{a0}" sh2g adv9.21 r0 s1
+    i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
     i2 y2 w35.88 cw31.80 c2+6 "table " sh6g adv35.88 r0 s1
     i3 y2 w28.54 cw24.46 c8+5 "that " sh5g adv28.54 r0 s1

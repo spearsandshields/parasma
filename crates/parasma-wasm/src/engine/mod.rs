@@ -8,6 +8,9 @@
 
 pub(crate) mod border;
 pub(crate) mod color;
+/// Counter styles (decimal, roman, letters, CJK, Hebrew, …) shared by Word
+/// lists and fields and PowerPoint auto-numbering.
+pub(crate) mod counter;
 /// Display-list recording backend: a `Painter` impl that
 /// captures the primitive draw stream as a serializable `Vec<DrawCmd>` instead
 /// of touching a canvas, so the render code can run in a Web Worker and the main

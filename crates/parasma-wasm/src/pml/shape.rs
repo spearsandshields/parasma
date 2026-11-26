@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 
+use crate::engine::counter;
 use crate::engine::fonts::{self, font_metrics, DEFAULT_FONT_FAMILY, FontCache};
 use crate::engine::geom::{preset_path, PathCmd};
 use crate::engine::units::{emu_to_px, pt_to_px};
@@ -1006,10 +1007,11 @@ pub(crate) fn format_autonum(scheme: &str, n: i32) -> String {
     let scheme = if known { scheme } else { "arabicPeriod" };
     let n = n.max(1);
     let body = match scheme {
-        s if s.starts_with("alphaLc") => int_to_alpha(n, false),
-        s if s.starts_with("alphaUc") => int_to_alpha(n, true),
-        s if s.starts_with("romanLc") => int_to_roman(n, false),
-        s if s.starts_with("romanUc") => int_to_roman(n, true),
+        // Letters repeat past 26 (§21.1.2.4.1: 27 is aa, 28 bb).
+        s if s.starts_with("alphaLc") => counter::format(n.into(), counter::CounterStyle::LowerLetter),
+        s if s.starts_with("alphaUc") => counter::format(n.into(), counter::CounterStyle::UpperLetter),
+        s if s.starts_with("romanLc") => counter::format(n.into(), counter::CounterStyle::LowerRoman),
+        s if s.starts_with("romanUc") => counter::format(n.into(), counter::CounterStyle::UpperRoman),
         _ => n.to_string(),
     };
     // Suffix family: Period → "n.", ParenR → "n)", ParenBoth → "(n)",
@@ -1022,52 +1024,6 @@ pub(crate) fn format_autonum(scheme: &str, n: i32) -> String {
         body
     } else {
         format!("{body}.")
-    }
-}
-
-/// 1-based REPEATED-LETTER alpha numbering (§21.1.2.4.1: past 26 the letter
-/// repeats — 27→aa, 28→bb, 53→aaa — NOT bijective base-26, where 28 would be
-/// "ab").
-fn int_to_alpha(n: i32, upper: bool) -> String {
-    if n < 1 {
-        return String::new();
-    }
-    let idx = ((n - 1) % 26) as u8;
-    let reps = ((n - 1) / 26 + 1) as usize;
-    let c = b'a' + idx;
-    let ch = if upper { c.to_ascii_uppercase() } else { c } as char;
-    std::iter::repeat_n(ch, reps).collect()
-}
-
-/// Roman numerals (1-based, standard subtractive form).
-fn int_to_roman(n: i32, upper: bool) -> String {
-    const PAIRS: [(i32, &str); 13] = [
-        (1000, "m"),
-        (900, "cm"),
-        (500, "d"),
-        (400, "cd"),
-        (100, "c"),
-        (90, "xc"),
-        (50, "l"),
-        (40, "xl"),
-        (10, "x"),
-        (9, "ix"),
-        (5, "v"),
-        (4, "iv"),
-        (1, "i"),
-    ];
-    let mut n = n.max(1);
-    let mut out = String::new();
-    for (v, s) in PAIRS {
-        while n >= v {
-            out.push_str(s);
-            n -= v;
-        }
-    }
-    if upper {
-        out.to_uppercase()
-    } else {
-        out
     }
 }
 

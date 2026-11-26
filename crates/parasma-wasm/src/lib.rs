@@ -9235,11 +9235,15 @@ pub(crate) fn map_underline(v: ooxml_wml::types::STUnderline) -> Underline {
     }
 }
 
+/// §22.9.2.7 ST_OnOff: `1` and `true`, plus Transitional's `on`, are on;
+/// anything else is off. The one spelling of the rule for every format.
+pub(crate) fn on_off(v: &str) -> bool {
+    matches!(v, "1" | "true" | "on")
+}
+
+/// An on/off element: present with no `val` means on.
 pub(crate) fn check_toggle(field: &Option<Box<ooxml_wml::types::OnOffElement>>) -> Option<bool> {
-    field.as_ref().map(|ct| match &ct.value {
-        None => true,
-        Some(v) => matches!(v.as_str(), "1" | "true" | "on"),
-    })
+    field.as_ref().map(|ct| ct.value.as_deref().is_none_or(on_off))
 }
 
 /// Resolve a toggle (bold, italic, etc.) through the full OOXML cascade

@@ -117,19 +117,16 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
         // here, resolved at counter time). 0 → never restart.
         let lvl_restart = level.lvl_restart.as_ref().map(|d| d.value);
 
-        let (indent_left, indent_hanging) = level.p_pr.as_ref()
-            .and_then(|ppr| ppr.indentation.as_ref())
-            .map(|ind| {
-                let left = ind.left.as_deref()
-                    .or(ind.start.as_deref())
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-                let hanging = ind.hanging.as_deref()
-                    .and_then(|s| s.parse::<i64>().ok())
-                    .unwrap_or(0);
-                (left, hanging)
-            })
-            .unwrap_or(((level.ilvl + 1) * 720, 360));
+        // §17.9.22: the level's indents, each only where it sets one (the
+        // paragraph's own and its style's then decide the rest). The first
+        // line's offset: hanging wins over firstLine, as on a paragraph.
+        let ind = level.p_pr.as_ref().and_then(|ppr| ppr.indentation.as_ref());
+        let indent_left = ind.and_then(|ind| ind.start.as_deref().or(ind.left.as_deref()))
+            .and_then(|s| s.parse::<i64>().ok());
+        let indent_first = ind.and_then(|ind| {
+            ind.hanging.as_deref().and_then(|s| s.parse::<i64>().ok()).map(|h| -h)
+                .or_else(|| ind.first_line.as_deref().and_then(|s| s.parse::<i64>().ok()))
+        });
 
         // §17.9.28 w:suff — separator between marker and text; omitted → tab.
         let suffix = level.suff.as_ref()
@@ -142,7 +139,9 @@ pub(crate) fn build_numbering_lookup<R: std::io::Read + std::io::Seek>(
             start,
             lvl_restart,
             indent_left_twips: indent_left,
-            indent_hanging_twips: indent_hanging,
+            indent_first_twips: indent_first,
+            legal: crate::check_toggle(&level.is_lgl).unwrap_or(false),
+            null_text: level.lvl_text.as_ref().and_then(|t| t.null.as_deref()).is_some_and(crate::on_off),
             suffix,
             // §17.9.24 — the level's own rPr formats the numbering text. This
             // closure receives the already-override-resolved lvl (§17.9.8
@@ -251,7 +250,7 @@ pub(crate) fn register_default_paragraph_style(
         .rev()
         .filter(|s| {
             matches!(s.r#type, None | Some(STStyleType::Paragraph))
-                && s.default.as_deref().is_some_and(|v| matches!(v, "1" | "true" | "on"))
+                && s.default.as_deref().is_some_and(crate::on_off)
         })
         .find_map(|s| s.style_id.clone());
     if let Some(id) = default_id {
@@ -395,7 +394,7 @@ pub(crate) fn settings_on_off(settings_xml: &str, name: &str) -> bool {
                 let val = e.attributes().flatten()
                     .find(|a| a.key.local_name().as_ref() == b"val")
                     .and_then(|a| a.unescape_value().ok().map(|v| v.into_owned()));
-                return val.is_none_or(|v| matches!(v.as_str(), "true" | "on" | "1"));
+                return val.as_deref().is_none_or(crate::on_off);
             }
             Ok(Event::Eof) | Err(_) => return false,
             _ => {}

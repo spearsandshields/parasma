@@ -318,168 +318,21 @@ fn apply_general_number(n: i64, fmt: &str) -> Option<String> {
     if !upper {
         return None;
     }
+    use crate::engine::counter::{cardinal_text, format, ordinal_text, CounterStyle};
     let lower = fmt.chars().next().is_some_and(|c| c.is_ascii_lowercase());
+    // Word's field words are lower case unless a case switch says otherwise.
     let s = match fmt.to_ascii_uppercase().as_str() {
         "ARABIC" => n.to_string(),
-        "ROMAN" => to_roman(n),
-        "ALPHABETIC" => to_alphabetic(n),
-        "ORDINAL" => to_ordinal(n),
-        "CARDTEXT" => to_card_text(n),
-        "ORDTEXT" => to_ord_text(n),
-        "HEX" => format!("{:X}", n),
-        "DOLLARTEXT" => to_dollar_text(n),
+        "ROMAN" => format(n, CounterStyle::UpperRoman),
+        "ALPHABETIC" => format(n, CounterStyle::UpperLetter),
+        "ORDINAL" => format(n, CounterStyle::Ordinal),
+        "CARDTEXT" => cardinal_text(n),
+        "ORDTEXT" => ordinal_text(n),
+        "HEX" => format(n, CounterStyle::Hex),
+        "DOLLARTEXT" => format!("{} and 00/100", cardinal_text(n)),
         _ => return None,
     };
     Some(if lower { s.to_ascii_lowercase() } else { s })
-}
-
-fn to_roman(n: i64) -> String {
-    if n <= 0 || n >= 4000 {
-        return n.to_string();
-    }
-    const TABLE: &[(i64, &str)] = &[
-        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
-        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
-        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
-    ];
-    let mut n = n;
-    let mut out = String::new();
-    for &(v, s) in TABLE {
-        while n >= v {
-            out.push_str(s);
-            n -= v;
-        }
-    }
-    out
-}
-
-fn to_alphabetic(n: i64) -> String {
-    if n <= 0 {
-        return n.to_string();
-    }
-    // 1→A, 26→Z, 27→AA (spreadsheet-style bijective base-26).
-    let mut n = n as u64;
-    let mut out = Vec::new();
-    while n > 0 {
-        let rem = ((n - 1) % 26) as u8;
-        out.push(b'A' + rem);
-        n = (n - 1) / 26;
-    }
-    out.reverse();
-    String::from_utf8(out).unwrap_or_default()
-}
-
-fn to_ordinal(n: i64) -> String {
-    let suffix = match (n % 100, n % 10) {
-        (11..=13, _) => "th",
-        (_, 1) => "st",
-        (_, 2) => "nd",
-        (_, 3) => "rd",
-        _ => "th",
-    };
-    format!("{n}{suffix}")
-}
-
-const ONES: &[&str] = &[
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-    "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
-    "sixteen", "seventeen", "eighteen", "nineteen",
-];
-const TENS: &[&str] = &[
-    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy",
-    "eighty", "ninety",
-];
-
-fn spell_below_thousand(n: i64) -> String {
-    let mut parts = Vec::new();
-    let hundreds = n / 100;
-    let rem = n % 100;
-    if hundreds > 0 {
-        parts.push(format!("{} hundred", ONES[hundreds as usize]));
-    }
-    if rem >= 20 {
-        let t = TENS[(rem / 10) as usize].to_string();
-        if rem % 10 > 0 {
-            parts.push(format!("{}-{}", t, ONES[(rem % 10) as usize]));
-        } else {
-            parts.push(t);
-        }
-    } else if rem > 0 {
-        parts.push(ONES[rem as usize].to_string());
-    }
-    parts.join(" ")
-}
-
-fn to_card_text(n: i64) -> String {
-    if n == 0 {
-        return "zero".to_string();
-    }
-    if n < 0 {
-        return format!("negative {}", to_card_text(-n));
-    }
-    const SCALES: &[(i64, &str)] = &[
-        (1_000_000_000, "billion"),
-        (1_000_000, "million"),
-        (1_000, "thousand"),
-    ];
-    let mut n = n;
-    let mut parts = Vec::new();
-    for &(scale, name) in SCALES {
-        if n >= scale {
-            let count = n / scale;
-            parts.push(format!("{} {}", spell_below_thousand(count), name));
-            n %= scale;
-        }
-    }
-    if n > 0 {
-        parts.push(spell_below_thousand(n));
-    }
-    parts.join(" ")
-}
-
-fn to_ord_text(n: i64) -> String {
-    // Cardinal text, with the final word made ordinal.
-    let card = to_card_text(n);
-    let words: Vec<&str> = card.rsplitn(2, ' ').collect();
-    let (last, prefix) = match words.as_slice() {
-        [last, prefix] => (*last, Some(*prefix)),
-        [last] => (*last, None),
-        _ => return card,
-    };
-    let ord_last = ordinalize_word(last);
-    match prefix {
-        Some(p) => format!("{p} {ord_last}"),
-        None => ord_last,
-    }
-}
-
-fn ordinalize_word(w: &str) -> String {
-    // Handle hyphenated tens like "twenty-one" → "twenty-first".
-    if let Some((head, tail)) = w.rsplit_once('-') {
-        return format!("{}-{}", head, ordinalize_word(tail));
-    }
-    match w {
-        "one" => "first",
-        "two" => "second",
-        "three" => "third",
-        "five" => "fifth",
-        "eight" => "eighth",
-        "nine" => "ninth",
-        "twelve" => "twelfth",
-        _ => {
-            return if let Some(stripped) = w.strip_suffix('y') {
-                format!("{stripped}ieth") // twenty → twentieth
-            } else {
-                format!("{w}th")
-            };
-        }
-    }
-    .to_string()
-}
-
-fn to_dollar_text(n: i64) -> String {
-    // e.g. 23 → "twenty-three and 00/100"
-    format!("{} and 00/100", to_card_text(n))
 }
 
 /// Format a number against a `\#` numeric picture clause (§17.16.4.3).

@@ -19,7 +19,7 @@
 //! `resolve_run_option`/`check_toggle` STAY in `lib.rs` (they have lib-side
 //! consumers too) and are imported here via `crate::`; the small private
 //! helpers used solely by `from_resolved` (`resolve_ppr_option`/
-//! `resolve_ppr_indent`/`is_on_off_true`) travel here with it.
+//! `resolve_ppr_indent`) travel here with it.
 //!
 //! Purity is enforced by the oracle snapshot tests — their geometry hashes
 //! must not drift on a pure move.
@@ -140,25 +140,35 @@ pub(crate) struct ParagraphCache {
     pub(crate) logical_items: Option<Vec<Item>>,
 }
 
-/// Width of the slot reserved for a numbering marker (§17.9, widened to the
-/// marker when wider). The marker renders into this slot at the first-line outdent; the
-/// following paragraph text begins at its end.
+/// Width of the slot a numbering marker takes on the first line; the text
+/// begins at its end (§17.9.28 `w:suff`):
 ///
-/// - An empty marker (`numFmt="none"`) occupies zero width so the text honours
-///   the hanging outdent instead of being shoved back to `left`.
-/// - With a hanging indent, the slot is normally the hanging width so the text
-///   aligns at `left`. But a marker WIDER than that (e.g. "1.1.1", "viii)")
-///   would otherwise overrun into the text ("1.1.1Deep" crowding); floor the
-///   slot at the marker's own advance (which already carries one space of suffix
-///   gap) so a wide marker pushes the text right instead of overlapping.
-/// - With no hanging indent, the slot is exactly the marker advance.
-fn marker_slot_width(marker_empty: bool, hanging_px: f64, marker_advance: f64) -> f64 {
+/// - `tab`: the text goes to the next tab stop after the number, the hanging
+///   indent's implicit stop when the number ends before it, else the next
+///   custom or automatic stop (so "Article 10." jumps on instead of
+///   colliding with its text);
+/// - `space`: the number and one space (`advance` carries it);
+/// - `nothing`: the number alone.
+///
+/// An empty marker (`numFmt="none"`, empty `lvlText`) takes no room. `start`
+/// is where the first line begins in the paragraph's advance frame (its
+/// first-line offset); `glyphs` the number's own width.
+fn marker_slot_width(
+    marker_empty: bool,
+    suffix: ooxml_wml::types::STLevelSuffix,
+    start: f64,
+    glyphs: f64,
+    advance: f64,
+    tab_stops: &ResolvedTabStops,
+) -> f64 {
+    use ooxml_wml::types::STLevelSuffix as S;
     if marker_empty {
-        0.0
-    } else if hanging_px > 0.0 {
-        hanging_px.max(marker_advance)
-    } else {
-        marker_advance
+        return 0.0;
+    }
+    match suffix {
+        S::Nothing => glyphs,
+        S::Space => advance,
+        S::Tab => (tab_stops.next_stop(start + glyphs).0 - start).max(glyphs),
     }
 }
 
@@ -197,15 +207,12 @@ pub(crate) fn layout_paragraph(
     let mut layout = ParagraphLayout::from_resolved(paragraph, style_ctx, default_ppr, table_style_id, table_cond_pprs, grid_pitch_px, exact_row, theme_fonts);
 
     if let Some(m) = marker {
-        // Only inherit the numbering level's indent when the paragraph did not
-        // set its own. A direct `<w:ind w:left="0"/>` (common on numbered
-        // headings) explicitly cancels the list indent and must win.
-        if !layout.indent_left_explicit {
-            layout.indent_left_px = twips_to_px(m.indent_left_twips);
-        }
-        if layout.indent_first_line_px == 0.0 {
-            layout.indent_first_line_px = twips_to_px(-m.indent_hanging_twips);
-        }
+        // The list level's indents take their place in the hierarchy; a direct
+        // `<w:ind w:left="0"/>` (common on numbered headings) still cancels
+        // the list's left indent.
+        let (left, first) = layout.indent_layers.with_list(Some((m.indent_left_twips, m.indent_first_twips)), m.direct);
+        layout.indent_left_px = twips_to_px(left.unwrap_or(0));
+        layout.indent_first_line_px = twips_to_px(first.unwrap_or(0));
     }
 
     let (mut items, anchored_images, anchored_text_boxes, footnote_ids, endnote_ids) = collect_items(font_cache, paragraph, style_ctx, theme_fonts, table_style_rprs)?;
@@ -248,6 +255,50 @@ pub(crate) fn layout_paragraph(
         None
     };
 
+    let mut tab_stops = resolve_paragraph_tab_stops(paragraph, style_ctx, default_ppr, default_tab_stop_px);
+    // §17.3.1.37 — a custom tab-stop `pos` is measured from the current PAGE
+    // (leading text) MARGIN, but the advance/fit walk in `pack_lines` runs in the
+    // paragraph's LEADING-EDGE frame (x=0 at the indented text start; see
+    // `next_stop`/`bar_xs` doc-comments, which already ASSERT this frame). For an
+    // indented paragraph the two frames diverge by the leading indent, so a raw
+    // `twips_to_px(pos)` right-tab lands `indent` px too far right and its trailing
+    // text (a TOC page number + dot leader) overflows `available` and wraps to the
+    // next line. Translate every margin-relative stop into the leading-edge frame
+    // by subtracting the leading indent — LEFT for LTR base, RIGHT for RTL base
+    // (§17.3.1.37 "left edge for LTR, right edge for RTL"). Stops at or left of the
+    // leading edge are inert (`next_stop` needs pos > current_x, and x >= 0) so we
+    // drop them. This also collapses the implicit hanging-indent stop (pushed at
+    // the left indent in `resolve_paragraph_tab_stops`) to ~0 — the guard against
+    // DOUBLE-SHIFTING a hanging-indent numbered list, whose marker is positioned by
+    // `marker_slot_width`, not the tab advance: the now-inert implicit stop cannot
+    // push the body text a second time. Bars are translated too — `bar_xs` re-adds
+    // the leading edge, so a margin-frame bar on an indented paragraph would
+    // otherwise double-count the indent. Un-indented paragraphs (LEADING == 0, incl.
+    // every hdr/ftr default-tab and body tab in the oracle snapshots) are untouched:
+    // the two frames coincide, so the render is byte-identical.
+    let leading_indent = if layout.base_rtl { layout.indent_right_px } else { layout.indent_left_px };
+    // A hanging first line starts left of the leading edge, so stops between
+    // its start and the edge are live on it.
+    let first_line_start = layout.indent_first_line_px.min(0.0);
+    if leading_indent.abs() > 0.5 {
+        tab_stops.custom.retain_mut(|(pos, _, _)| { *pos -= leading_indent; *pos > first_line_start + 0.5 });
+        for pos in tab_stops.bars.iter_mut() { *pos -= leading_indent; }
+        tab_stops.bars.retain(|&pos| pos > 0.5);
+    } else {
+        tab_stops.custom.retain(|(pos, _, _)| *pos > first_line_start + 0.5);
+    }
+    // §17.3.1.12: a hanging indent sets an implicit stop at the left indent,
+    // where the first line's text after a tab begins. A numbered paragraph's
+    // marker already ends there (`marker_slot_width`), so the stop is inert
+    // for it: the cursor is not left of it.
+    if layout.indent_first_line_px < -0.5 && !tab_stops.custom.iter().any(|(pos, _, _)| pos.abs() < 0.5) {
+        tab_stops.custom.push((0.0, TabAlignment::Left, TabLeader::None));
+        tab_stops.custom.sort_by(|a, b| a.0.total_cmp(&b.0));
+    }
+    // §17.15.1.25: automatic stops are multiples of the default interval
+    // measured from the margin, not from this paragraph's indent.
+    tab_stops.default_origin = leading_indent;
+
     if let Some(m) = marker {
         // NOTE: unlike RunStyle::default() (empty font-slot families), this
         // fallback seeds the three family slots with DEFAULT_FONT_FAMILY — those
@@ -264,7 +315,7 @@ pub(crate) fn layout_paragraph(
         if let Some(base) = style.line_metrics_family.take() {
             style.family = base;
         }
-        // The marker (bullet/number + separator) is padded to the hanging width;
+        // The marker (bullet/number + separator) is padded to its slot;
         // carrying the run's underline/strike across that pad draws a rule under
         // the empty gap before the text — and past it. The marker is not part of
         // the underlined run, so strip text decorations from it.
@@ -311,13 +362,11 @@ pub(crate) fn layout_paragraph(
         if let Some(u) = ov.underline { style.underline = u; }
         if let Some(s) = ov.strikethrough { style.strikethrough = s; }
         if let Some(d) = ov.double_strike { style.double_strike = d; }
-        // §17.9.28 w:suff — the separator between marker and text. `tab`
-        // (default) / `space` append a trailing gap; `nothing` butts the text up
-        // against the marker. We bake the gap into the marker's shaped text so
-        // its advance carries the gap (used as the min-gap floor below).
+        // §17.9.28 w:suff: a space is part of the marker's text; a tab is the
+        // slot computed below; nothing is nothing.
         let suffix_gap = match m.suffix {
-            ooxml_wml::types::STLevelSuffix::Nothing => "",
-            _ => "\u{00A0}", // tab/space → at least one space's worth of gap
+            ooxml_wml::types::STLevelSuffix::Space => "\u{00A0}",
+            _ => "",
         };
         let marker_text = format!("{}{}", m.text, suffix_gap);
         let font = font_cache.resolve(
@@ -325,7 +374,6 @@ pub(crate) fn layout_paragraph(
             if style.bold { 700 } else { 400 },
             style.italic,
         );
-        let hanging_px = twips_to_px(m.indent_hanging_twips);
         let (marker_advance, marker_cw, shaped) = if let Some(run) = font.and_then(|f| faces.shape_with(&marker_text, f, style.font_pt, style.glyph_features)) {
             // `trailing_ws_advance` counts the baked NBSP suffix gap
             // (char::is_whitespace includes U+00A0), so `cw` is the lvlText
@@ -340,13 +388,13 @@ pub(crate) fn layout_paragraph(
             let estimated = marker_text.chars().count() as f64 * pt_to_px(style.font_pt) * 0.5;
             (estimated, estimated, None)
         };
-        let marker_width = marker_slot_width(m.text.is_empty(), hanging_px, marker_advance);
+        let marker_width = marker_slot_width(m.text.is_empty() && !m.suffix_only, m.suffix, layout.indent_first_line_px, marker_cw, marker_advance, &tab_stops);
         // §17.9.24 scopes the level rPr to the lvlText; the §17.9.28 suff
         // separator is not lvlText and the slot pad is not text at all. When
         // the OVERLAID style decorates the marker, clamp the decoration extent
         // (`content_width`, which the renderer rules over for zero-length
         // sentinel items) to the glyphs so the rule does not run across the
-        // NBSP gap + hanging-slot pad. Undecorated markers keep
+        // space suffix + tab slot. Undecorated markers keep
         // content_width == width (byte-identical to before).
         //
         // Known content_width consumers for a DECORATED marker (all intended):
@@ -373,49 +421,6 @@ pub(crate) fn layout_paragraph(
         });
     }
 
-    let mut tab_stops = resolve_paragraph_tab_stops(paragraph, style_ctx, default_ppr, default_tab_stop_px);
-    // §17.3.1.37 — a custom tab-stop `pos` is measured from the current PAGE
-    // (leading text) MARGIN, but the advance/fit walk in `pack_lines` runs in the
-    // paragraph's LEADING-EDGE frame (x=0 at the indented text start; see
-    // `next_stop`/`bar_xs` doc-comments, which already ASSERT this frame). For an
-    // indented paragraph the two frames diverge by the leading indent, so a raw
-    // `twips_to_px(pos)` right-tab lands `indent` px too far right and its trailing
-    // text (a TOC page number + dot leader) overflows `available` and wraps to the
-    // next line. Translate every margin-relative stop into the leading-edge frame
-    // by subtracting the leading indent — LEFT for LTR base, RIGHT for RTL base
-    // (§17.3.1.37 "left edge for LTR, right edge for RTL"). Stops at or left of the
-    // leading edge are inert (`next_stop` needs pos > current_x, and x >= 0) so we
-    // drop them. This also collapses the implicit hanging-indent stop (pushed at
-    // the left indent in `resolve_paragraph_tab_stops`) to ~0 — the guard against
-    // DOUBLE-SHIFTING a hanging-indent numbered list, whose marker is positioned by
-    // `marker_slot_width`, not the tab advance: the now-inert implicit stop cannot
-    // push the body text a second time. Bars are translated too — `bar_xs` re-adds
-    // the leading edge, so a margin-frame bar on an indented paragraph would
-    // otherwise double-count the indent. Un-indented paragraphs (LEADING == 0, incl.
-    // every hdr/ftr default-tab and body tab in the oracle snapshots) are untouched:
-    // the two frames coincide, so the render is byte-identical.
-    let leading_indent = if layout.base_rtl { layout.indent_right_px } else { layout.indent_left_px };
-    // A hanging first line starts left of the leading edge, so stops between
-    // its start and the edge are live on it.
-    let first_line_start = layout.indent_first_line_px.min(0.0);
-    if leading_indent.abs() > 0.5 {
-        tab_stops.custom.retain_mut(|(pos, _, _)| { *pos -= leading_indent; *pos > first_line_start + 0.5 });
-        for pos in tab_stops.bars.iter_mut() { *pos -= leading_indent; }
-        tab_stops.bars.retain(|&pos| pos > 0.5);
-    } else {
-        tab_stops.custom.retain(|(pos, _, _)| *pos > first_line_start + 0.5);
-    }
-    // §17.3.1.12: a hanging indent sets an implicit stop at the left indent,
-    // where the first line's text after a tab begins. A numbered paragraph's
-    // marker already ends there (`marker_slot_width`), so the stop is inert
-    // for it: the cursor is not left of it.
-    if layout.indent_first_line_px < -0.5 && !tab_stops.custom.iter().any(|(pos, _, _)| pos.abs() < 0.5) {
-        tab_stops.custom.push((0.0, TabAlignment::Left, TabLeader::None));
-        tab_stops.custom.sort_by(|a, b| a.0.total_cmp(&b.0));
-    }
-    // §17.15.1.25: automatic stops are multiples of the default interval
-    // measured from the margin, not from this paragraph's indent.
-    tab_stops.default_origin = leading_indent;
     let available = content_width - layout.indent_left_px - layout.indent_right_px;
     // `pack_lines` reorders each finished line into UAX#9 VISUAL order, so
     // its output is no longer a faithful logical stream. Every re-pack site (the
@@ -592,12 +597,10 @@ fn resolve_paragraph_tab_stops(
 pub(crate) struct ParagraphLayout {
     pub(crate) alignment: STJc,
     pub(crate) indent_left_px: f64,
-    /// True when the paragraph (or its style chain) explicitly set a left
-    /// indent — even to 0. A numbered paragraph's direct `<w:ind w:left>` must
-    /// override the numbering level's indent: an explicit 0 *cancels* the list
-    /// indent (§17.3.1.12), whereas a value that merely defaulted to 0 still
-    /// inherits the marker's indent.
-    indent_left_explicit: bool,
+    /// Where the left indent and the first line's offset came from: direct
+    /// formatting, the style chain, the document defaults. A list level's
+    /// indents slot in between them (see `IndentLayers::with_list`).
+    indent_layers: IndentLayers,
     pub(crate) indent_right_px: f64,
     pub(crate) indent_first_line_px: f64,
     pub(crate) space_before_px: f64,
@@ -628,6 +631,31 @@ pub(crate) struct ParagraphLayout {
     /// East Asian refinement toggles (§17.3.1.2/.3/.16/.45, all default
     /// true), consumed by `apply_east_asian_refinements` post-`collect_items`.
     pub(crate) ea: EaToggles,
+}
+
+/// A paragraph's left indent and first-line offset (twips) by source:
+/// `[direct, style chain, document defaults]`.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct IndentLayers {
+    left: [Option<i64>; 3],
+    first: [Option<i64>; 3],
+}
+
+impl IndentLayers {
+    /// The left indent and first-line offset with a list level's indents
+    /// (§17.7.2 style hierarchy): direct formatting wins; a list the
+    /// paragraph names itself beats its style, a list it has through its
+    /// style is beaten by that style; the list beats the document defaults.
+    /// Each indent is decided on its own.
+    fn with_list(&self, list: Option<(Option<i64>, Option<i64>)>, list_direct: bool) -> (Option<i64>, Option<i64>) {
+        let pick = |layers: &[Option<i64>; 3], level: Option<i64>| {
+            layers[0]
+                .or(if list_direct { level.or(layers[1]) } else { layers[1].or(level) })
+                .or(layers[2])
+        };
+        let (left, first) = list.unwrap_or((None, None));
+        (pick(&self.left, left), pick(&self.first, first))
+    }
 }
 
 /// The space between two consecutive paragraphs (§17.3.1.33): the larger of
@@ -761,11 +789,9 @@ impl ParagraphLayout {
             alignment
         };
 
-        let indent_left_opt = paragraph.indent_left()
-            .or_else(|| resolve_ppr_indent(&style_pprs, default_ppr, |ind| {
-                ind.start.as_deref().or(ind.left.as_deref()).and_then(|s| s.parse().ok())
-            }));
-        let indent_left = indent_left_opt.unwrap_or(0);
+        let left_of = |ind: &ooxml_wml::types::CTInd| -> Option<i64> {
+            ind.start.as_deref().or(ind.left.as_deref()).and_then(|s| s.parse().ok())
+        };
 
         let indent_right = paragraph.indent_right()
             .or_else(|| resolve_ppr_indent(&style_pprs, default_ppr, |ind| {
@@ -782,11 +808,22 @@ impl ParagraphLayout {
             ind.hanging.as_deref().and_then(|s| s.parse::<i64>().ok()).map(|h| -h)
                 .or_else(|| ind.first_line.as_deref().and_then(|s| s.parse().ok()))
         };
-        let first_line = paragraph.p_pr.as_ref()
-            .and_then(|ppr| ppr.indentation.as_deref())
-            .and_then(first_line_offset)
-            .or_else(|| resolve_ppr_indent(&style_pprs, default_ppr, first_line_offset))
-            .unwrap_or(0);
+        let direct_ind = paragraph.p_pr.as_ref().and_then(|ppr| ppr.indentation.as_deref());
+        let default_ind = default_ppr.and_then(|d| d.indentation.as_deref());
+        let indent_layers = IndentLayers {
+            left: [
+                direct_ind.and_then(left_of),
+                resolve_ppr_indent(&style_pprs, None, left_of),
+                default_ind.and_then(left_of),
+            ],
+            first: [
+                direct_ind.and_then(first_line_offset),
+                resolve_ppr_indent(&style_pprs, None, first_line_offset),
+                default_ind.and_then(first_line_offset),
+            ],
+        };
+        let (indent_left, first_line) = indent_layers.with_list(None, false);
+        let (indent_left, first_line) = (indent_left.unwrap_or(0), first_line.unwrap_or(0));
 
         // Each w:spacing attribute inherits *independently*: a direct pPr that
         // sets `after`/`afterAutospacing` but omits `before`/`beforeAutospacing`
@@ -801,9 +838,9 @@ impl ParagraphLayout {
             }))
             .unwrap_or(0);
         let before_auto = direct_spacing
-            .and_then(|s| s.before_autospacing.as_deref()).map(|v| is_on_off_true(Some(v)))
+            .and_then(|s| s.before_autospacing.as_deref()).map(crate::on_off)
             .or_else(|| resolve_ppr_option(&style_pprs, default_ppr, |ppr| {
-                ppr.spacing.as_deref().and_then(|s| s.before_autospacing.as_deref()).map(|v| is_on_off_true(Some(v)))
+                ppr.spacing.as_deref().and_then(|s| s.before_autospacing.as_deref()).map(crate::on_off)
             }))
             .unwrap_or(false);
         let space_after = direct_spacing
@@ -813,9 +850,9 @@ impl ParagraphLayout {
             }))
             .unwrap_or(0);
         let after_auto = direct_spacing
-            .and_then(|s| s.after_autospacing.as_deref()).map(|v| is_on_off_true(Some(v)))
+            .and_then(|s| s.after_autospacing.as_deref()).map(crate::on_off)
             .or_else(|| resolve_ppr_option(&style_pprs, default_ppr, |ppr| {
-                ppr.spacing.as_deref().and_then(|s| s.after_autospacing.as_deref()).map(|v| is_on_off_true(Some(v)))
+                ppr.spacing.as_deref().and_then(|s| s.after_autospacing.as_deref()).map(crate::on_off)
             }))
             .unwrap_or(false);
 
@@ -921,7 +958,7 @@ impl ParagraphLayout {
         Self {
             alignment,
             indent_left_px: twips_to_px(indent_left),
-            indent_left_explicit: indent_left_opt.is_some(),
+            indent_layers,
             indent_right_px: twips_to_px(indent_right),
             indent_first_line_px: twips_to_px(first_line),
             space_before_px: twips_to_px(space_before),
@@ -1050,29 +1087,42 @@ impl ParagraphLayout {
 
 #[cfg(test)]
 mod marker_slot_tests {
-    use super::marker_slot_width;
+    use super::{marker_slot_width, ResolvedTabStops};
+    use ooxml_wml::types::STLevelSuffix as S;
 
-    #[test]
-    fn narrow_marker_keeps_hanging_slot() {
-        // "1." at ~16px fits a 24px hanging slot → text still aligns at `left`.
-        assert_eq!(marker_slot_width(false, 24.0, 16.3), 24.0);
+    /// A hanging indent of 24 px: the first line starts at -24 and the
+    /// implicit stop sits at 0; automatic stops every 48 px.
+    fn hanging_24() -> ResolvedTabStops {
+        ResolvedTabStops {
+            custom: vec![(0.0, super::TabAlignment::Left, super::TabLeader::None)],
+            bars: Vec::new(),
+            default_interval: 48.0,
+            default_origin: 0.0,
+        }
     }
 
     #[test]
-    fn wide_marker_pushes_text_right() {
-        // §17.9: "1.1.1" at ~34px exceeds a 12px hanging slot → the slot
-        // widens to the marker advance so the text never overlaps the marker.
-        assert_eq!(marker_slot_width(false, 12.0, 34.0), 34.0);
+    fn a_tab_suffix_runs_to_the_hanging_indent() {
+        // "1." (16 px) ends at -8, before the stop at 0: the slot is 24.
+        assert_eq!(marker_slot_width(false, S::Tab, -24.0, 16.0, 16.0, &hanging_24()), 24.0);
+    }
+
+    #[test]
+    fn a_wide_number_jumps_to_the_next_stop() {
+        // "Article 10." (40 px) ends at 16, past the hanging indent: the next
+        // automatic stop is 48, so the slot is 72.
+        assert_eq!(marker_slot_width(false, S::Tab, -24.0, 40.0, 40.0, &hanging_24()), 72.0);
+    }
+
+    #[test]
+    fn space_and_nothing_suffixes_do_not_pad() {
+        assert_eq!(marker_slot_width(false, S::Space, -24.0, 16.0, 20.0, &hanging_24()), 20.0);
+        assert_eq!(marker_slot_width(false, S::Nothing, -24.0, 16.0, 16.0, &hanging_24()), 16.0);
     }
 
     #[test]
     fn empty_marker_takes_no_width() {
-        assert_eq!(marker_slot_width(true, 24.0, 16.3), 0.0);
-    }
-
-    #[test]
-    fn no_hanging_uses_marker_advance() {
-        assert_eq!(marker_slot_width(false, 0.0, 16.3), 16.3);
+        assert_eq!(marker_slot_width(true, S::Tab, -24.0, 16.0, 16.0, &hanging_24()), 0.0);
     }
 }
 
@@ -1118,7 +1168,7 @@ mod line_height_tests {
             alignment: STJc::Start,
             base_rtl: false,
             indent_left_px: 0.0,
-            indent_left_explicit: false,
+            indent_layers: IndentLayers::default(),
             indent_right_px: 0.0,
             indent_first_line_px: 0.0,
             space_before_px: 0.0,
@@ -1280,10 +1330,6 @@ pub(crate) fn collect_paragraph_style_rprs<'a>(
         depth += 1;
     }
     result
-}
-
-fn is_on_off_true(val: Option<&str>) -> bool {
-    matches!(val, Some("1" | "true" | "on"))
 }
 
 fn resolve_ppr_option<T>(

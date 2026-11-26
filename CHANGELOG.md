@@ -165,6 +165,20 @@ are held stable regardless.
   stays monospaced. Georgia uses Gelasio, its metric-compatible equivalent;
   Lato and Poppins load as themselves; Comic Sans uses Comic Neue; Chinese,
   Japanese and Korean serif font names render in a serif face.
+- Lists: nested list items indent to their own level even when the paragraph
+  style or the document defaults set an indent, and a hanging indent replaces
+  a first-line indent instead of adding to it. Text after a number set with a
+  tab moves to the next tab stop when the number is wider than the hang, as in
+  Word; numbers followed by a space or by nothing are no longer padded out to
+  the hang.
+- Lists: legal numbering writes every level in digits (1.1, not I.1), and a
+  level that refers to a deeper level no longer shows it. A bullet level with
+  no bullet text draws no bullet.
+- Lists and fields: numbers can be written as 01, 1st, One, First, circled
+  and full-width digits, Chicago-style symbols, Chinese, Japanese and Korean
+  numerals and syllables, Hebrew, Arabic, Russian, Thai and Hindi letters and
+  digits. Letters continue past z as aa, bb, as in Word; this also changes
+  the ALPHABETIC field format, which counted on like spreadsheet columns.
 
 ### Changed
 

@@ -67,7 +67,7 @@ pub(crate) fn copy_data(chart_xml: &[u8]) -> Option<ChartCopyData> {
 /// A chart `CT_Boolean`: present with no `val` means true (§21.2.2.1, the
 /// schema default), so `<c:delete/>` deletes and `<c:smooth/>` smooths.
 fn chart_bool(b: Option<&ooxml_dml::types::CTBoolean>) -> Option<bool> {
-    b.map(|b| b.value.as_deref().is_none_or(|v| matches!(v, "1" | "true" | "on")))
+    b.map(|b| b.value.as_deref().is_none_or(crate::on_off))
 }
 
 /// A chart percentage (`ST_GapAmount`, `ST_Overlap`, `ST_HoleSize`): a bare

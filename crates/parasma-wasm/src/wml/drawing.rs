@@ -167,7 +167,7 @@ pub(crate) fn drawing_is_hidden(drawing: &ooxml_wml::types::CTDrawing) -> bool {
         matches!(xml_local_name(&elem.name), "inline" | "anchor")
             && elem.children.iter().any(|c| match c {
                 ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == "docPr" => {
-                    matches!(vml_attr(e, "hidden"), Some("1" | "true" | "on"))
+                    vml_attr(e, "hidden").is_some_and(crate::on_off)
                 }
                 _ => false,
             })

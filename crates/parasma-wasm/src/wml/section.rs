@@ -153,7 +153,7 @@ impl PageGeometry {
         // settings `w:gutterAtTop` placement is not read.
         let gutter = margins.and_then(|m| parse_twips(&m.gutter)).unwrap_or(0);
         let rtl_gutter = sect_pr.rtl_gutter.as_deref()
-            .is_some_and(|g| g.value.as_deref().is_none_or(|v| matches!(v, "1" | "true" | "on")));
+            .is_some_and(|g| g.value.as_deref().is_none_or(crate::on_off));
         let mut right = right;
         if rtl_gutter { right += gutter } else { left += gutter }
         let header = margins
@@ -326,14 +326,13 @@ pub(crate) fn columns_from_sect_pr(
     content_width_px: f64,
 ) -> (Vec<ColumnDef>, bool) {
     let single = || vec![ColumnDef { x_offset_px: margin_left_px, width_px: content_width_px }];
-    let on = |s: &str| matches!(s, "1" | "true" | "on");
 
     let cols = match sect_pr.cols.as_deref() {
         Some(c) => c,
         None => return (single(), false),
     };
 
-    let sep = cols.sep.as_deref().is_some_and(on);
+    let sep = cols.sep.as_deref().is_some_and(crate::on_off);
 
     // Default gutter: 720 twips = 0.5"
     let default_gutter_px = twips_to_px(
@@ -344,7 +343,7 @@ pub(crate) fn columns_from_sect_pr(
 
     // equal_width defaults to true; explicit cols[] only when equal_width=false.
     let use_explicit = cols.equal_width.as_deref()
-        .is_some_and(|v| !on(v))
+        .is_some_and(|v| !crate::on_off(v))
         && !cols.col.is_empty();
 
     if use_explicit {

@@ -84,12 +84,20 @@ pub(crate) struct NumberingLevelDef {
     /// restarts this level's counter. `None` = the default (restart whenever
     /// any earlier level is used). `Some(0)` = never restart.
     pub(crate) lvl_restart: Option<i64>,
-    pub(crate) indent_left_twips: i64,
-    pub(crate) indent_hanging_twips: i64,
+    /// The level's own indents (§17.9.22 level pPr): left, and the first
+    /// line's offset from it (positive `firstLine`, negative `hanging`).
+    /// `None` where the level sets none.
+    pub(crate) indent_left_twips: Option<i64>,
+    pub(crate) indent_first_twips: Option<i64>,
+    /// §17.9.4 `isLgl`: every number in the label is written in decimal.
+    pub(crate) legal: bool,
+    /// §17.9.11 `lvlText@null`: the label is a null character: nothing is
+    /// drawn, but the suffix still separates the text (an empty `lvlText`
+    /// draws neither).
+    pub(crate) null_text: bool,
     /// §17.9.28 `w:suff` — content between the level's number and the paragraph
-    /// text (tab [default] / space / nothing). Drives how a marker that is
-    /// WIDER than its hanging-indent slot advances the following text so it
-    /// never overlaps.
+    /// text (tab [default] / space / nothing). A tab follows tab-stop rules,
+    /// so a marker wider than the hang moves the text to the next stop.
     pub(crate) suffix: STLevelSuffix,
     /// §17.9.24 — the level's own `<w:rPr>` digest (marker formatting).
     pub(crate) rpr: MarkerRunOverrides,
@@ -100,10 +108,16 @@ pub(crate) struct NumberingMarker {
     /// The face a marker set in a symbol font draws in, its text re-encoded
     /// (`wml::symbol_font`); `None` for a marker in any other font.
     pub(crate) symbol_face: Option<SymbolFace>,
-    pub(crate) indent_left_twips: i64,
-    pub(crate) indent_hanging_twips: i64,
+    /// See `NumberingLevelDef`.
+    pub(crate) indent_left_twips: Option<i64>,
+    pub(crate) indent_first_twips: Option<i64>,
+    /// The paragraph names its list itself (a direct `numPr`), rather than
+    /// through its style: then the list's indents beat the style's.
+    pub(crate) direct: bool,
     /// §17.9.28 `w:suff` separator type (see `NumberingLevelDef::suffix`).
     pub(crate) suffix: STLevelSuffix,
+    /// The suffix applies although `text` is empty (`lvlText@null`).
+    pub(crate) suffix_only: bool,
     /// The resolved list identity + counter captured at
     /// `resolve_marker_for` time (all in scope here). `count` is the live
     /// document-order counter value (survives mid-list `lvlRestart`, where
@@ -131,7 +145,8 @@ pub(crate) fn resolve_numbering_marker(
     counters: &mut HashMap<(i64, i64), i64>,
     style_ctx: &StyleContext,
 ) -> Option<NumberingMarker> {
-    let numbering = paragraph.numbering().or_else(|| {
+    let direct = paragraph.numbering();
+    let numbering = direct.or_else(|| {
         let style_pprs = collect_paragraph_style_chain(paragraph, style_ctx);
         for ppr in &style_pprs {
             if let Some(ref num_pr) = ppr.num_pr {
@@ -144,7 +159,9 @@ pub(crate) fn resolve_numbering_marker(
     });
     let (num_id, ilvl) = numbering?;
     if num_id == 0 { return None; }
-    Some(resolve_marker_for(num_id, ilvl, levels, counters))
+    let mut marker = resolve_marker_for(num_id, ilvl, levels, counters);
+    marker.direct = direct.is_some();
+    Some(marker)
 }
 
 /// Counter-advancing core (§17.9): given the resolved `(num_id, ilvl)`, advance
@@ -171,8 +188,10 @@ pub(crate) fn resolve_marker_for(
                 lvl_text: "\u{2022}".to_string(),
                 start: 1,
                 lvl_restart: None,
-                indent_left_twips: 720 * (ilvl + 1),
-                indent_hanging_twips: 360,
+                indent_left_twips: Some(720 * (ilvl + 1)),
+                indent_first_twips: Some(-360),
+                legal: false,
+                null_text: false,
                 suffix: STLevelSuffix::Tab,
                 rpr: MarkerRunOverrides::default(),
             };
@@ -213,10 +232,6 @@ pub(crate) fn resolve_marker_for(
     // The level's font (§17.9.24) — a symbol font gives its codes their own
     // meaning, so the marker text is re-encoded below.
     let symbol_font = level.rpr.family.as_deref().and_then(SymbolFont::from_family);
-    // The two "•" arms are kept distinct on purpose: a private-use symbol
-    // bullet with no symbol font to read it in, and an empty lvlText (default •),
-    // are separate causes.
-    #[allow(clippy::if_same_then_else)]
     let text = match level.format {
         STNumberFormat::Bullet => {
             // §17.9 the `lvlText` value can carry XML char references (e.g.
@@ -225,10 +240,9 @@ pub(crate) fn resolve_marker_for(
             // literal "&#8226;" string, which is ~6 glyphs wide and overflows its
             // hanging slot (this is what the marker-overflow advance would otherwise
             // expose; decoding keeps a real • narrow).
+            // An empty lvlText draws no marker (§17.9.11): Word shows none.
             let raw = decode_lvl_text_entities(&level.lvl_text);
-            if raw.is_empty() {
-                "\u{2022}".to_string()
-            } else if symbol_font.is_none() && (raw.contains('\u{f0b7}') || raw.contains('\u{f0a7}')) {
+            if symbol_font.is_none() && (raw.contains('\u{f0b7}') || raw.contains('\u{f0a7}')) {
                 "\u{2022}".to_string()
             } else {
                 raw
@@ -237,10 +251,14 @@ pub(crate) fn resolve_marker_for(
         _ => {
             // §17.9.11 multi-level substitution: each `%n` is the 1-based index
             // of an ancestor (or this) level's counter, formatted per THAT
-            // level's numFmt. A `%n` referencing a level higher than this one is
-            // ignored (left as-is). An ancestor never yet used shows its start
-            // value (the counter HashMap has no entry → fall back to start).
+            // level's numFmt, or in decimal when this level is legal (§17.9.4
+            // isLgl). A `%n` naming a deeper level than this one is dropped.
+            // An ancestor never yet used shows its start value (the counter
+            // HashMap has no entry → fall back to start).
             let mut result = decode_lvl_text_entities(&level.lvl_text);
+            for deeper in (ilvl + 1)..9 {
+                result = result.replace(&format!("%{}", deeper + 1), "");
+            }
             for lvl_ref in (0..=ilvl).rev() {
                 let token = format!("%{}", lvl_ref + 1);
                 if result.contains(&token) {
@@ -252,9 +270,11 @@ pub(crate) fn resolve_marker_for(
                             ref_def.map(|d| d.start).unwrap_or(1)
                         })
                     };
-                    let ref_format = ref_def
-                        .map(|l| &l.format)
-                        .unwrap_or(&level.format);
+                    let ref_format = if level.legal {
+                        &STNumberFormat::Decimal
+                    } else {
+                        ref_def.map(|l| &l.format).unwrap_or(&level.format)
+                    };
                     result = result.replace(&token, &format_number(ref_counter, ref_format));
                 }
             }
@@ -271,10 +291,12 @@ pub(crate) fn resolve_marker_for(
     };
 
     NumberingMarker {
+        suffix_only: level.null_text && text.is_empty(),
         text,
         symbol_face,
         indent_left_twips: level.indent_left_twips,
-        indent_hanging_twips: level.indent_hanging_twips,
+        indent_first_twips: level.indent_first_twips,
+        direct: false,
         suffix: level.suffix,
         // Capture the resolved list identity + live counter for copy.
         num_id,
@@ -307,51 +329,62 @@ fn decode_lvl_text_entities(s: &str) -> String {
     crate::engine::vml::decode_char_refs_verbatim(s)
 }
 
-/// §17.18.59 ST_NumberFormat — maps a level's `numFmt` to the marker glyph
-/// sequence (decimal / lowerLetter / upperLetter / lowerRoman / upperRoman).
-/// FLOOR: lowerLetter/upperLetter fall back to DECIMAL past 26 (item 27 → "27"),
-/// whereas §17.18.59 specifies repeated-letter cycling (aa, bb, cc). The PML
-/// numbering path already implements that (`pml::shape::int_to_alpha`); WML
-/// keeps the decimal fallback for now — folding the two onto one shared helper
-/// is a known numbering follow-on (it would move pins on any >26 letter list,
-/// so it needs its own red-green test).
-fn format_number(n: i64, format: &STNumberFormat) -> String {
-    match format {
-        STNumberFormat::Decimal => n.to_string(),
-        STNumberFormat::LowerLetter => {
-            if (1..=26).contains(&n) {
-                ((b'a' + (n - 1) as u8) as char).to_string()
-            } else {
-                n.to_string() // FLOOR: §17.18.59 wants "aa"; see banner
-            }
-        }
-        STNumberFormat::UpperLetter => {
-            if (1..=26).contains(&n) {
-                ((b'A' + (n - 1) as u8) as char).to_string()
-            } else {
-                n.to_string() // FLOOR: §17.18.59 wants "AA"; see banner
-            }
-        }
-        STNumberFormat::LowerRoman => to_roman(n).to_lowercase(),
-        STNumberFormat::UpperRoman => to_roman(n),
-        _ => n.to_string(),
-    }
+/// A level's number in its `numFmt` (§17.18.59), through the shared
+/// formatter. Declared: a custom format (`numFmt@format`) and the forms with
+/// no formatter here (Vietnamese and Hindi counting, Thai counting, Hindi
+/// vowels and consonants, Korean legal, Taiwanese digital, Chinese legal
+/// simplified) are written in decimal.
+pub(crate) fn format_number(n: i64, format: &STNumberFormat) -> String {
+    crate::engine::counter::format(n, counter_style(format))
 }
 
-fn to_roman(mut n: i64) -> String {
-    const TABLE: &[(i64, &str)] = &[
-        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
-        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
-        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
-    ];
-    let mut result = String::new();
-    for &(value, numeral) in TABLE {
-        while n >= value {
-            result.push_str(numeral);
-            n -= value;
-        }
+/// The shared counter style of a WML number format.
+pub(crate) fn counter_style(format: &STNumberFormat) -> crate::engine::counter::CounterStyle {
+    use crate::engine::counter::CounterStyle as C;
+    use STNumberFormat as F;
+    match format {
+        F::DecimalZero => C::DecimalZero,
+        F::UpperRoman => C::UpperRoman,
+        F::LowerRoman => C::LowerRoman,
+        F::UpperLetter => C::UpperLetter,
+        F::LowerLetter => C::LowerLetter,
+        F::Ordinal => C::Ordinal,
+        F::CardinalText => C::CardinalText,
+        F::OrdinalText => C::OrdinalText,
+        F::DollarText => C::DollarText,
+        F::Hex => C::Hex,
+        F::Chicago => C::Chicago,
+        F::NumberInDash => C::NumberInDash,
+        F::DecimalEnclosedCircle | F::DecimalEnclosedCircleChinese => C::DecimalEnclosedCircle,
+        F::DecimalEnclosedFullstop => C::DecimalEnclosedFullstop,
+        F::DecimalEnclosedParen => C::DecimalEnclosedParen,
+        F::DecimalFullWidth | F::DecimalFullWidth2 => C::DecimalFullWidth,
+        F::IdeographDigital | F::JapaneseDigitalTenThousand => C::IdeographDigital,
+        F::JapaneseCounting | F::ChineseCounting | F::ChineseCountingThousand
+        | F::TaiwaneseCounting | F::TaiwaneseCountingThousand | F::IdeographLegalTraditional
+        | F::JapaneseLegal => C::IdeographCounting,
+        F::IdeographTraditional => C::IdeographTraditional,
+        F::IdeographZodiac | F::IdeographZodiacTraditional => C::IdeographZodiac,
+        F::Aiueo => C::Aiueo,
+        F::AiueoFullWidth => C::AiueoFullWidth,
+        F::Iroha => C::Iroha,
+        F::IrohaFullWidth => C::IrohaFullWidth,
+        F::Ganada => C::Ganada,
+        F::Chosung => C::Chosung,
+        F::KoreanDigital | F::KoreanDigital2 => C::KoreanDigital,
+        F::KoreanCounting => C::KoreanCounting,
+        F::Hebrew1 => C::Hebrew1,
+        F::Hebrew2 => C::Hebrew2,
+        F::ArabicAlpha => C::ArabicAlpha,
+        F::ArabicAbjad => C::ArabicAbjad,
+        F::RussianLower => C::RussianLower,
+        F::RussianUpper => C::RussianUpper,
+        F::ThaiLetters => C::ThaiLetters,
+        F::ThaiNumbers => C::ThaiNumbers,
+        F::HindiNumbers => C::HindiNumbers,
+        F::None => C::None,
+        _ => C::Decimal,
     }
-    result
 }
 
 #[cfg(test)]
@@ -380,8 +413,10 @@ mod tests {
             lvl_text: text.to_string(),
             start: 1,
             lvl_restart: restart,
-            indent_left_twips: 720,
-            indent_hanging_twips: 360,
+            indent_left_twips: Some(720),
+            indent_first_twips: Some(-360),
+            legal: false,
+            null_text: false,
             suffix: STLevelSuffix::Tab,
             rpr: MarkerRunOverrides::default(),
         }
