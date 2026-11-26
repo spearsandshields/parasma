@@ -11252,3 +11252,52 @@ fn column_and_page_breaks_in_columns() {
     let one_col = layout(breaks_docx(r#"<w:r><w:t>one</w:t><w:br w:type="column"/><w:t>two</w:t></w:r>"#, 1));
     assert_eq!(page_texts(&one_col), ["one", "two"]);
 }
+
+// ── Absolute position tabs (§17.3.3.23) ─────────────────────────────────────
+
+/// Where each item of a line starts and ends.
+fn item_spans(line: &PagedLine) -> Vec<(String, f64, f64)> {
+    let mut out = Vec::new();
+    for seg in &line.segments {
+        let mut x = seg.x_start;
+        for i in &seg.items {
+            out.push((i.text.clone(), x, x + i.width));
+            x += i.width;
+        }
+    }
+    out
+}
+
+/// Word's three-part header: text, a centre tab and a right tab relative to
+/// the margins. No tab stops are defined; the tabs still reach the centre
+/// (408 = 96 + 624/2) and the right margin (720).
+#[test]
+fn absolute_tabs_reach_the_centre_and_the_right_margin() {
+    let ptab = |a: &str| format!(r#"<w:r><w:ptab w:relativeTo="margin" w:alignment="{a}" w:leader="none"/></w:r>"#);
+    let footer = format!(
+        "<w:p>{}{}{}{}{}</w:p>",
+        r("", "Title"), ptab("center"), r("", "Mid"), ptab("right"), r("", "End"),
+    );
+    let v = layout(hf_docx(HF_STYLES_NO_HEADER, "<w:p/>", &footer, &p("", &r("", "body"))));
+    let pages = v.pages.borrow();
+    let spans = item_spans(&pages[0].footer_lines[0]);
+    let find = |t: &str| spans.iter().find(|(s, ..)| s == t).unwrap().clone();
+    let (_, mid_l, mid_r) = find("Mid");
+    let (_, _, end_r) = find("End");
+    assert!(((mid_l + mid_r) / 2.0 - 408.0).abs() < 0.5, "Mid centred at 408: {mid_l}..{mid_r}");
+    assert!((end_r - 720.0).abs() < 0.5, "End ends at the margin: {end_r}");
+}
+
+/// An absolute tab whose position the pen has passed moves to it on the
+/// next line.
+#[test]
+fn an_absolute_tab_behind_the_pen_goes_to_the_next_line() {
+    let ptab = r#"<w:r><w:ptab w:relativeTo="margin" w:alignment="left" w:leader="none"/></w:r>"#;
+    let body = p("", &format!("{}{ptab}{}", r("", "Long enough to pass the left margin"), r("", "Next")));
+    let v = layout(numbering_docx("", "", &body));
+    let lines = body_lines(&v);
+    assert_eq!(lines.len(), 2, "the tab wraps");
+    let spans = item_spans(&lines[1]);
+    let next = spans.iter().find(|(s, ..)| s == "Next").unwrap();
+    assert!((next.1 - 96.0).abs() < 0.5, "Next starts at the margin: {}", next.1);
+}

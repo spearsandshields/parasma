@@ -33,6 +33,7 @@ use crate::wml::drawing::{
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
 use crate::wml::content_walk::{self, Revision, Visit};
+use crate::wml::paragraph::AbsoluteTab;
 use crate::wml::symbol_font::SymbolFont;
 use crate::{
     collect_char_style_rprs, collect_paragraph_style_rprs, field, PagedLine,
@@ -47,6 +48,8 @@ pub(crate) struct TabInfo {
     #[allow(dead_code)]
     alignment: TabAlignment,
     pub(crate) leader: TabLeader,
+    /// Set for an absolute position tab, which ignores the tab stops.
+    pub(crate) absolute: Option<AbsoluteTab>,
 }
 
 pub(crate) struct AnchoredTextBoxInfo {
@@ -514,12 +517,14 @@ pub(crate) fn collect_items(
             let base = chunk_base;
             chunk_base += chunk.len();
             if chunk_idx > 0 {
+                let ptab = run_text.ptabs.iter().find(|(at, ..)| *at == base - 1);
                 items.push(Item {
                     text: "\t".to_string(),
                     style: style.clone(),
                     tab: Some(TabInfo {
                         alignment: TabAlignment::Left,
-                        leader: TabLeader::None,
+                        leader: ptab.map_or(TabLeader::None, |(_, _, leader)| *leader),
+                        absolute: ptab.map(|(_, tab, _)| *tab),
                     }),
                     // The synthesized tab is one logical byte ('\t') of the
                     // paragraph text (it was split out of `text` at a '\t').
@@ -1308,6 +1313,20 @@ pub(crate) fn tab_lookaheads(items: &[Item]) -> Vec<TabLookahead> {
 pub(crate) fn resolve_tab(
     item: &mut Item, x: f64, look: TabLookahead, tab_stops: &ResolvedTabStops,
 ) -> f64 {
+    if let Some(abs) = item.tab.as_ref().and_then(|t| t.absolute) {
+        // §17.3.3.23: straight to its edge, whatever the stops; the following
+        // text aligns there as the tab's alignment says.
+        let back = match abs.alignment {
+            TabAlignment::Right | TabAlignment::Decimal => look.following_width,
+            TabAlignment::Center => look.following_width / 2.0,
+            TabAlignment::Left => 0.0,
+        };
+        let land = abs.target(tab_stops.edges) - back;
+        let width = (land - x).max(0.0);
+        item.width = width;
+        item.content_width = width;
+        return x + width;
+    }
     let (stop_pos, alignment, leader) = tab_stops.next_stop(x);
     // How far LEFT of the stop the following text must begin, per alignment.
     let back = match alignment {
@@ -1326,7 +1345,7 @@ pub(crate) fn resolve_tab(
     let tab_width = (stop_pos - x - back).max(pt_to_px(3.0));
     item.width = tab_width;
     item.content_width = tab_width;
-    item.tab = Some(TabInfo { alignment, leader });
+    item.tab = Some(TabInfo { alignment, leader, absolute: None });
     // The cursor lands where the FOLLOWING text starts, not at the stop: a
     // right/center/decimal tab pulls that text back off the stop by `back`.
     //
@@ -1427,6 +1446,19 @@ pub(crate) fn pack_lines(items: Vec<Item>, available_width: f64, first_line_inde
         // produce. Removed rather than made reachable — making it fire would
         // change where tabs land, which is a behaviour change needing its own
         // fixture and re-baseline, not a tidy-up.
+        if let Some(abs) = item.tab.as_ref().and_then(|t| t.absolute) {
+            // §17.3.3.23: an absolute tab whose position the pen has passed
+            // advances to it on the next line.
+            let back = match abs.alignment {
+                TabAlignment::Right | TabAlignment::Decimal => looks[i].following_width,
+                TabAlignment::Center => looks[i].following_width / 2.0,
+                TabAlignment::Left => 0.0,
+            };
+            let x = leading(lines.len()) + current.width();
+            if !current.is_empty() && abs.target(tab_stops.edges) - back < x - 0.5 {
+                lines.push(std::mem::replace(&mut current, LayoutLine::new()));
+            }
+        }
         if item.tab.is_some() {
             resolve_tab(&mut item, leading(lines.len()) + current.width(), looks[i], tab_stops);
         }
@@ -2027,13 +2059,16 @@ struct RunText {
     /// "without that hyphen being a line breaking position" (§17.3.3.18). Only
     /// within the run: a run boundary is a break opportunity in this engine.
     no_break: Vec<usize>,
+    /// Absolute position tabs: the byte of the `\t` each stands as, and its
+    /// target and leader (§17.3.3.23).
+    ptabs: Vec<(usize, AbsoluteTab, TabLeader)>,
 }
 
 impl RunText {
     /// A field result or other replacement text: plain, in the run's face.
     fn plain(text: &str, caps: bool) -> Self {
         let text = if caps { text.to_uppercase() } else { text.to_owned() };
-        RunText { text, faces: Vec::new(), no_break: Vec::new() }
+        RunText { text, faces: Vec::new(), no_break: Vec::new(), ptabs: Vec::new() }
     }
 
     /// Whether `of` would produce any text — the cheap test run before the
@@ -2043,7 +2078,7 @@ impl RunText {
         run.run_content.iter().any(|rc| match rc {
             RunContent::T(t) => t.text.as_ref().is_some_and(|s| !s.is_empty()),
             RunContent::DelText(t) => deleted && t.text.as_ref().is_some_and(|s| !s.is_empty()),
-            RunContent::Br(_) | RunContent::Tab(_) | RunContent::Cr(_) | RunContent::NoBreakHyphen(_) => true,
+            RunContent::Br(_) | RunContent::Tab(_) | RunContent::Ptab(_) | RunContent::Cr(_) | RunContent::NoBreakHyphen(_) => true,
             RunContent::Sym(sym) => sym_code(sym).is_some(),
             _ => false,
         })
@@ -2061,7 +2096,7 @@ impl RunText {
         font_cache: &FontCache,
     ) -> Self {
         use ooxml_wml::types::{RunContent, STBrType};
-        let mut out = RunText { text: String::new(), faces: Vec::new(), no_break: Vec::new() };
+        let mut out = RunText { text: String::new(), faces: Vec::new(), no_break: Vec::new(), ptabs: Vec::new() };
         let push_text = |out: &mut RunText, s: &str| {
             let chars: Box<dyn Iterator<Item = char>> =
                 if caps { Box::new(s.chars().flat_map(char::to_uppercase)) } else { Box::new(s.chars()) };
@@ -2077,6 +2112,11 @@ impl RunText {
                 RunContent::T(t) => push_text(&mut out, t.text.as_deref().unwrap_or("")),
                 RunContent::DelText(t) if deleted => push_text(&mut out, t.text.as_deref().unwrap_or("")),
                 RunContent::Tab(_) => out.push('\t', None),
+                RunContent::Ptab(ptab) => {
+                    let (tab, leader) = AbsoluteTab::of(ptab);
+                    out.ptabs.push((out.text.len(), tab, leader));
+                    out.push('\t', None);
+                }
                 RunContent::Cr(_) => out.push('\n', None),
                 // FLOOR: `w:clear` is not read, so text after a clearing
                 // break keeps wrapping beside a float.

@@ -82,6 +82,59 @@ pub(crate) struct ResolvedTabStops {
     /// indent. Automatic stops fall at multiples of `default_interval` from
     /// it (§17.15.1.25).
     pub(crate) default_origin: f64,
+    /// The paragraph's text edges in this frame, for absolute tabs.
+    pub(crate) edges: TabEdges,
+}
+
+/// A paragraph's margins and indents in the tab frame (x = 0 at the
+/// leading indent), which an absolute position tab aims at (§17.3.3.23).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TabEdges {
+    pub(crate) margin_start: f64,
+    pub(crate) indent_end: f64,
+    pub(crate) margin_end: f64,
+}
+
+/// An absolute position tab (§17.3.3.23 `w:ptab`): it advances to the start,
+/// centre or end of the text margins or the paragraph's indents, whatever
+/// tab stops the paragraph has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct AbsoluteTab {
+    pub(crate) alignment: TabAlignment,
+    pub(crate) relative_to_margin: bool,
+}
+
+impl AbsoluteTab {
+    pub(crate) fn of(ptab: &ooxml_wml::types::CTPTab) -> (Self, TabLeader) {
+        use ooxml_wml::types::{STPTabAlignment as A, STPTabLeader as L, STPTabRelativeTo as R};
+        let alignment = match ptab.alignment {
+            A::Left => TabAlignment::Left,
+            A::Center => TabAlignment::Center,
+            A::Right => TabAlignment::Right,
+        };
+        let leader = match ptab.leader {
+            L::None => TabLeader::None,
+            L::Dot => TabLeader::Dot,
+            L::Hyphen => TabLeader::Hyphen,
+            L::Underscore => TabLeader::Underscore,
+            L::MiddleDot => TabLeader::MiddleDot,
+        };
+        (Self { alignment, relative_to_margin: matches!(ptab.relative_to, R::Margin) }, leader)
+    }
+
+    /// The x this tab aims at within `edges`.
+    pub(crate) fn target(self, edges: TabEdges) -> f64 {
+        let (start, end) = if self.relative_to_margin {
+            (edges.margin_start, edges.margin_end)
+        } else {
+            (0.0, edges.indent_end)
+        };
+        match self.alignment {
+            TabAlignment::Center => (start + end) / 2.0,
+            TabAlignment::Right | TabAlignment::Decimal => end,
+            TabAlignment::Left => start,
+        }
+    }
 }
 
 impl ResolvedTabStops {
@@ -291,6 +344,13 @@ pub(crate) fn layout_paragraph(
     // §17.15.1.25: automatic stops are multiples of the default interval
     // measured from the margin, not from this paragraph's indent.
     tab_stops.default_origin = leading_indent;
+    let trailing_indent = if layout.base_rtl { layout.indent_left_px } else { layout.indent_right_px };
+    let indent_end = content_width - layout.indent_left_px - layout.indent_right_px;
+    tab_stops.edges = TabEdges {
+        margin_start: -leading_indent,
+        indent_end,
+        margin_end: indent_end + trailing_indent,
+    };
 
     if let Some(m) = marker {
         // NOTE: unlike RunStyle::default() (empty font-slot families), this
@@ -592,6 +652,7 @@ fn resolve_paragraph_tab_stops(
         bars,
         default_interval: default_tab_stop_px,
         default_origin: 0.0,
+        edges: TabEdges::default(),
     }
 }
 
@@ -1113,6 +1174,7 @@ mod marker_slot_tests {
             bars: Vec::new(),
             default_interval: 48.0,
             default_origin: 0.0,
+            edges: super::TabEdges::default(),
         }
     }
 

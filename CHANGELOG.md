@@ -209,6 +209,10 @@ are held stable regardless.
   page, and several breaks in a row each start a page. Column breaks move
   to the next column (a new page when there is none), and a page break in a
   multi-column section starts a new page instead of the next column.
+- Headers and footers built from Word's three-part designs (left, centred
+  and right text) lay out as designed: the alignment tabs they use now move
+  to the centre and the right margin, with their dotted or dashed leaders,
+  whatever tab stops the paragraph has.
 
 ### Changed
 
