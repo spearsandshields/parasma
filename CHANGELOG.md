@@ -55,6 +55,9 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: SmartArt diagrams take their space on the page, so the text
+  after one no longer moves up over it. The diagram itself is not drawn yet;
+  a placeholder marks where it is.
 - Documents: text keeps its gap from floating pictures and text boxes
   (usually an eighth of an inch at each side, as Word writes it on the
   object), including tight and through wrapping. It used to run up against

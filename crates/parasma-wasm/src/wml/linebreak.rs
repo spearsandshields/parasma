@@ -624,6 +624,43 @@ pub(crate) fn collect_items(
         }
 
         for drawing in drawings.iter().filter(|d| !drawing_is_hidden(d)) {
+            // A SmartArt diagram (§21.4) is not drawn yet; without this it took
+            // no space at all and the text after it moved up by its height.
+            // It is laid out at its extent and painted as the missing-picture
+            // placeholder: inline in the line, or anchored with its wrap.
+            // Declared: the diagram itself is not drawn.
+            if crate::wml::drawing::is_diagram(drawing) {
+                let (dw, dh) = match drawing.extent_emu() {
+                    Some((cx, cy)) => (emu_to_px(cx), emu_to_px(cy)),
+                    None => (0.0, 0.0),
+                };
+                let key = crate::wml::drawing::UNDRAWN_DIAGRAM_KEY.to_owned();
+                if crate::wml::drawing::is_anchored(drawing) {
+                    let (h_pos, v_pos, h_rel, v_rel, behind, wrap) = parse_anchor_position(drawing, dw, dh);
+                    anchored_images.push(AnchoredImageInfo {
+                        rel_id: key,
+                        width_px: dw,
+                        height_px: dh,
+                        pos_h: h_pos,
+                        pos_v: v_pos,
+                        h_relative_from: h_rel,
+                        v_relative_from: v_rel,
+                        behind_text: behind,
+                        wrap,
+                    });
+                } else {
+                    let (dist_l_px, dist_t_px, dist_r_px, dist_b_px) = inline_dist_px(drawing);
+                    let box_width = dw + dist_l_px + dist_r_px;
+                    items.push(Item {
+                        style: style.clone(),
+                        width: box_width,
+                        content_width: box_width,
+                        image: Some(ImageItem { rel_id: key, height_px: dh, dist_l_px, dist_t_px, dist_r_px, dist_b_px }),
+                        ..Default::default()
+                    });
+                }
+                continue;
+            }
             let inline_rel_ids = drawing.inline_image_rel_ids();
             if !inline_rel_ids.is_empty() {
                 let (width_px, height_px) = match drawing.extent_emu() {

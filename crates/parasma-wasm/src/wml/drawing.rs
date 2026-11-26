@@ -139,6 +139,26 @@ pub(crate) fn parse_anchor_position(drawing: &ooxml_wml::types::CTDrawing, obj_w
     (h_pos, v_pos, h_rel, v_rel, behind, wrap)
 }
 
+/// The image key a SmartArt diagram is laid out under until diagrams are
+/// drawn: it names no picture, so it paints as the missing-picture placeholder.
+pub(crate) const UNDRAWN_DIAGRAM_KEY: &str = "\u{0}diagram";
+
+/// Whether a drawing is a SmartArt diagram: its `a:graphicData` has the
+/// diagram URI (§21.4).
+pub(crate) fn is_diagram(drawing: &ooxml_wml::types::CTDrawing) -> bool {
+    fn has_diagram(e: &ooxml_xml::RawXmlElement) -> bool {
+        (xml_local_name(&e.name) == "graphicData"
+            && vml_attr(e, "uri").is_some_and(|u| u.ends_with("/drawingml/2006/diagram")))
+            || e.children.iter().any(|c| matches!(c, ooxml_xml::RawXmlNode::Element(ce) if has_diagram(ce)))
+    }
+    drawing.extra_children.iter().any(|c| matches!(&c.node, ooxml_xml::RawXmlNode::Element(e) if has_diagram(e)))
+}
+
+/// Whether a drawing is anchored (`wp:anchor`) rather than inline.
+pub(crate) fn is_anchored(drawing: &ooxml_wml::types::CTDrawing) -> bool {
+    drawing.extra_children.iter().any(|c| matches!(&c.node, ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == "anchor"))
+}
+
 /// Whether a DrawingML object is hidden: present in the document but not
 /// displayed (`wp:docPr@hidden`, §20.4.2.5). Word hides it; so does layout.
 pub(crate) fn drawing_is_hidden(drawing: &ooxml_wml::types::CTDrawing) -> bool {

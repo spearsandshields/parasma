@@ -10679,6 +10679,17 @@ fn page_and_column_geometry() {
     assert!(y > 48.0 && y < 80.0, "body starts 0.5in from the top edge: {y}");
 }
 
+/// A SmartArt diagram takes its space in the text flow (§21.4): the text
+/// after a 2-inch diagram starts below it.
+#[test]
+fn a_smartart_diagram_takes_its_space() {
+    let diagram = r#"<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"><wp:extent cx="2743200" cy="1828800"/><wp:docPr id="7" name="Diagram 7"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="rId20" r:lo="rId21" r:qs="rId22" r:cs="rId23"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>"#;
+    let v = layout(numbering_docx("", "", &format!("{}{diagram}{}", para("Before"), para("After"))));
+    let lines = body_lines(&v);
+    let y = |t: &str| lines.iter().find(|l| l.segments.iter().flat_map(|s| &s.items).any(|i| i.text.contains(t))).map(|l| l.baseline_y).expect(t);
+    assert!(y("After") - y("Before") > 192.0, "2 in = 192 px between them: {} -> {}", y("Before"), y("After"));
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);
