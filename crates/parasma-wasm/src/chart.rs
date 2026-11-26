@@ -144,6 +144,10 @@ struct Series {
     point_colors: Vec<(usize, String)>,
     /// Negative bars draw inverted (§21.2.2.86 `invertIfNegative`).
     invert_if_negative: bool,
+    /// How far pie slices are pulled out, as a fraction of the radius: the
+    /// series' explosion and each point's own (§21.2.2.61).
+    explosion: f64,
+    point_explosion: Vec<(usize, f64)>,
 }
 
 #[derive(Default)]
@@ -191,6 +195,11 @@ struct ChartModel {
     /// is its own colour and the legend lists the categories.
     vary_colors: bool,
     marker_default: bool,
+    /// Where a pie's first slice starts, degrees clockwise from 12 o'clock
+    /// (§21.2.2.68 `firstSliceAng`).
+    first_slice_deg: f64,
+    /// A doughnut's hole, as a fraction of its radius (§21.2.2.82).
+    hole: f64,
     /// The first series' value format code (its cache's `formatCode`), what
     /// a source-linked axis shows.
     value_format: Option<String>,
@@ -286,6 +295,8 @@ struct RawSeries<'a> {
     smooth: Option<bool>,
     d_pt: &'a [ooxml_dml::types::DataPoint],
     invert_if_negative: bool,
+    /// A pie series' explosion, % of the radius (§21.2.2.61).
+    explosion: Option<u32>,
 }
 
 /// The shared parts of each series of a chart group. `$cat` and `$val` name
@@ -304,10 +315,16 @@ macro_rules! raw_series {
             smooth: $smooth,
             d_pt: &$s.d_pt,
             invert_if_negative: $invert,
+            explosion: None,
         }
     };
     (@one $s:ident, $cat:ident, $val:ident, $marker:expr, $smooth:expr) => {
         raw_series!(@one $s, $cat, $val, $marker, $smooth, false)
+    };
+    ($ser:expr, $cat:ident, $val:ident, explode) => {
+        $ser.iter()
+            .map(|s| RawSeries { explosion: s.explosion.as_ref().map(|e| e.value), ..raw_series!(@one s, $cat, $val, None, None) })
+            .collect::<Vec<_>>()
     };
     ($ser:expr, $cat:ident, $val:ident, invert) => {
         $ser.iter()
@@ -366,13 +383,13 @@ impl ChartModel {
                  raw_series!(l.ser, cat, value, marker, smooth),
                  false, grouping(Some(&l.grouping)), None, None, chart_bool(l.vary_colors.as_deref()), false)
             } else if let Some(pie) = plot.pie_chart.first() {
-                (ChartType::Pie, raw_series!(pie.ser, cat, value),
+                (ChartType::Pie, raw_series!(pie.ser, cat, value, explode),
                  false, Grouping::Clustered, None, None, chart_bool(pie.vary_colors.as_deref()).or(Some(true)), false)
             } else if let Some(pie) = plot.pie3_d_chart.first() {
-                (ChartType::Pie, raw_series!(pie.ser, cat, value),
+                (ChartType::Pie, raw_series!(pie.ser, cat, value, explode),
                  false, Grouping::Clustered, None, None, chart_bool(pie.vary_colors.as_deref()).or(Some(true)), false)
             } else if let Some(d) = plot.doughnut_chart.first() {
-                (ChartType::Doughnut, raw_series!(d.ser, cat, value),
+                (ChartType::Doughnut, raw_series!(d.ser, cat, value, explode),
                  false, Grouping::Clustered, None, None, chart_bool(d.vary_colors.as_deref()).or(Some(true)), false)
             } else if let Some(s) = plot.scatter_chart.first() {
                 (ChartType::Scatter, raw_series!(s.ser, x_val, y_val, marker, smooth),
@@ -431,6 +448,10 @@ impl ChartModel {
                     smooth: s.smooth.unwrap_or(false),
                     point_colors,
                     invert_if_negative: s.invert_if_negative,
+                    explosion: s.explosion.map_or(0.0, |e| f64::from(e) / 100.0),
+                    point_explosion: s.d_pt.iter()
+                        .filter_map(|d| d.explosion.as_ref().map(|e| (d.idx.value as usize, f64::from(e.value) / 100.0)))
+                        .collect(),
                 }
             })
             .collect::<Vec<_>>();
@@ -461,6 +482,16 @@ impl ChartModel {
                 _ => vary.unwrap_or(false) && raw.len() == 1 && kind == ChartType::Bar,
             },
             marker_default,
+            first_slice_deg: plot.pie_chart.first().and_then(|c| c.first_slice_ang.as_deref())
+                .or_else(|| plot.doughnut_chart.first().and_then(|c| c.first_slice_ang.as_deref()))
+                .and_then(|a| a.value)
+                .map_or(0.0, f64::from),
+            // Office writes the hole size; absent, half the radius.
+            hole: plot.doughnut_chart.first()
+                .and_then(|c| c.hole_size.as_deref())
+                .map_or(Some(0.5), |h| chart_pct(h.value.as_deref()).or(Some(0.1)))
+                .unwrap_or(0.5)
+                .clamp(0.0, 0.9),
             value_format: raw.iter().find_map(|s| value_format(s.val)),
             // The chart area is white unless its spPr says otherwise (Office's
             // automatic chart fill); the plot area is clear.
@@ -1189,12 +1220,24 @@ impl ChartModel {
         }
     }
 
+    /// Pie and doughnut slices: from `firstSliceAng`, clockwise; each slice
+    /// pulled out along its middle by its explosion, the whole shrunk so the
+    /// farthest slice still fits; a doughnut draws a ring per series around
+    /// its hole.
     fn paint_arcs(&self, p: &dyn Painter, area: Rect) {
         let rings = if self.kind == ChartType::Doughnut { self.series.len() } else { 1 };
+        let explosion = |si: usize, pi: usize| {
+            let ser = &self.series[si];
+            ser.point_explosion.iter().find(|(i, _)| *i == pi).map_or(ser.explosion, |(_, e)| *e)
+        };
+        let most = (0..rings.min(self.series.len()))
+            .flat_map(|si| (0..self.series[si].values.len()).map(move |pi| (si, pi)))
+            .map(|(si, pi)| explosion(si, pi))
+            .fold(0.0, f64::max);
         let cx = area.x + area.w / 2.0;
         let cy = area.y + area.h / 2.0;
-        let outer = (area.w.min(area.h) / 2.0 - 4.0).max(1.0);
-        let hole = if self.kind == ChartType::Doughnut { outer * 0.5 } else { 0.0 };
+        let outer = ((area.w.min(area.h) / 2.0 - 4.0) / (1.0 + most)).max(1.0);
+        let hole = if self.kind == ChartType::Doughnut { outer * self.hole } else { 0.0 };
         let width = (outer - hole) / rings as f64;
         for (ri, ser) in self.series.iter().take(rings).enumerate() {
             let values: Vec<f64> = ser.values.iter().map(|v| v.unwrap_or(0.0).max(0.0)).collect();
@@ -1202,9 +1245,12 @@ impl ChartModel {
             if total <= 0.0 { continue; }
             let r_in = hole + ri as f64 * width;
             let r_out = r_in + width;
-            let mut start = -std::f64::consts::FRAC_PI_2;
+            let mut start = -std::f64::consts::FRAC_PI_2 + self.first_slice_deg.to_radians();
             for (i, v) in values.iter().enumerate() {
                 let sweep = v / total * std::f64::consts::TAU;
+                let mid = start + sweep / 2.0;
+                let out = explosion(ri, i) * outer;
+                let (cx, cy) = (cx + out * mid.cos(), cy + out * mid.sin());
                 p.set_fill_style_str(&self.point_color(ri, i));
                 p.begin_path();
                 if r_in > 0.0 {

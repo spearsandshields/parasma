@@ -245,3 +245,27 @@ fn axis_and_category_label_formats() {
     let m = model(&chart_xml(&bar("col", "clustered", &ser(0, 0, "", dates, &[(0, "1")], 1), ""), ""));
     assert_eq!(m.categories, vec!["Jan-24"]);
 }
+
+/// §21.2.2.68 firstSliceAng, §21.2.2.82 holeSize, §21.2.2.61 explosion.
+#[test]
+fn pie_and_doughnut_geometry() {
+    let s = ser(0, 0, "", &str_cats(&["a", "b"]), &[(0, "1"), (1, "1")], 2);
+    let m = model(&chart_xml(&format!(r#"<c:doughnutChart><c:varyColors val="1"/>{s}<c:firstSliceAng val="90"/><c:holeSize val="75"/></c:doughnutChart>"#), ""));
+    assert_eq!((m.first_slice_deg, m.hole), (90.0, 0.75));
+
+    // The first slice starts at 3 o'clock after a 90° turn: its outer arc
+    // begins at angle 0.
+    let arcs: Vec<(f64, f64)> = painted(&chart_xml(&format!(r#"<c:pieChart><c:varyColors val="1"/>{s}<c:firstSliceAng val="90"/></c:pieChart>"#), ""))
+        .into_iter()
+        .filter_map(|c| match c { DrawCmd::Arc { start, end, .. } => Some((start, end)), _ => None })
+        .collect();
+    assert!(arcs[0].0.abs() < 1e-9, "starts at 3 o'clock: {arcs:?}");
+
+    // An exploded point is pulled out of the centre.
+    let exploded = s.replace("<c:val>", r#"<c:dPt><c:idx val="0"/><c:explosion val="25"/></c:dPt><c:val>"#);
+    let centres: Vec<(f64, f64)> = painted(&chart_xml(&format!(r#"<c:pieChart><c:varyColors val="1"/>{exploded}</c:pieChart>"#), ""))
+        .into_iter()
+        .filter_map(|c| match c { DrawCmd::Arc { x, y, .. } => Some((x, y)), _ => None })
+        .collect();
+    assert!((centres[0].0 - centres[1].0).abs() > 1.0, "the first slice's centre moved: {centres:?}");
+}

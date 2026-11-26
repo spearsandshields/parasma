@@ -126,6 +126,9 @@ are held stable regardless.
   in Office and keep their colours; 3-D bar, line and area charts are drawn
   flat instead of not at all; doughnuts with several series draw every
   ring.
+- Charts (all formats): pies and doughnuts start their first slice where the
+  chart says, pull out exploded slices, and draw the doughnut hole at its
+  set size.
 - Charts (all formats): value-axis labels use the chart's number format, or
   the data's (percentages show as 50%, currency keeps its symbol and
   thousands separators); display units such as millions divide the labels
