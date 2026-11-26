@@ -11892,11 +11892,17 @@ fn a_row_with_grid_before_starts_at_its_grid_column() {
 /// A one-cell table whose single row holds 80 one-line paragraphs: taller
 /// than the 864px text area. `lead` goes before the table.
 fn tall_row_docx(tr_pr: &str, lead: &str) -> Vec<u8> {
+    styled_tall_row_docx("", "", tr_pr, lead)
+}
+
+/// `tall_row_docx` with `styles` in the styles part and `tbl_pr` in the
+/// table's tblPr.
+fn styled_tall_row_docx(styles: &str, tbl_pr: &str, tr_pr: &str, lead: &str) -> Vec<u8> {
     let paras: String = (0..80).map(|k| p("", &r("", &format!("line {k}")))).collect();
     let body = format!(
-        r#"{lead}<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr>{tr_pr}</w:trPr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p/>"#
+        r#"{lead}<w:tbl><w:tblPr>{tbl_pr}<w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:trPr>{tr_pr}</w:trPr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p/>"#
     );
-    numbering_docx("", "", &body)
+    numbering_docx(styles, "", &body)
 }
 
 /// The page's row fragments as (page, bottom edge, line count).
@@ -12107,4 +12113,64 @@ fn a_missing_table_look_and_the_whole_table_region() {
     );
     let whole = region_style("", &[("wholeTable", "999999")]);
     assert_eq!(region_map(&whole, NO_EDGES, 1, 0), ["-- -- -- --"]);
+}
+
+// ── What a table style sets on every cell, row and the table (§17.7.6) ──────
+
+fn plain_style(inner: &str) -> String {
+    format!(r#"<w:style w:type="table" w:styleId="S"><w:name w:val="S"/>{inner}</w:style>"#)
+}
+
+/// A style's own tcPr formats every cell: fill, padding, vertical
+/// alignment and borders. A region or the cell itself still overrides it.
+#[test]
+fn a_table_style_formats_every_cell() {
+    let style = plain_style(r#"<w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr><w:tcPr><w:tcBorders><w:insideV w:val="single" w:sz="8" w:color="FF0000"/></w:tcBorders><w:shd w:val="clear" w:fill="CCCCCC"/><w:tcMar><w:left w:w="400" w:type="dxa"/></w:tcMar><w:vAlign w:val="bottom"/></w:tcPr><w:tblStylePr w:type="band2Horz"><w:tcPr><w:shd w:val="clear" w:fill="222222"/><w:tcMar><w:left w:w="700" w:type="dxa"/></w:tcMar></w:tcPr></w:tblStylePr>"#);
+    let tall = r#"<w:trPr><w:trHeight w:val="1500"/></w:trPr>"#;
+    let rows_xml = [
+        format!("{tall}{}{}", bcell("", "a"), bcell(r#"<w:shd w:val="clear" w:fill="00FF00"/><w:vAlign w:val="top"/>"#, "b")),
+        format!("{}{}", bcell("", "a"), bcell("", "b")),
+    ];
+    let v = layout(bordered_table_docx(r#"<w:tblStyle w:val="S"/><w:tblLook w:firstRow="0" w:firstColumn="0"/>"#, &[&rows_xml[0], &rows_xml[1]], &style));
+    let rows = table_rows_of(&v);
+    let (a, b) = (&rows[0].cells[0], &rows[0].cells[1]);
+    assert_eq!(a.fill_color, fill("CCCCCC"), "the style's fill");
+    assert_eq!(b.fill_color, fill("00FF00"), "the cell's own fill");
+    assert_eq!(rows[1].cells[0].fill_color, fill("222222"), "a band's fill over the style's");
+    assert_px(a.lines[0].content_left - a.x, 400.0 * PX_PER_TWIP, "the style's left padding");
+    assert_px(rows[1].cells[0].lines[0].content_left - rows[1].cells[0].x, 700.0 * PX_PER_TWIP, "a band's padding over the style's");
+    assert!(a.lines[0].baseline_y > b.lines[0].baseline_y + 50.0, "bottom-aligned by the style, beside a top-aligned cell");
+    assert_eq!(a.border_right.as_ref().map(|e| e.color.as_str()), Some("#FF0000"), "the style's rule between columns");
+    assert!(a.border_left.is_none(), "which is not drawn on the table's outline");
+}
+
+/// A style's tblPr places the table: alignment and indent. The table's own
+/// alignment overrides the style's.
+#[test]
+fn a_table_style_aligns_and_indents_the_table() {
+    let x = |style_tbl_pr: &str, direct: &str| {
+        let style = plain_style(&format!("<w:tblPr>{style_tbl_pr}</w:tblPr>"));
+        two_rows(&format!(r#"<w:tblStyle w:val="S"/>{direct}"#), &style)[0].cells[0].x
+    };
+    let left = x("", "");
+    let text_width = 9360.0 * PX_PER_TWIP;
+    let table_width = 4000.0 * PX_PER_TWIP;
+    assert_px(x(r#"<w:jc w:val="center"/>"#, "") - left, (text_width - table_width) / 2.0, "centred by the style");
+    assert_px(x(r#"<w:tblInd w:w="720" w:type="dxa"/>"#, "") - left, 48.0, "indented by the style");
+    assert_px(x(r#"<w:jc w:val="center"/>"#, r#"<w:jc w:val="left"/>"#), left, "the table's own alignment");
+    assert_px(x(r#"<w:tblInd w:w="50%" w:type="pct"/>"#, ""), left, "a percentage indent is ignored");
+}
+
+/// A style's trPr keeps its rows whole: the row moves to the next page
+/// before it splits.
+#[test]
+fn a_table_style_keeps_rows_from_splitting() {
+    let lead = p("", &r("", "before"));
+    let style = plain_style("<w:trPr><w:cantSplit/></w:trPr>");
+    let free = row_fragments(&layout(styled_tall_row_docx(&plain_style(""), r#"<w:tblStyle w:val="S"/>"#, "", &lead)));
+    assert_eq!(free[0].0, 0, "without the setting the row starts under the lead paragraph");
+    let kept = row_fragments(&layout(styled_tall_row_docx(&style, r#"<w:tblStyle w:val="S"/>"#, "", &lead)));
+    assert_eq!(kept[0].0, 1, "the style's cantSplit moves it to a fresh page");
+    let direct = row_fragments(&layout(styled_tall_row_docx(&style, r#"<w:tblStyle w:val="S"/>"#, r#"<w:cantSplit w:val="0"/>"#, &lead)));
+    assert_eq!(direct[0].0, 0, "the row's own setting overrides the style's");
 }

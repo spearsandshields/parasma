@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use wasm_bindgen::JsValue;
 
 use ooxml_wml::ext::StyleContext;
-use ooxml_wml::types::{BlockContent, STJcTable};
+use ooxml_wml::types::BlockContent;
 
 use crate::engine::fonts::{FontCache, ThemeFonts};
 use crate::wml::linebreak::{justify_line, with_page_fields, BreakAfter, Item, PageFields};
@@ -298,13 +298,7 @@ fn position_hf_table(
     band_left: f64,
     band_width: f64,
 ) {
-    let table_width: f64 = table.col_widths_px.iter().sum();
-    let table_offset = match table.alignment {
-        STJcTable::Center => (band_width - table_width) / 2.0,
-        STJcTable::End | STJcTable::Right => band_width - table_width,
-        _ => table.indent_px,
-    };
-    let cell_x_start = band_left + table_offset;
+    let cell_x_start = band_left + table.offset_in(band_width);
 
     for row in &table.rows {
         let row_y_top = *y;

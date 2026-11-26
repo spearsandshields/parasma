@@ -178,10 +178,7 @@ use ooxml_wml::ext::{
     DrawingChartExt, DrawingExt, MathExt, RunExt,
     StyleContext,
 };
-use ooxml_wml::types::{
-    BlockContent, FootnoteEndnote, STJc,
-    STJcTable,
-};
+use ooxml_wml::types::{BlockContent, FootnoteEndnote, STJc};
 
 const CSS_FONT_FALLBACK: &str = "-apple-system, BlinkMacSystemFont, sans-serif";
 
@@ -4024,13 +4021,7 @@ impl Viewer {
                     let col = &geo.columns[entry_col];
                     let col_ml = col.x_offset_px;
                     let col_cw = col.width_px;
-                    let table_width: f64 = table.col_widths_px.iter().sum();
-                    let table_offset = match table.alignment {
-                        STJcTable::Center => (col_cw - table_width) / 2.0,
-                        STJcTable::End | STJcTable::Right => col_cw - table_width,
-                        _ => table.indent_px,
-                    };
-                    let cell_x_start = col_ml + table_offset;
+                    let cell_x_start = col_ml + table.offset_in(col_cw);
 
                     // Flatten every cell once (content-relative line protos +
                     // structural metadata). `cell_protos[i]` is the flat line list
@@ -5264,13 +5255,7 @@ impl Viewer {
                             let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                             let row_y_top = margin_top + y_in_page;
                             let mut paged_cells = Vec::new();
-                            let table_width: f64 = table.col_widths_px.iter().sum();
-                            let table_offset = match table.alignment {
-                                STJcTable::Center => (col_cw - table_width) / 2.0,
-                                STJcTable::End | STJcTable::Right => col_cw - table_width,
-                                _ => table.indent_px,
-                            };
-                            let cell_x_start = col_ml + table_offset;
+                            let cell_x_start = col_ml + table.offset_in(col_cw);
 
 
                             for cell in &row.cells {
@@ -5518,13 +5503,7 @@ impl Viewer {
                                     let col_cw = col.width_px;
                                     let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                                     let row_y_top = margin_top + balance_band_offset + y_in_page;
-                                    let table_width: f64 = table.col_widths_px.iter().sum();
-                                    let table_offset = match table.alignment {
-                                        STJcTable::Center => (col_cw - table_width) / 2.0,
-                                        STJcTable::End | STJcTable::Right => col_cw - table_width,
-                                        _ => table.indent_px,
-                                    };
-                                    let cell_x_start = col_ml + table_offset;
+                                    let cell_x_start = col_ml + table.offset_in(col_cw);
                                     // Rebuild paged cells at the new column position.
                                     let mut paged_cells = Vec::new();
                                     for cell in &row.cells {

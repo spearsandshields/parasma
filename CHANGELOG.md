@@ -288,6 +288,10 @@ are held stable regardless.
   is formatted as a header. Style regions now layer as Word layers them, so
   tables without stored look settings get a header row and first column,
   and styles that set no band size are not striped.
+- Tables: what a table style sets for every cell, row or the table itself
+  now applies: fill, vertical alignment, padding and borders on all cells,
+  the table's alignment and indent, and rows kept from breaking across
+  pages. A table centred or indented by its style is no longer flush left.
 
 ### Changed
 
