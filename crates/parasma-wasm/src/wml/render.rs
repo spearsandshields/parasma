@@ -26,7 +26,7 @@ use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::pt_to_px;
 use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
 use crate::wml::content_walk::{flatten_blocks, FlatBlock};
-use crate::wml::linebreak::{measure_item_text, FieldCode, Item, LineSegment, CHAR_START_SENTINEL};
+use crate::wml::linebreak::{measure_item_text, Item, PageFields, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::{resolve_numbering_marker, ListCounters, NumberingLevelDef};
 use crate::wml::page::{PagedLine, PagedTableRow, PositionedTextBox, PARA_SENTINEL};
 use crate::wml::paragraph::{layout_paragraph, TabLeader};
@@ -96,7 +96,7 @@ fn tab_leader_count(width: f64, font_pt: f64) -> usize {
     }
 }
 
-pub(crate) fn substitute_page_fields(line: &mut PagedLine, page_num: usize, total: usize, font_cache: &FontCache) {
+pub(crate) fn substitute_page_fields(line: &mut PagedLine, fields: &PageFields, font_cache: &FontCache) {
     // Shaping scope — one built face per (font, line) for the re-measures below.
     let faces = FaceCache::new();
     let content_left = line.content_left;
@@ -105,11 +105,7 @@ pub(crate) fn substitute_page_fields(line: &mut PagedLine, page_num: usize, tota
         let old_total: f64 = seg.items.iter().map(|i| i.width).sum();
         let mut changed = false;
         for item in &mut seg.items {
-            let new_text = match item.field {
-                Some(FieldCode::Page) => Some(page_num.to_string()),
-                Some(FieldCode::NumPages) => Some(total.to_string()),
-                None => None,
-            };
+            let new_text = item.field.map(|code| fields.text(code));
             if let Some(nt) = new_text {
                 if nt != item.text {
                     // A wider result (e.g. "11" vs the cached "1") must update the

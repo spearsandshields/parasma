@@ -17,8 +17,8 @@ use wasm_bindgen::JsValue;
 use ooxml_wml::ext::StyleContext;
 use ooxml_wml::types::{BlockContent, STJcTable};
 
-use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
-use crate::wml::linebreak::{measure_item_text, FieldCode, Item};
+use crate::engine::fonts::{FontCache, ThemeFonts};
+use crate::wml::linebreak::{with_page_fields, Item, PageFields};
 use crate::wml::loader::SectionHdrFtr;
 use crate::wml::page::{
     CellBlock, HdrFtrCache, HfBlock, PagedLine, PagedTableCell, PagedTableRow, PARA_SENTINEL,
@@ -37,30 +37,61 @@ pub(crate) struct LaidOutHdrFtr {
     pub(crate) even_footer: Option<HdrFtrCache>,
     pub(crate) title_pg: bool,
     pub(crate) even_odd: bool,
+    /// The displayed number of the section's page at index 0 (§17.6.12), so
+    /// page `i` shows `page_base + i`. Set when the section's pages begin.
+    pub(crate) page_base: i64,
+}
+
+/// Which of a section's headers and footers a page uses (§17.10.1).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum HdrFtrSlot {
+    First,
+    Even,
+    #[default]
+    Default,
 }
 
 impl LaidOutHdrFtr {
-    /// The header for a page of the section (§17.10.1). A first-page or even
-    /// page uses its own slot, never the default one: a slot that is still
-    /// empty after inheritance (§17.10.5, §17.10.2) is a blank header, as is
-    /// an empty header part.
-    pub(crate) fn header_for_page(&self, section_page_idx: usize) -> Option<&HdrFtrCache> {
+    /// The slot for a page of the section: the first page under titlePg, an
+    /// even-NUMBERED page under evenAndOddHeaders (the displayed number
+    /// decides, as in Word, not the page's position in the section), else
+    /// the default. A first or even slot never falls back to the default
+    /// one: still empty after inheritance (§17.10.5, §17.10.2), it is blank.
+    pub(crate) fn slot_for_page(&self, section_page_idx: usize) -> HdrFtrSlot {
         if section_page_idx == 0 && self.title_pg {
-            self.first_header.as_ref()
-        } else if section_page_idx % 2 == 1 && self.even_odd {
-            self.even_header.as_ref()
+            HdrFtrSlot::First
+        } else if self.even_odd && (self.page_base + section_page_idx as i64).rem_euclid(2) == 0 {
+            HdrFtrSlot::Even
         } else {
-            self.default_header.as_ref()
+            HdrFtrSlot::Default
         }
     }
-    /// The footer for a page; see [`LaidOutHdrFtr::header_for_page`].
+    pub(crate) fn header_for_page(&self, section_page_idx: usize) -> Option<&HdrFtrCache> {
+        match self.slot_for_page(section_page_idx) {
+            HdrFtrSlot::First => self.first_header.as_ref(),
+            HdrFtrSlot::Even => self.even_header.as_ref(),
+            HdrFtrSlot::Default => self.default_header.as_ref(),
+        }
+    }
     pub(crate) fn footer_for_page(&self, section_page_idx: usize) -> Option<&HdrFtrCache> {
-        if section_page_idx == 0 && self.title_pg {
-            self.first_footer.as_ref()
-        } else if section_page_idx % 2 == 1 && self.even_odd {
-            self.even_footer.as_ref()
-        } else {
-            self.default_footer.as_ref()
+        match self.slot_for_page(section_page_idx) {
+            HdrFtrSlot::First => self.first_footer.as_ref(),
+            HdrFtrSlot::Even => self.even_footer.as_ref(),
+            HdrFtrSlot::Default => self.default_footer.as_ref(),
+        }
+    }
+}
+
+impl SectionHdrFtr {
+    /// A slot's blocks, header or footer.
+    pub(crate) fn slot_blocks(&self, header: bool, slot: HdrFtrSlot) -> Option<&Vec<BlockContent>> {
+        match (header, slot) {
+            (true, HdrFtrSlot::First) => self.first_header.as_ref(),
+            (true, HdrFtrSlot::Even) => self.even_header.as_ref(),
+            (true, HdrFtrSlot::Default) => self.default_header.as_ref(),
+            (false, HdrFtrSlot::First) => self.first_footer.as_ref(),
+            (false, HdrFtrSlot::Even) => self.even_footer.as_ref(),
+            (false, HdrFtrSlot::Default) => self.default_footer.as_ref(),
         }
     }
 }
@@ -157,6 +188,27 @@ pub(crate) fn layout_section_hdr_ftr(
         even_footer: lay(&hdr_ftr.even_footer)?,
         title_pg: hdr_ftr.title_pg,
         even_odd: hdr_ftr.even_odd,
+        page_base: 1,
+    })
+}
+
+/// One header or footer laid out for a page, its page-dependent fields
+/// (PAGE, NUMPAGES, SECTION, SECTIONPAGES) set to the page's values before
+/// its lines break, so a tab stop or alignment places the real number.
+// Positional orchestrator args; struct-ification deferred to a dedicated pass.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn layout_page_hdr_ftr(
+    blocks: &[BlockContent],
+    fields: PageFields,
+    font_cache: &FontCache,
+    content_width: f64,
+    style_ctx: &StyleContext,
+    default_ppr: Option<&ooxml_wml::types::CTPPrGeneral>,
+    default_tab_stop_px: f64,
+    theme_fonts: &ThemeFonts,
+) -> Result<HdrFtrCache, JsValue> {
+    with_page_fields(fields, || {
+        layout_hdr_ftr_blocks(blocks, font_cache, content_width, style_ctx, default_ppr, default_tab_stop_px, theme_fonts)
     })
 }
 
@@ -171,12 +223,7 @@ pub(crate) fn position_hdr_ftr_lines(
     page_w: f64,
     margin_left: f64,
     margin_right: f64,
-    page_number: usize,
-    total_pages: Option<usize>,
-    font_cache: &FontCache,
 ) -> (Vec<PagedLine>, Vec<PagedTableRow>) {
-    // Shaping scope — one built face per (font, band) for the PAGE/NUMPAGES re-measures.
-    let faces = FaceCache::new();
     let mut lines = Vec::new();
     let mut rows = Vec::new();
     let mut y = y_start;
@@ -193,34 +240,15 @@ pub(crate) fn position_hdr_ftr_lines(
                 for (li, line) in pc.lines.iter().enumerate() {
                     let indent = if li == 0 { pc.layout.indent_first_line_px } else { 0.0 };
                     let baseline_y = y + line.max_ascent;
-                    let items: Vec<Item> = line.items.iter().map(|item| {
-                        // Live PAGE/NUMPAGES fields: substitute the result AND re-measure
-                        // it — the cached result is one digit ("1"), so without re-width
-                        // a multi-digit page number overruns the following " | Page" text.
-                        let new_text = match item.field {
-                            Some(FieldCode::Page) => Some(page_number.to_string()),
-                            Some(FieldCode::NumPages) => Some(total_pages.map_or("?".to_string(), |n| n.to_string())),
-                            None => None,
-                        };
-                        match new_text {
-                            Some(nt) if nt != item.text => {
-                                let mut item = item.clone();
-                                let (w, cw, shaped) = measure_item_text(&nt, &item.style, font_cache, &faces);
-                                item.text = nt;
-                                item.width = w;
-                                item.content_width = cw;
-                                item.shaped = shaped;
-                                item
-                            }
-                            _ => item.clone(),
-                        }
-                    }).collect();
-                    // Right/centre alignment must use the post-substitution line width, or
-                    // a widened page number shifts the whole footer off its margin.
+                    // Page-dependent fields already hold the page's values
+                    // (`layout_page_hdr_ftr`), so the packed line is final.
+                    let items: Vec<Item> = line.items.clone();
                     let line_w: f64 = items.iter().map(|i| i.width).sum();
                     let x_start = pc.layout.x_start(page_w, margin_left, margin_right, line_w, indent);
                     let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);
-                    lines.push(PagedLine { segments: PagedLine::single(items, x_start), para: PARA_SENTINEL, baseline_y, para_shading: None, line_height: lh, content_left: x_start, content_right: x_start + 200.0, border_top: None, border_bottom: None, border_left: None, border_right: None, bar_tabs: pc.tab_stops.bar_xs(margin_left + pc.layout.indent_left_px, page_w - margin_right - pc.layout.indent_right_px, pc.layout.base_rtl), is_first_line: false, is_last_line: false });
+                    let content_left = margin_left + pc.layout.indent_left_px;
+                    let content_right = page_w - margin_right - pc.layout.indent_right_px;
+                    lines.push(PagedLine { segments: PagedLine::single(items, x_start), para: PARA_SENTINEL, baseline_y, para_shading: None, line_height: lh, content_left, content_right, border_top: None, border_bottom: None, border_left: None, border_right: None, bar_tabs: pc.tab_stops.bar_xs(margin_left + pc.layout.indent_left_px, page_w - margin_right - pc.layout.indent_right_px, pc.layout.base_rtl), is_first_line: false, is_last_line: false });
                     y += lh;
                 }
                 pos_prev_after = pc.layout.space_after_px;
@@ -434,5 +462,25 @@ mod footer_parse_tests {
         flatten_blocks(&ftr.block_content, &mut flat);
         let has_page_text = flat.iter().any(|b| matches!(b, FlatBlock::Para(p) if p.text().contains("Page")));
         assert!(has_page_text, "flatten_blocks should surface the sdt-wrapped 'Page' paragraph");
+    }
+}
+
+#[cfg(test)]
+mod slot_tests {
+    use super::{HdrFtrSlot, LaidOutHdrFtr};
+
+    /// §17.10.1 with evenAndOddHeaders: the displayed number's parity picks
+    /// the even header, so a section restarting at 2 opens on it.
+    #[test]
+    fn even_headers_follow_the_displayed_number() {
+        let hf = LaidOutHdrFtr {
+            default_header: None, first_header: None, even_header: None,
+            default_footer: None, first_footer: None, even_footer: None,
+            title_pg: false, even_odd: true, page_base: 2,
+        };
+        use HdrFtrSlot::{Default, Even, First};
+        assert_eq!([0, 1, 2].map(|i| hf.slot_for_page(i)), [Even, Default, Even]);
+        let hf = LaidOutHdrFtr { title_pg: true, page_base: 1, ..hf };
+        assert_eq!([0, 1].map(|i| hf.slot_for_page(i)), [First, Even]);
     }
 }

@@ -6,8 +6,9 @@
 //! One formatter for every host, so "item 27" reads the same everywhere.
 
 /// A counter style. Hosts map their own names onto these.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum CounterStyle {
+    #[default]
     Decimal,
     /// At least this many digits, padded with zeros: `decimalZero` is 2
     /// (01, 02, …, 10), Word's custom "001, 002, 003, ..." is 3.

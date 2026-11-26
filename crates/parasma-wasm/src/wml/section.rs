@@ -19,12 +19,49 @@ use crate::{
     DEFAULT_PAGE_HEIGHT_TWIPS, DEFAULT_PAGE_WIDTH_TWIPS,
 };
 
+/// How a section begins relative to the one before it (§17.6.22 `w:type`;
+/// omitted means nextPage).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SectionBreakType {
     NextPage,
     Continuous,
     EvenPage,
     OddPage,
+}
+
+impl SectionBreakType {
+    pub(crate) fn of(sect_pr: &ooxml_wml::types::SectionProperties) -> Self {
+        use ooxml_wml::types::STSectionMark as M;
+        match sect_pr.r#type.as_ref().and_then(|t| t.value.as_ref()) {
+            Some(M::Continuous) => Self::Continuous,
+            Some(M::EvenPage) => Self::EvenPage,
+            Some(M::OddPage) => Self::OddPage,
+            // FLOOR: nextColumn starts a new page (the next column is not
+            // modelled as a section start).
+            _ => Self::NextPage,
+        }
+    }
+}
+
+/// A section's page numbering (§17.6.12 `w:pgNumType`): the number its
+/// first page restarts at, if any, and the format PAGE fields write it in.
+/// Declared: chapter numbers (`chapStyle`, `chapSep`) are not prefixed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PageNumbering {
+    pub(crate) start: Option<i64>,
+    pub(crate) style: crate::engine::counter::CounterStyle,
+}
+
+impl PageNumbering {
+    pub(crate) fn of(sect_pr: &ooxml_wml::types::SectionProperties) -> Self {
+        let Some(pg) = sect_pr.pg_num_type.as_deref() else { return Self::default() };
+        Self {
+            start: pg.start,
+            style: pg.fmt.as_ref().map_or(crate::engine::counter::CounterStyle::Decimal, |f| {
+                crate::wml::numbering::counter_style(f, None)
+            }),
+        }
+    }
 }
 
 // ─── Page geometry (from sectPr or Letter default) ───────────────────────────

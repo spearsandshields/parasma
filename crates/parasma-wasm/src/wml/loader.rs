@@ -15,7 +15,7 @@ use ooxml_wml::types::{BlockContent, HeaderFooterRef, STHdrFtr, STNumberFormat};
 use crate::engine::images::ImageBytes;
 use crate::field;
 use crate::wml::numbering::{MarkerRunOverrides, NumberingLevelDef};
-use crate::wml::section::{PageGeometry, SectionBreakType};
+use crate::wml::section::{PageGeometry, PageNumbering, SectionBreakType};
 
 // ─── Section model ─────────────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ pub(crate) struct Section {
     pub(crate) geometry: PageGeometry,
     pub(crate) hdr_ftr: SectionHdrFtr,
     pub(crate) break_type: SectionBreakType,
+    pub(crate) page_numbering: PageNumbering,
 }
 
 /// Extract a core-property date (`dcterms:created`/`dcterms:modified`) from
@@ -431,21 +432,14 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
             };
             if let Some(sect_pr) = sect_pr {
                 let geometry = PageGeometry::from_sect_pr(sect_pr, theme);
-                let break_type = sect_pr.r#type.as_ref()
-                    .and_then(|t| t.value.as_ref())
-                    .map(|v| match v {
-                        ooxml_wml::types::STSectionMark::Continuous => SectionBreakType::Continuous,
-                        ooxml_wml::types::STSectionMark::EvenPage => SectionBreakType::EvenPage,
-                        ooxml_wml::types::STSectionMark::OddPage => SectionBreakType::OddPage,
-                        _ => SectionBreakType::NextPage,
-                    })
-                    .unwrap_or(SectionBreakType::NextPage);
                 let hdr_ftr = load_section_hdr_ftr(doc, &sect_pr.header_footer_refs, sect_pr.has_title_page(), even_odd);
+                let (break_type, page_numbering) = (SectionBreakType::of(sect_pr), PageNumbering::of(sect_pr));
                 sections.push(Section {
                     blocks: std::mem::take(&mut current_blocks),
                     geometry,
                     hdr_ftr,
                     break_type,
+                    page_numbering,
                 });
             }
         }
@@ -455,19 +449,10 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
     // The body sectPr's `w:type` describes how this final section *begins*
     // relative to the previous one — so a body-level `continuous` must be
     // honored (it was previously hardcoded to NextPage, dropping that type).
-    let (geometry, hdr_ftr, break_type) = if let Some(ref sect_pr) = body_sect_pr {
+    let (geometry, hdr_ftr, break_type, page_numbering) = if let Some(ref sect_pr) = body_sect_pr {
         let geo = PageGeometry::from_sect_pr(sect_pr, theme);
         let hf = load_section_hdr_ftr(doc, &sect_pr.header_footer_refs, sect_pr.has_title_page(), even_odd);
-        let bt = sect_pr.r#type.as_ref()
-            .and_then(|t| t.value.as_ref())
-            .map(|v| match v {
-                ooxml_wml::types::STSectionMark::Continuous => SectionBreakType::Continuous,
-                ooxml_wml::types::STSectionMark::EvenPage => SectionBreakType::EvenPage,
-                ooxml_wml::types::STSectionMark::OddPage => SectionBreakType::OddPage,
-                _ => SectionBreakType::NextPage,
-            })
-            .unwrap_or(SectionBreakType::NextPage);
-        (geo, hf, bt)
+        (geo, hf, SectionBreakType::of(sect_pr), PageNumbering::of(sect_pr))
     } else {
         (PageGeometry::us_letter(), SectionHdrFtr {
             default_header: None, first_header: None, even_header: None,
@@ -475,13 +460,14 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
             part_paths: Vec::new(),
             slot_parts: Default::default(),
             title_pg: false, even_odd,
-        }, SectionBreakType::NextPage)
+        }, SectionBreakType::NextPage, PageNumbering::default())
     };
     sections.push(Section {
         blocks: current_blocks,
         geometry,
         hdr_ftr,
         break_type,
+        page_numbering,
     });
 
     // §17.10.1/§17.10.2: a section that omits a header/footer TYPE inherits that

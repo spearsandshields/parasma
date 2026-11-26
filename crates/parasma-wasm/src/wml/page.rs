@@ -52,7 +52,13 @@ pub(crate) struct PageLayout {
     pub(crate) positioned_text_boxes: Vec<PositionedTextBox>,
     pub(crate) footnote_ids: Vec<i64>,
     pub(crate) endnote_ids: Vec<i64>,
+    /// The page's position in the document, 1-based.
     pub(crate) page_number: usize,
+    /// The number the page shows (§17.6.12: its section's restart and
+    /// format), and which of its section's headers and footers it uses.
+    pub(crate) number: i64,
+    pub(crate) number_style: crate::engine::counter::CounterStyle,
+    pub(crate) hdr_ftr_slot: crate::wml::hdr_ftr::HdrFtrSlot,
     /// Vertical column separator lines: (x, y_start, y_end) in absolute page px.
     pub(crate) col_separator_lines: Vec<(f64, f64, f64)>,
     /// Index of the `Section` this page belongs to (§17.6). Used to resolve the
@@ -104,6 +110,9 @@ impl PageLayout {
             footnote_ids: Vec::new(),
             endnote_ids: Vec::new(),
             page_number: 0,
+            number: 0,
+            number_style: crate::engine::counter::CounterStyle::Decimal,
+            hdr_ftr_slot: Default::default(),
             col_separator_lines: Vec::new(),
             section_idx: 0,
         }

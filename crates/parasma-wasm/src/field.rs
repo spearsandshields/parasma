@@ -11,11 +11,6 @@
 //! / ordinal-text numbering, numeric picture clauses with grouping and
 //! sign sections, and weekday-aware date formatting (`ddd`/`dddd`).
 
-// The numeric-picture / spelled-number formatters (`to_roman`, `to_card_text`,
-// `format_numeric_picture`, `render_picture_section`, …) are a partially-wired
-// field-code feature: implemented clean-room from §17.16 but not yet reachable
-// from the live field-result path. Kept intact (not deleted) pending wire-up.
-#![allow(dead_code)]
 
 // ─── Date / Time value types ────────────────────────────────────────────────
 
@@ -148,8 +143,9 @@ impl DateTime {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CommonSwitches {
-    /// `\*` general format (e.g. "ROMAN", "Ordinal", "MERGEFORMAT").
-    pub general: Option<String>,
+    /// `\*` general format words, in order (e.g. "roman", "MERGEFORMAT"):
+    /// a field may carry several (§17.16.4.3).
+    pub general: Vec<String>,
     /// `\#` numeric picture (e.g. "#,##0.00").
     pub numeric: Option<String>,
     /// `\@` date/time picture (e.g. "dddd, MMMM d, yyyy").
@@ -251,7 +247,7 @@ pub fn parse(input: &str) -> FieldInstruction {
     while let Some(tok) = iter.next() {
         if let Token::Switch(c) = tok {
             match c {
-                '*' => sw.general = next_value(&mut iter),
+                '*' => sw.general.extend(next_value(&mut iter)),
                 '#' => sw.numeric = next_value(&mut iter),
                 '@' => sw.date = next_value(&mut iter),
                 _ => {
@@ -288,51 +284,146 @@ fn next_value<'a, I: Iterator<Item = &'a Token>>(
 
 // ─── Number formatting ──────────────────────────────────────────────────────
 
-/// Format an integer field result, honoring the `\*` general switch and `\#`
-/// numeric picture. Defaults to plain decimal.
+use crate::engine::counter::CounterStyle;
+
+/// Format an integer field result, honoring the `\*` general words and the
+/// `\#` numeric picture. Defaults to plain decimal.
+///
+/// Declared: no live field reaches the `\#` picture yet. Page fields carry a
+/// `Copy` [`NumberFormat`], which holds no picture, so `PAGE \# "00"` is
+/// written without it; this entry point (and the picture formatter under
+/// it) serves the tests until a field needs it.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_number(n: i64, sw: &CommonSwitches) -> String {
-    if let Some(g) = &sw.general {
-        let r = apply_general_number(n, g);
-        if let Some(r) = r {
-            return r;
-        }
+    let format = NumberFormat::from_switches(sw);
+    match (&sw.numeric, format.style) {
+        (Some(pic), None) => format.case_of(&format_numeric_picture(n as f64, pic)),
+        _ => format.apply(n, CounterStyle::Decimal),
     }
-    if let Some(pic) = &sw.numeric {
-        return format_numeric_picture(n as f64, pic);
-    }
-    n.to_string()
 }
 
-/// Apply a `\*` general format to a number. Returns None if the format isn't a
-/// recognized numeric format (caller falls back to decimal / picture).
-fn apply_general_number(n: i64, fmt: &str) -> Option<String> {
-    // Case matters: "roman" vs "ROMAN", "alphabetic" vs "ALPHABETIC".
-    let upper = fmt.eq_ignore_ascii_case("roman")
-        || fmt.eq_ignore_ascii_case("alphabetic")
-        || fmt.eq_ignore_ascii_case("arabic")
-        || fmt.eq_ignore_ascii_case("ordinal")
-        || fmt.eq_ignore_ascii_case("cardtext")
-        || fmt.eq_ignore_ascii_case("ordtext")
-        || fmt.eq_ignore_ascii_case("hex")
-        || fmt.eq_ignore_ascii_case("dollartext");
-    if !upper {
-        return None;
+/// A `\*` case word (§17.16.4.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextCase {
+    Upper,
+    Lower,
+    /// The first letter upper case, the rest lower.
+    FirstCap,
+    /// Each word's first letter upper case.
+    Caps,
+}
+
+impl TextCase {
+    fn word(word: &str) -> Option<Self> {
+        Some(match word.to_ascii_uppercase().as_str() {
+            "UPPER" => Self::Upper,
+            "LOWER" => Self::Lower,
+            "FIRSTCAP" => Self::FirstCap,
+            "CAPS" => Self::Caps,
+            _ => return None,
+        })
     }
-    use crate::engine::counter::{cardinal_text, format, ordinal_text, CounterStyle};
-    let lower = fmt.chars().next().is_some_and(|c| c.is_ascii_lowercase());
-    // Word's field words are lower case unless a case switch says otherwise.
-    let s = match fmt.to_ascii_uppercase().as_str() {
-        "ARABIC" => n.to_string(),
-        "ROMAN" => format(n, CounterStyle::UpperRoman),
-        "ALPHABETIC" => format(n, CounterStyle::UpperLetter),
-        "ORDINAL" => format(n, CounterStyle::Ordinal),
-        "CARDTEXT" => cardinal_text(n),
-        "ORDTEXT" => ordinal_text(n),
-        "HEX" => format(n, CounterStyle::Hex),
-        "DOLLARTEXT" => format!("{} and 00/100", cardinal_text(n)),
-        _ => return None,
-    };
-    Some(if lower { s.to_ascii_lowercase() } else { s })
+
+    fn apply(self, value: &str) -> String {
+        let cap = |w: &str, rest_lower: bool| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) if rest_lower => f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        };
+        match self {
+            Self::Upper => value.to_uppercase(),
+            Self::Lower => value.to_lowercase(),
+            Self::FirstCap => cap(value, true),
+            Self::Caps => value.split(' ').map(|w| cap(w, false)).collect::<Vec<_>>().join(" "),
+        }
+    }
+}
+
+/// The `\*` words of a number field (§17.16.4.3), reduced to what writing a
+/// number needs. `Copy`, so a live field can carry it to the page.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NumberFormat {
+    /// The number's style; `None` keeps the field's own default (a PAGE
+    /// field's section format, decimal elsewhere).
+    pub style: Option<CounterStyle>,
+    /// `ArabicDash`: the number between dashes, "- 1 -".
+    pub dash: bool,
+    /// The last case word, or `Lower` for a format word written in lower
+    /// case ("roman", "alphabetic"); a later word overrides an earlier one.
+    pub case: Option<TextCase>,
+}
+
+impl NumberFormat {
+    /// Declared: format words with no counter here (DBCHAR, SBCHAR, the
+    /// KANJINUM / CHINESENUM / DBNUM / GB variants, BAHTTEXT and the Hindi,
+    /// Thai and Vietnamese text forms) leave the default style; CHARFORMAT
+    /// and MERGEFORMAT govern formatting, not the number.
+    pub fn from_switches(sw: &CommonSwitches) -> Self {
+        use CounterStyle as S;
+        let mut out = Self::default();
+        for word in &sw.general {
+            if let Some(case) = TextCase::word(word) {
+                out.case = Some(case);
+                continue;
+            }
+            let style = match word.to_ascii_uppercase().as_str() {
+                "ARABIC" => S::Decimal,
+                "ARABICDASH" => {
+                    out.dash = true;
+                    S::Decimal
+                }
+                "ROMAN" => S::UpperRoman,
+                "ALPHABETIC" => S::UpperLetter,
+                "ORDINAL" => S::Ordinal,
+                "CARDTEXT" => S::CardinalText,
+                "ORDTEXT" => S::OrdinalText,
+                "DOLLARTEXT" => S::DollarText,
+                "HEX" => S::Hex,
+                "CIRCLENUM" => S::DecimalEnclosedCircle,
+                "AIUEO" => S::Aiueo,
+                "IROHA" => S::Iroha,
+                "GANADA" => S::Ganada,
+                "CHOSUNG" => S::Chosung,
+                "ZODIAC1" => S::IdeographTraditional,
+                "ZODIAC2" => S::IdeographZodiac,
+                "HEBREW1" => S::Hebrew1,
+                "HEBREW2" => S::Hebrew2,
+                "ARABICABJAD" => S::ArabicAbjad,
+                "ARABICALPHA" => S::ArabicAlpha,
+                "HINDIARABIC" => S::HindiNumbers,
+                "THAIARABIC" => S::ThaiNumbers,
+                "THAILETTER" => S::ThaiLetters,
+                _ => continue,
+            };
+            out.style = Some(style);
+            if word.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
+                out.case = Some(TextCase::Lower);
+            }
+        }
+        out
+    }
+
+    /// `n` written in this format, or in `default` when it names no style.
+    /// Word writes the text forms (CardText, OrdText, DollarText) in lower
+    /// case unless a case word says otherwise.
+    pub fn apply(&self, n: i64, default: CounterStyle) -> String {
+        let style = self.style.unwrap_or(default);
+        let mut s = crate::engine::counter::format(n, style);
+        if matches!(style, CounterStyle::CardinalText | CounterStyle::OrdinalText | CounterStyle::DollarText) {
+            s = s.to_lowercase();
+        }
+        if self.dash {
+            s = format!("- {s} -");
+        }
+        self.case_of(&s)
+    }
+
+    fn case_of(&self, s: &str) -> String {
+        self.case.map_or_else(|| s.to_string(), |c| c.apply(s))
+    }
 }
 
 /// Format a number against a `\#` numeric picture clause (§17.16.4.3).
@@ -586,49 +677,22 @@ pub struct DocDates {
 /// PAGE/NUMPAGES/SECTION are NOT handled here (they need layout context).
 pub fn resolve_doc_field(instr: &str, dates: &DocDates) -> Option<String> {
     let parsed = parse(instr);
-    let (dt, default_pic, is_time) = match &parsed {
-        FieldInstruction::Date(_) => (dates.now?, default_date_picture(), false),
-        FieldInstruction::Time(_) => (dates.now?, default_time_picture(), true),
-        FieldInstruction::CreateDate(_) => (dates.created?, default_date_picture(), false),
-        FieldInstruction::SaveDate(_) => (dates.modified?, default_date_picture(), false),
+    let (dt, default_pic) = match &parsed {
+        FieldInstruction::Date(_) => (dates.now?, default_date_picture()),
+        FieldInstruction::Time(_) => (dates.now?, default_time_picture()),
+        FieldInstruction::CreateDate(_) => (dates.created?, default_date_picture()),
+        FieldInstruction::SaveDate(_) => (dates.modified?, default_date_picture()),
         FieldInstruction::PrintDate(_) => return None, // no print-time available in a viewer
         _ => return None,
     };
     let sw = parsed.switches()?;
     let pic = sw.date.as_deref().unwrap_or(default_pic);
-    let mut out = format_datetime(&dt, pic);
-    if let Some(g) = &sw.general {
-        out = apply_general_text(&out, g);
-    }
-    let _ = is_time;
-    Some(out)
-}
-
-/// Apply `\*` Upper/Lower/FirstCap/Caps to a text value (non-numeric formats).
-fn apply_general_text(value: &str, fmt: &str) -> String {
-    match fmt.to_ascii_uppercase().as_str() {
-        "UPPER" => value.to_uppercase(),
-        "LOWER" => value.to_lowercase(),
-        "FIRSTCAP" => {
-            let mut c = value.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
-            }
-        }
-        "CAPS" => value
-            .split(' ')
-            .map(|w| {
-                let mut c = w.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-        _ => value.to_string(),
-    }
+    let out = format_datetime(&dt, pic);
+    // A date takes the `\*` case words; the last one wins.
+    Some(match sw.general.iter().rev().find_map(|w| TextCase::word(w)) {
+        Some(case) => case.apply(&out),
+        None => out,
+    })
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -638,7 +702,7 @@ mod tests {
     use super::*;
 
     fn sw_general(g: &str) -> CommonSwitches {
-        CommonSwitches { general: Some(g.to_string()), ..Default::default() }
+        CommonSwitches { general: vec![g.to_string()], ..Default::default() }
     }
     fn sw_numeric(p: &str) -> CommonSwitches {
         CommonSwitches { numeric: Some(p.to_string()), ..Default::default() }
@@ -657,7 +721,10 @@ mod tests {
     #[test]
     fn parse_extracts_switches() {
         let f = parse(r#" PAGE \* ROMAN "#);
-        assert_eq!(f.switches().unwrap().general.as_deref(), Some("ROMAN"));
+        assert_eq!(f.switches().unwrap().general, ["ROMAN"]);
+        let f = parse(r#" PAGE \* roman \* MERGEFORMAT "#);
+        assert_eq!(f.switches().unwrap().general, ["roman", "MERGEFORMAT"]);
+        assert_eq!(format_number(4, f.switches().unwrap()), "iv", "MERGEFORMAT keeps the roman");
         let f = parse(r#" DATE \@ "dddd, MMMM d, yyyy" "#);
         assert_eq!(f.switches().unwrap().date.as_deref(), Some("dddd, MMMM d, yyyy"));
         let f = parse(r##" PAGE \# "#,##0" "##);

@@ -620,10 +620,12 @@ fn geometry_dump(viewer: &Viewer) -> String {
         //  - (`positioned_text_boxes` graduated from `_` to EMITTED once
         //    the LINE stream carried its box + interior line
         //    geometry below; the ITEM stream owns its content/style.)
-        //  - `page_number`: the 1-based PAGE-field counter. Pinned indirectly:
-        //    a PAGE/NUMPAGES field's rendered text enters the ITEM stream;
-        //    positionally it is `pi + 1` by construction for every
-        //    non-blank-inserted page.
+        //  - `page_number`: the page's 1-based position, `pi + 1` by
+        //    construction.
+        //  - `number`/`number_style`/`hdr_ftr_slot`: what a PAGE field shows
+        //    and which header the page uses. Pinned indirectly: the field's
+        //    text enters the ITEM stream and the chosen header's lines the
+        //    LINE stream; the page-numbering fixtures assert them directly.
         //  - `section_idx`: geometry-carrying (per-section page size/margins),
         //    pinned INDIRECTLY through every line box it moves; the index
         //    itself is checked by the section fixtures' targeted asserts.
@@ -638,6 +640,9 @@ fn geometry_dump(viewer: &Viewer) -> String {
             footnote_ids,
             endnote_ids,
             page_number: _,
+            number: _,
+            number_style: _,
+            hdr_ftr_slot: _,
             col_separator_lines,
             section_idx: _,
         } = page;
@@ -1288,7 +1293,11 @@ fn oracle_flow_layout_snapshot() {
     // Re-baselined again for §17.3.2.19: runs without `w:kern` are no longer
     // kerned. One line moved (a centred title, 1.18px left: its unkerned text is
     // 2.36px wider); page count held at 5.
-    assert_oracle("oracle-flow", oracle_flow_docx(), 5, 0x37c47e353e2e88b5);
+    // Re-baselined for page-number fields: header and footer lines record the
+    // band's real text edges (left and right margin less indents) instead of
+    // `x_start` and a fake `x_start + 200`. Only those `l`/`r` values moved;
+    // every segment start and glyph is unchanged.
+    assert_oracle("oracle-flow", oracle_flow_docx(), 5, 0xff10541feb33c5a7);
 }
 
 #[test]
@@ -1389,7 +1398,9 @@ fn oracle_hdr_ftr_inherit() {
     // NEW pin (§17.10.1/§17.10.2). Section 2 omits all hdr/ftr refs → inherits
     // section 1's default header+footer bands; pre-fix it rendered blank bands.
     // Recorded from the first GREEN run with the inheritance post-pass live.
-    assert_oracle("oracle-hdr-ftr-inherit", oracle_hdr_ftr_inherit_docx(), 2, 0x7d8d0b6aa73babdd);
+    // Re-baselined: header/footer lines record the band's real text edges
+    // (see oracle-flow); segment starts unchanged.
+    assert_oracle("oracle-hdr-ftr-inherit", oracle_hdr_ftr_inherit_docx(), 2, 0xf2e5840c3c26607f);
 }
 
 // ─── selection setter lineage: the setter round-trip / normalize / clear pins
@@ -11086,4 +11097,105 @@ fn level_justification_aligns_the_number_on_the_first_line_position() {
     for x in [left_text, right_text, center_text] {
         assert!((x - 144.0).abs() < 0.5, "text tabs to 144: {x}");
     }
+}
+
+// ── Page numbering: section restarts and formats, page fields ───────────────
+
+/// A complex field with a one-character cached result.
+fn complex_field(code: &str) -> String {
+    format!(
+        r#"<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> {code} </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>1</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>"#
+    )
+}
+
+const PG: &str = r#"<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>"#;
+
+/// A paragraph that ends a section with `sect` (type, pgNumType), the
+/// standard page and the shared footer.
+fn section_end(text: &str, sect: &str) -> String {
+    format!(r#"<w:p><w:pPr><w:sectPr><w:footerReference w:type="default" r:id="rId3"/>{sect}{PG}</w:sectPr></w:pPr>{}</w:p>"#, r("", text))
+}
+
+fn page_break_p(text: &str) -> String {
+    format!(r#"<w:p><w:r><w:br w:type="page"/></w:r>{}</w:p>"#, r("", text))
+}
+
+/// `hf_docx` with `last` (type, pgNumType) added to the final section,
+/// which alone has a header reference.
+fn numbered_docx(footer: &str, body: &str, last: &str) -> Vec<u8> {
+    let docx = hf_docx(HF_STYLES_NO_HEADER, "<w:p/>", footer, body);
+    unzip_replace(docx, "word/document.xml", "<w:headerReference", &format!("{last}<w:headerReference"))
+}
+
+fn footer_texts(v: &Viewer) -> Vec<String> {
+    v.pages.borrow().iter()
+        .map(|p| p.footer_lines.iter().flat_map(|l| &l.segments).flat_map(|s| &s.items).map(|i| i.text.as_str()).collect())
+        .collect()
+}
+
+/// §17.6.12: roman front matter, then the body restarts at 1 in decimal.
+#[test]
+fn sections_restart_and_format_their_page_numbers() {
+    let footer = format!("<w:p>{}</w:p>", complex_field("PAGE"));
+    let body = format!(
+        "{}{}{}{}",
+        p("", &r("", "Front A")),
+        section_end("Front B", r#"<w:pgNumType w:fmt="lowerRoman" w:start="1"/>"#)
+            .replacen("<w:p><w:pPr>", r#"<w:p><w:pPr><w:pageBreakBefore/>"#, 1),
+        p("", &r("", "Body 1")),
+        page_break_p("Body 2"),
+    );
+    let v = layout(numbered_docx(&footer, &body, r#"<w:pgNumType w:start="1"/>"#));
+    assert_eq!(footer_texts(&v), ["i", "ii", "1", "2"]);
+}
+
+/// A right-aligned "Page X of Y" built on a right tab stop keeps its right
+/// edge on the margin once the numbers gain a digit: the footer is laid out
+/// for each page with that page's values, so the tab places the real text.
+#[test]
+fn page_x_of_y_on_a_right_tab_stays_inside_the_margin() {
+    let footer = format!(
+        r#"<w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="9360"/></w:tabs></w:pPr><w:r><w:tab/><w:t xml:space="preserve">Page </w:t></w:r>{}<w:r><w:t xml:space="preserve"> of </w:t></w:r>{}</w:p>"#,
+        complex_field("PAGE"),
+        complex_field("NUMPAGES"),
+    );
+    let body: String = std::iter::once(p("", &r("", "p1"))).chain((2..=12).map(|i| page_break_p(&format!("p{i}")))).collect();
+    let v = layout(numbered_docx(&footer, &body, ""));
+    assert_eq!(footer_texts(&v)[9], "\tPage 10 of 12");
+    let pages = v.pages.borrow();
+    let line = &pages[9].footer_lines[0];
+    let seg = line.segments.last().unwrap();
+    let right = seg.x_start + seg.items.iter().map(|i| i.width).sum::<f64>();
+    assert!((right - 720.0).abs() < 0.5, "right edge {right}, margin at 720");
+}
+
+/// §17.6.22: an oddPage section that would start on an even number is
+/// preceded by a blank page; one that restarts at 1 needs none.
+#[test]
+fn odd_page_sections_start_on_an_odd_number() {
+    let footer = format!("<w:p>{}</w:p>", complex_field("PAGE"));
+    let body = format!("{}{}", section_end("One", ""), p("", &r("", "Two")));
+    let v = layout(numbered_docx(&footer, &body, r#"<w:type w:val="oddPage"/>"#));
+    {
+        let pages = v.pages.borrow();
+        assert_eq!(pages.len(), 3, "a blank page pads to page 3");
+        assert!(pages[1].elements.is_empty(), "the padding page is blank");
+        assert_eq!((pages[1].section_idx, pages[2].number), (0, 3));
+    }
+    let v = layout(numbered_docx(&footer, &body, r#"<w:type w:val="oddPage"/><w:pgNumType w:start="1"/>"#));
+    assert_eq!(v.pages.borrow().len(), 2, "a restart at 1 is already odd");
+}
+
+/// SECTION, SECTIONPAGES and PAGE \* ArabicDash (§17.16.5, §17.16.4.3).
+#[test]
+fn section_fields_and_dashed_page_numbers() {
+    let footer = format!(
+        r#"<w:p><w:r><w:t>S</w:t></w:r>{}<w:r><w:t xml:space="preserve"> of </w:t></w:r>{}<w:r><w:t xml:space="preserve"> </w:t></w:r>{}</w:p>"#,
+        complex_field("SECTION"),
+        complex_field("SECTIONPAGES"),
+        complex_field(r"PAGE \* ArabicDash"),
+    );
+    let body = format!("{}{}{}", p("", &r("", "a")), section_end("b", "").replacen("<w:p><w:pPr>", "<w:p><w:pPr><w:pageBreakBefore/>", 1), p("", &r("", "c")));
+    let v = layout(numbered_docx(&footer, &body, ""));
+    assert_eq!(footer_texts(&v), ["S1 of 2 - 1 -", "S1 of 2 - 2 -", "S2 of 1 - 3 -"]);
 }

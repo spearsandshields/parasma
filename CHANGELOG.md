@@ -192,6 +192,19 @@ are held stable regardless.
   paragraphs, and numbers aligned right or centred (common for roman
   numerals) sit where Word puts them. Word's custom 001, 002, 003 format is
   shown instead of 1, 2, 3.
+- Page numbers: sections restart and format their own page numbers, so
+  front matter shows i, ii, iii and a chapter can restart at 1. Page number
+  fields honour their own formats (roman, letters, "- 1 -" and the others
+  Word offers, also when MERGEFORMAT follows), and section number and
+  section page count fields show live values instead of the saved ones.
+- Page numbers: a "Page X of Y" footer stays inside the margin once the
+  numbers gain digits, because headers and footers are laid out with each
+  page's own numbers. Headers and footers span the page's full text width in
+  multi-column sections.
+- Sections that must start on an odd or even page get one blank page before
+  them when needed, judged by the page number shown, and odd and even
+  headers follow the page number shown rather than the page's position in
+  its section.
 
 ### Changed
 

@@ -285,13 +285,17 @@ pub(crate) fn collect_items(
                     }),
                     ..RunEntry::new(r, snapshot(&open_comments))
                 };
-                // Simple field (§17.16.19): a live PAGE/NUMPAGES code tags each
-                // run; a document field's value replaces the first run's text
-                // and the rest are dropped.
+                // Simple field (§17.16.19): a page-dependent field keeps its
+                // first run, tagged; a document field's value replaces the
+                // first run's text; either way the rest are dropped.
                 if let Some(fld) = ctx.simple_field {
                     let field = resolve_field_code(&fld.instr);
-                    if field.is_some() {
-                        runs_to_process.push(Pending::Run(RunEntry { field, ..entry }));
+                    if let Some(code) = field {
+                        if simple_field_done != Some(fld as *const _) {
+                            simple_field_done = Some(fld as *const _);
+                            let text_override = page_field_text(code);
+                            runs_to_process.push(Pending::Run(RunEntry { field, text_override, ..entry }));
+                        }
                     } else if let Some(v) = field::resolve_doc_field(&fld.instr, &doc_dates) {
                         if simple_field_done != Some(fld as *const _) {
                             simple_field_done = Some(fld as *const _);
@@ -339,7 +343,8 @@ pub(crate) fn collect_items(
                         if let Some(code) = frame.code {
                             if !frame.emitted {
                                 frame.emitted = true;
-                                runs_to_process.push(Pending::Run(RunEntry { field: Some(code), ..entry }));
+                                let text_override = page_field_text(code);
+                                runs_to_process.push(Pending::Run(RunEntry { field: Some(code), text_override, ..entry }));
                             }
                         } else if let Some(val) = frame.static_value.clone() {
                             if !frame.emitted {
@@ -1757,7 +1762,18 @@ impl Item {
             let _ = write!(out, " img{rel_id:?} h{height_px:.2} dist{dist_l_px:.2},{dist_t_px:.2},{dist_r_px:.2},{dist_b_px:.2}");
         }
         if let Some(f) = field {
-            let _ = write!(out, " fld={f:?}");
+            // The kind, then its format only when it names one, so a plain
+            // field reads `fld=Page`.
+            let (kind, format) = match f {
+                FieldCode::Page(n) => ("Page", n),
+                FieldCode::NumPages(n) => ("NumPages", n),
+                FieldCode::Section(n) => ("Section", n),
+                FieldCode::SectionPages(n) => ("SectionPages", n),
+            };
+            let _ = write!(out, " fld={kind}");
+            if *format != field::NumberFormat::default() {
+                let _ = write!(out, "{format:?}");
+            }
         }
         if let Some(t) = tab {
             let _ = write!(out, " tab={:?}", t.leader);
@@ -1851,10 +1867,63 @@ pub(crate) struct TextBoxContent {
     pub(crate) frame: TextBoxFrame,
 }
 
+/// A field whose result depends on where the page falls (§17.16.5), with
+/// its `\*` number format. Its item is laid out with the page's value when
+/// one is known (`with_page_fields`), else with the cached result, which
+/// `substitute_page_fields` replaces once the page count is known.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum FieldCode {
-    Page,
-    NumPages,
+    /// PAGE: the page's number, in its section's format unless the field
+    /// names one.
+    Page(field::NumberFormat),
+    /// NUMPAGES: the document's page count.
+    NumPages(field::NumberFormat),
+    /// SECTION: the section's number.
+    Section(field::NumberFormat),
+    /// SECTIONPAGES: the page count of the page's section.
+    SectionPages(field::NumberFormat),
+}
+
+/// The values a page gives its page-dependent fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PageFields {
+    /// The displayed page number and its section's format (§17.6.12).
+    pub(crate) page: i64,
+    pub(crate) page_style: crate::engine::counter::CounterStyle,
+    pub(crate) pages: usize,
+    /// 1-based.
+    pub(crate) section: usize,
+    pub(crate) section_pages: usize,
+}
+
+impl PageFields {
+    pub(crate) fn text(&self, code: FieldCode) -> String {
+        use crate::engine::counter::CounterStyle::Decimal;
+        match code {
+            FieldCode::Page(f) => f.apply(self.page, self.page_style),
+            FieldCode::NumPages(f) => f.apply(self.pages as i64, Decimal),
+            FieldCode::Section(f) => f.apply(self.section as i64, Decimal),
+            FieldCode::SectionPages(f) => f.apply(self.section_pages as i64, Decimal),
+        }
+    }
+}
+
+thread_local! {
+    static PAGE_FIELDS: std::cell::Cell<Option<PageFields>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with page-dependent fields laid out with `fields`' values, so a
+/// header or footer breaks and aligns its lines around the real number.
+pub(crate) fn with_page_fields<T>(fields: PageFields, f: impl FnOnce() -> T) -> T {
+    let previous = PAGE_FIELDS.with(|c| c.replace(Some(fields)));
+    let out = f();
+    PAGE_FIELDS.with(|c| c.set(previous));
+    out
+}
+
+/// The text of a page-dependent field under `with_page_fields`.
+fn page_field_text(code: FieldCode) -> Option<String> {
+    PAGE_FIELDS.with(|c| c.get()).map(|fields| fields.text(code))
 }
 
 /// A run's tracked-change state (§17.13.5). `author` drives the redline color.
@@ -2183,14 +2252,15 @@ pub(crate) fn measure_item_text<'f>(text: &str, style: &RunStyle, font_cache: &'
 /// code, or None for fields whose cached result we render as-is.
 /// (Other fields go to `field::resolve_doc_field` at collect time.)
 fn resolve_field_code(instr: &str) -> Option<FieldCode> {
-    let instr = instr.trim().to_uppercase();
-    if instr == "PAGE" || instr.starts_with("PAGE ") {
-        Some(FieldCode::Page)
-    } else if instr == "NUMPAGES" || instr.starts_with("NUMPAGES ") {
-        Some(FieldCode::NumPages)
-    } else {
-        None
-    }
+    use field::{FieldInstruction as F, NumberFormat};
+    let code = match field::parse(instr) {
+        F::Page(sw) => FieldCode::Page(NumberFormat::from_switches(&sw)),
+        F::NumPages(sw) => FieldCode::NumPages(NumberFormat::from_switches(&sw)),
+        F::Section(sw) => FieldCode::Section(NumberFormat::from_switches(&sw)),
+        F::SectionPages(sw) => FieldCode::SectionPages(NumberFormat::from_switches(&sw)),
+        _ => return None,
+    };
+    Some(code)
 }
 
 #[derive(Clone)]

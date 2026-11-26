@@ -1545,6 +1545,9 @@ struct PageCheckpoint {
     /// capture O(1)). Cross-ref comment at the balancing consumption site.
     carried_in: Option<(Vec<PageElement>, f64)>,
     carried_in_spi: usize,
+    /// The section's `LaidOutHdrFtr::page_base`: derived from the pages
+    /// earlier sections pushed, which a resumed run does not have.
+    page_base: i64,
     /// The block-loop-top hoisted content_height, VERBATIM — deliberately
     /// STALE for a block continuing onto this page (byte-identity trap;
     /// consumers: need_break, fast-path should_break/widow, unequal-cols,
@@ -1567,7 +1570,7 @@ struct PageCheckpoint {
 /// All borrows are SHARED and live only for the call expression, so a capture
 /// never conflicts with the `&mut` uses that surround its call sites (notably
 /// the `apply_pending_floats` drain on the very next statement of site (a)).
-/// Nothing here is cloned by construction: of 15 fields, **9 are `Copy`** and
+/// Nothing here is cloned by construction: of 16 fields, **10 are `Copy`** and
 /// **6 are shared borrows** — counted, not estimated; re-count when adding a
 /// field. The borrowed ones are
 /// cloned inside the body under the caller's gate exactly as
@@ -1593,6 +1596,7 @@ struct CheckpointInputs<'a> {
     last_page_start_block: usize,
     prev_space_after_px: f64,
     carried_in_spi: usize,
+    page_base: i64,
     block_entry_content_height: f64,
 }
 
@@ -1635,7 +1639,7 @@ impl Viewer {
             scope, resume_at, current, prev_para_style, pending_floats, carried_in,
             sec_idx, global_page_idx, section_page_idx, y_in_page, col_idx,
             last_page_start_block, prev_space_after_px, carried_in_spi,
-            block_entry_content_height,
+            page_base, block_entry_content_height,
         } = i;
         // FloatScope is empty at every page start by construction (post
         // clear_page, pre drain) — the checkpoint deliberately does not carry it.
@@ -1690,6 +1694,7 @@ impl Viewer {
                 None
             },
             carried_in_spi,
+            page_base,
             block_entry_content_height,
             open_comment_ids: OPEN_COMMENT_IDS.with(|c| c.borrow().clone()),
             resume,
@@ -3157,9 +3162,10 @@ impl Viewer {
             let cols_unequal = geo.columns.len() > 1
                 && geo.columns.iter().any(|c| (c.width_px - geo.columns[0].width_px).abs() > 0.5);
 
-            // Layout header/footer content for this section
-            let laid_out_hf = layout_section_hdr_ftr(
-                &section.hdr_ftr, &self.font_cache, content_width,
+            // Layout header/footer content for this section: across the
+            // page's text width, whatever its columns (§17.10).
+            let mut laid_out_hf = layout_section_hdr_ftr(
+                &section.hdr_ftr, &self.font_cache, geo.content_width_px(),
                 &w.style_ctx, w.default_ppr.as_ref(),
                 w.default_tab_stop_px, &w.theme_fonts,
             )?;
@@ -3241,10 +3247,53 @@ impl Viewer {
             let resuming_here = resume_from.as_ref().is_some_and(|c| sec_idx == c.sec_idx);
 
             // Seed from a carried continuous break, or start fresh.
+            let carried = carry.is_some();
             let (mut current, mut y_in_page, mut section_page_idx) = match carry.take() {
                 Some((page, y, spi)) => (page, y, spi),
                 None => (PageLayout::new(), 0.0_f64, 0usize),
             };
+
+            // §17.6.12 page numbering: the section's first page shows its
+            // restart value, or continues from the last page an earlier
+            // section pushed. §17.6.22: a section that must start on an odd or
+            // even number is preceded by one blank page of the previous section
+            // when the number's parity is wrong; Word decides by the displayed
+            // number. Declared: at most one blank page (a restart value with
+            // the wrong parity is left as it is); a continuous section's restart
+            // applies from its next page; blank pages carry no header or footer
+            // (not measured in Word).
+            if resuming_here {
+                laid_out_hf.page_base = resume_from.as_ref().unwrap().page_base;
+            } else {
+                let numbering = section.page_numbering;
+                let prev = self.pages.borrow().iter().rev()
+                    .find(|p| p.section_idx < sec_idx)
+                    .map(|p| (p.number, p.number_style));
+                let next = prev.map_or(1, |(n, _)| n + 1);
+                let mut first = numbering.start.unwrap_or(next);
+                let wrong_parity = match section.break_type {
+                    SectionBreakType::OddPage => first.rem_euclid(2) == 0,
+                    SectionBreakType::EvenPage => first.rem_euclid(2) == 1,
+                    _ => false,
+                };
+                if !carried && sec_idx > 0 && wrong_parity {
+                    let mut blank = PageLayout::new();
+                    blank.page_number = global_page_idx + 1;
+                    blank.number = next;
+                    blank.number_style = prev.map_or(numbering.style, |(_, s)| s);
+                    push_page(blank, 0, sec_idx - 1)?;
+                    global_page_idx += 1;
+                    if numbering.start.is_none() {
+                        first += 1;
+                    }
+                }
+                let spi = section_page_idx as i64;
+                laid_out_hf.page_base = match (carried, numbering.start) {
+                    (true, Some(start)) => start - spi - 1,
+                    (true, None) => next - spi,
+                    (false, _) => first,
+                };
+            }
             // Snapshot of the band carried in from a preceding continuous
             // section (the title/intro that lives in `current.elements`, NOT in
             // this section's `block_caches`). Last-page column balancing rebuilds
@@ -3274,7 +3323,6 @@ impl Viewer {
                 column_ids: Vec::new(), page_ids: Vec::new(), block_tops: Vec::new(),
             };
 
-            let hf_font_cache = &self.font_cache;
             let page_color = w.page_color.as_deref();
             let finish_page = |current: &mut PageLayout, section_page_idx: &mut usize,
                                global_page_idx: &mut usize, y_in_page: &mut f64,
@@ -3292,12 +3340,12 @@ impl Viewer {
                         shift_page_body(current, free * geo.v_align);
                     }
                 }
-                // Stamp header/footer lines onto the page
-                let page_num = *global_page_idx + 1;
+                // Stamp header/footer lines onto the page. Page-dependent
+                // fields keep their cached text until the page count is known
+                // (the post-loop field pass lays such a band out again).
                 if let Some(hdr) = laid_out_hf.header_for_page(*section_page_idx) {
                     let (lines, rows) = position_hdr_ftr_lines(
                         hdr, geo.header_margin_px, geo.width_px, geo.margin_left_px, geo.margin_right_px,
-                        page_num, None, hf_font_cache,
                     );
                     current.header_lines = lines;
                     current.header_rows = rows;
@@ -3306,12 +3354,14 @@ impl Viewer {
                     let footer_y = geo.height_px - geo.footer_margin_px - ftr.total_height;
                     let (lines, rows) = position_hdr_ftr_lines(
                         ftr, footer_y, geo.width_px, geo.margin_left_px, geo.margin_right_px,
-                        page_num, None, hf_font_cache,
                     );
                     current.footer_lines = lines;
                     current.footer_rows = rows;
                 }
-                current.page_number = page_num;
+                current.page_number = *global_page_idx + 1;
+                current.number = laid_out_hf.page_base + *section_page_idx as i64;
+                current.number_style = section.page_numbering.style;
+                current.hdr_ftr_slot = laid_out_hf.slot_for_page(*section_page_idx);
                 resolve_page_auto_colours(current, page_color);
                 // Column separator lines (§17.6.4 w:sep).
                 if geo.col_sep && geo.columns.len() > 1 {
@@ -3662,7 +3712,8 @@ impl Viewer {
                             pending_floats: &pending_floats, carried_in: &carried_in,
                             sec_idx, global_page_idx, section_page_idx, y_in_page,
                             col_idx, last_page_start_block, prev_space_after_px,
-                            carried_in_spi, block_entry_content_height,
+                            carried_in_spi, page_base: laid_out_hf.page_base,
+                            block_entry_content_height,
                         }, $rem));
                     }
                 }};
@@ -5717,28 +5768,6 @@ impl Viewer {
             break 'relay;
             } // 'relay: loop
 
-            // Section break handling for next section
-            // (nextPage is implicit — we already flushed the page above)
-            // evenPage/oddPage: insert blank pages until page parity matches
-            match section.break_type {
-                SectionBreakType::EvenPage => {
-                    while !global_page_idx.is_multiple_of(2) {
-                        let mut blank = PageLayout::new();
-                        blank.page_number = global_page_idx + 1;
-                        push_page(blank, section_page_idx, sec_idx)?;
-                        global_page_idx += 1;
-                    }
-                }
-                SectionBreakType::OddPage => {
-                    while global_page_idx % 2 != 1 {
-                        let mut blank = PageLayout::new();
-                        blank.page_number = global_page_idx + 1;
-                        push_page(blank, section_page_idx, sec_idx)?;
-                        global_page_idx += 1;
-                    }
-                }
-                _ => {}
-            }
         }
 
         // Publish the captured ParaMeta side table for this
@@ -5788,38 +5817,73 @@ impl Viewer {
                 while target >= pages.len() {
                     let mut blank = PageLayout::new();
                     blank.page_number = pages.len() + 1;
+                    if let Some(last) = pages.last() {
+                        blank.number = last.number + 1;
+                        blank.number_style = last.number_style;
+                        blank.section_idx = last.section_idx;
+                    }
                     pages.push(blank);
                 }
                 pages[target].anchored_images.push(img);
             }
         }
 
-        // Substitute PAGE / NUMPAGES fields now that the total page count is
-        // known. Covers header/footer, body lines, and table cells — complex
-        // page fields can appear anywhere, not just in headers.
-        let total = self.pages.borrow().len();
+        // Page-dependent fields (PAGE, NUMPAGES, SECTION, SECTIONPAGES) now
+        // that the page count is known. A header or footer holding one is
+        // laid out again for each page with the page's values, so its tabs
+        // and alignment place the real number; body lines and cells are
+        // substituted in place. Declared: the band keeps the height reserved
+        // for its cached text.
         {
             let mut pages = self.pages.borrow_mut();
+            let total = pages.len();
+            let mut section_pages: HashMap<usize, usize> = HashMap::new();
+            for page in pages.iter() {
+                *section_pages.entry(page.section_idx).or_default() += 1;
+            }
             for page in pages.iter_mut() {
-                let page_num = page.page_number;
-                for line in page.header_lines.iter_mut().chain(page.footer_lines.iter_mut()) {
-                    substitute_page_fields(line, page_num, total, &self.font_cache);
-                }
-                // Header/footer TABLE cells can also carry PAGE/NUMPAGES fields.
-                for row in page.header_rows.iter_mut().chain(page.footer_rows.iter_mut()) {
-                    for cell in &mut row.cells {
-                        for line in &mut cell.lines {
-                            substitute_page_fields(line, page_num, total, &self.font_cache);
-                        }
+                let fields = wml::linebreak::PageFields {
+                    page: page.number,
+                    page_style: page.number_style,
+                    pages: total,
+                    section: page.section_idx + 1,
+                    section_pages: section_pages[&page.section_idx],
+                };
+                let section = &w.sections[page.section_idx];
+                let geo = &section.geometry;
+                for header in [true, false] {
+                    let (lines, rows) = if header {
+                        (&page.header_lines, &page.header_rows)
+                    } else {
+                        (&page.footer_lines, &page.footer_rows)
+                    };
+                    let has_fields = lines.iter().chain(rows.iter().flat_map(|r| r.cells.iter().flat_map(|c| &c.lines)))
+                        .any(|l| l.segments.iter().any(|s| s.items.iter().any(|i| i.field.is_some())));
+                    let Some(blocks) = has_fields.then(|| section.hdr_ftr.slot_blocks(header, page.hdr_ftr_slot)).flatten() else {
+                        continue;
+                    };
+                    let band = wml::hdr_ftr::layout_page_hdr_ftr(
+                        blocks, fields, &self.font_cache, geo.content_width_px(),
+                        &w.style_ctx, w.default_ppr.as_ref(), w.default_tab_stop_px, &w.theme_fonts,
+                    )?;
+                    if header {
+                        (page.header_lines, page.header_rows) = position_hdr_ftr_lines(
+                            &band, geo.header_margin_px, geo.width_px, geo.margin_left_px, geo.margin_right_px,
+                        );
+                    } else {
+                        let footer_y = geo.height_px - geo.footer_margin_px - band.total_height;
+                        (page.footer_lines, page.footer_rows) = position_hdr_ftr_lines(
+                            &band, footer_y, geo.width_px, geo.margin_left_px, geo.margin_right_px,
+                        );
                     }
                 }
                 for el in &mut page.elements {
                     match el {
-                        PageElement::Line(line) => substitute_page_fields(line, page_num, total, &self.font_cache),
+                        PageElement::Line(line) => substitute_page_fields(line, &fields, &self.font_cache),
                         PageElement::TableRow(row) => {
                             for cell in &mut row.cells {
                                 for line in &mut cell.lines {
-                                    substitute_page_fields(line, page_num, total, &self.font_cache);
+                                    substitute_page_fields(line, &fields, &self.font_cache);
                                 }
                             }
                         }
@@ -5828,7 +5892,7 @@ impl Viewer {
             }
         }
 
-        Ok(total as u32)
+        Ok(self.pages.borrow().len() as u32)
     }
 }
 
