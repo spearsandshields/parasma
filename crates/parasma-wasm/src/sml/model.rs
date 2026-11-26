@@ -1095,7 +1095,7 @@ fn border_edge(bp: &ooxml_sml::types::BorderProperties, colors: &ColorCtx) -> Op
         .border_color()
         .and_then(|c| colors.resolve(c))
         .unwrap_or_else(|| "#808080".to_string());
-    Some(BorderEdge { width_px, color, dash: None })
+    Some(BorderEdge { width_px, color, dash: None, ..Default::default() })
 }
 
 /// Map an SML horizontal alignment to the model's [`HAlign`] (§18.8.1). Only

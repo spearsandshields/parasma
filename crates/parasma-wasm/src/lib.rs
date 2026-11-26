@@ -6902,9 +6902,10 @@ impl Viewer {
             p.fill_rect(bx, by, bw, bh);
         }
 
-        // §17.6.10 page borders. Drawn over the (empty) margin band, so the
-        // simplified z-order (always front) is moot in practice. `space` is taken
-        // from the first present edge — Word writes a uniform offset across edges.
+        // §17.6.10 page borders, each edge at its own `space` from the page
+        // edge or the text, in its own line style. Drawn over the (empty)
+        // margin band, so the simplified z-order (always front) is moot in
+        // practice. Declared: `shadow` and `frame` are not drawn.
         if let Some(pb) = &geo.page_borders {
             let show = match pb.display {
                 ooxml_wml::types::STPageBorderDisplay::AllPages => true,
@@ -6912,38 +6913,27 @@ impl Viewer {
                 ooxml_wml::types::STPageBorderDisplay::NotFirstPage => idx != 0,
             };
             if show {
-                let space = pb
-                    .top
-                    .as_ref()
-                    .or(pb.bottom.as_ref())
-                    .or(pb.left.as_ref())
-                    .or(pb.right.as_ref())
-                    .map(|e| e.space_px)
-                    .unwrap_or(0.0);
+                let space = |e: &Option<BorderEdge>| e.as_ref().map_or(0.0, |e| e.space_px);
                 let (x0, y0, x1, y1) = if pb.offset_from_page {
-                    (space, space, w - space, h - space)
+                    (space(&pb.left), space(&pb.top), w - space(&pb.right), h - space(&pb.bottom))
                 } else {
                     (
-                        geo.margin_left_px - space,
-                        geo.margin_top_px - space,
-                        w - geo.margin_right_px + space,
-                        h - geo.margin_bottom_px + space,
+                        geo.margin_left_px - space(&pb.left),
+                        geo.margin_top_px - space(&pb.top),
+                        w - geo.margin_right_px + space(&pb.right),
+                        h - geo.margin_bottom_px + space(&pb.bottom),
                     )
                 };
-                let draw_edge = |edge: &Option<BorderEdge>, ax: f64, ay: f64, bx: f64, by: f64| {
+                use crate::engine::border::{stroke_styled, EdgeSide};
+                let draw_edge = |edge: &Option<BorderEdge>, side: EdgeSide, a: (f64, f64), b: (f64, f64)| {
                     if let Some(e) = edge {
-                        p.set_stroke_style_str(&e.color);
-                        p.set_line_width(e.width_px);
-                        p.begin_path();
-                        p.move_to(ax, ay);
-                        p.line_to(bx, by);
-                        p.stroke();
+                        stroke_styled(p, &e.line, side, a, b);
                     }
                 };
-                draw_edge(&pb.top, x0, y0, x1, y0);
-                draw_edge(&pb.bottom, x0, y1, x1, y1);
-                draw_edge(&pb.left, x0, y0, x0, y1);
-                draw_edge(&pb.right, x1, y0, x1, y1);
+                draw_edge(&pb.top, EdgeSide::Top, (x0, y0), (x1, y0));
+                draw_edge(&pb.bottom, EdgeSide::Bottom, (x0, y1), (x1, y1));
+                draw_edge(&pb.left, EdgeSide::Left, (x0, y0), (x0, y1));
+                draw_edge(&pb.right, EdgeSide::Right, (x1, y0), (x1, y1));
             }
         }
 

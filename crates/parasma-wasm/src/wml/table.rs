@@ -1094,13 +1094,7 @@ struct TableBorderEdges {
 // `Some(edge)` for a real border, `None` for an explicit nil/none. Operates
 // on a PRESENT element — the caller decides presence.
 fn border_value(theme: &ThemeFonts, b: &ooxml_wml::types::CTBorder) -> Option<CellBorderEdge> {
-    if matches!(b.value, STBorder::None | STBorder::Nil) { return None; }
-    let color = theme.wml_border_color(b.color.as_deref(), b.theme_color.as_ref(), b.theme_tint.as_deref(), b.theme_shade.as_deref());
-    let sz = b.size.unwrap_or(4) as f64;
-    // `sz` is in eighths of a point (ST_EighthPointMeasure). Clamp the rendered
-    // width to a 1px floor so very thin borders (e.g. sz=1, ~0.125px) don't
-    // vanish into anti-aliasing — Word draws them as a 1px device hairline.
-    Some(CellBorderEdge { color, width_px: (sz / 8.0).max(1.0), dash: None })
+    crate::wml::border::border_element_line(b, theme)
 }
 
 // Two-state (absent OR nil BOTH collapse to None). Correct for TABLE-level
@@ -1365,7 +1359,7 @@ mod tests {
     // is the continuation at the same grid column.
     #[test]
     fn build_table_meta_derives_vmerge_rowspan_and_captures_borders() {
-        let border = CellBorderEdge { color: "#123456".to_string(), width_px: 2.0, dash: None };
+        let border = CellBorderEdge { color: "#123456".to_string(), width_px: 2.0, ..Default::default() };
         let cell = |v_merged_away: bool, fill: Option<&str>| TableCellCache {
             blocks: Vec::new(),
             col_start: 0,

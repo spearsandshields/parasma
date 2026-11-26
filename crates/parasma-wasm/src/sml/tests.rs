@@ -1311,10 +1311,10 @@ mod style_tests {
         assert_eq!(
             st.borders,
             [
-                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None }),
-                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None }),
-                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None }),
-                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None }),
+                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None, ..Default::default() }),
+                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None, ..Default::default() }),
+                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None, ..Default::default() }),
+                Some(BorderEdge { width_px: 1.0, color: "#808080".into(), dash: None, ..Default::default() }),
             ]
         );
     }

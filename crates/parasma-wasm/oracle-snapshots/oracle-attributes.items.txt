@@ -20,7 +20,7 @@ y18 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#0563C1" u=single st0 
 y19 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#000000" u=single st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 y20 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx1 col"#000000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga1
 == page 0 num1 sect0
-L0 p0 f1 l1 segs1 shade"#FFF2CC" bt=#1F4E79/1.50/4.00 bb=#C00000/1.00/2.00 bl=#00B050/0.75/3.00 br=#7030A0/3.00/1.00 bars1
+L0 p0 f1 l1 segs1 shade"#FFF2CC" bt=#1F4E79/2.00/5.33 bb=#C00000/1.33/2.67 bl=#00B050/1.00/4.00 br=#7030A0/4.00/1.33 bars1
   S0 n14
     i0 y0 w64.41 cw60.34 c0+9 "Bordered " sh9g adv64.41 r0 s1
     i1 y0 w28.55 cw24.47 c9+4 "and " sh4g adv28.55 r0 s1

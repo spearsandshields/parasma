@@ -353,22 +353,20 @@ pub(crate) fn render_table_row(
     for cell in &row.cells {
         if cell.v_merged_away { continue; }
         // Cell borders stroke corner-to-corner (no device-pixel snap), in the
-        // order top, bottom, left, right (unchanged from the pre-shared loop).
-        crate::engine::border::stroke_box_edges(
-            cell.x, row.y_top, cell.width_px, row.height_px,
-            [
-                (crate::engine::border::EdgeSide::Top, cell.border_top.as_ref()),
-                (crate::engine::border::EdgeSide::Bottom, cell.border_bottom.as_ref()),
-                (crate::engine::border::EdgeSide::Left, cell.border_left.as_ref()),
-                (crate::engine::border::EdgeSide::Right, cell.border_right.as_ref()),
-            ],
-            false,
-            |b: &crate::engine::border::Edge, x0, y0, x1, y1| {
-                p.set_stroke_style_str(&b.color);
-                p.set_line_width(b.width_px);
-                p.begin_path(); p.move_to(x0, y0); p.line_to(x1, y1); p.stroke();
-            },
-        );
+        // order top, bottom, left, right, each in its line style.
+        use crate::engine::border::{stroke_styled, EdgeSide};
+        let (x0, y0) = (cell.x, row.y_top);
+        let (x1, y1) = (cell.x + cell.width_px, row.y_top + row.height_px);
+        for (side, edge, a, b) in [
+            (EdgeSide::Top, &cell.border_top, (x0, y0), (x1, y0)),
+            (EdgeSide::Bottom, &cell.border_bottom, (x0, y1), (x1, y1)),
+            (EdgeSide::Left, &cell.border_left, (x0, y0), (x0, y1)),
+            (EdgeSide::Right, &cell.border_right, (x1, y0), (x1, y1)),
+        ] {
+            if let Some(e) = edge {
+                stroke_styled(p, e, side, a, b);
+            }
+        }
     }
     p.set_text_baseline("alphabetic");
     for cell in &row.cells {
@@ -399,33 +397,29 @@ pub(crate) fn render_line(
         p.fill_rect(line.content_left, bdr_top, bdr_width, line.line_height);
     }
 
-    if line.is_first_line {
-        if let Some(ref b) = line.border_top {
-            p.set_stroke_style_str(&b.color);
-            p.set_line_width(b.width_px);
-            let y = bdr_top - b.space_px;
-            p.begin_path(); p.move_to(line.content_left, y); p.line_to(line.content_right, y); p.stroke();
+    {
+        use crate::engine::border::{stroke_styled, EdgeSide};
+        let (left, right) = (line.content_left, line.content_right);
+        if line.is_first_line {
+            if let Some(ref b) = line.border_top {
+                let y = bdr_top - b.space_px;
+                stroke_styled(p, &b.line, EdgeSide::Top, (left, y), (right, y));
+            }
         }
-    }
-    if line.is_last_line {
-        if let Some(ref b) = line.border_bottom {
-            p.set_stroke_style_str(&b.color);
-            p.set_line_width(b.width_px);
-            let y = bdr_top + line.line_height + b.space_px;
-            p.begin_path(); p.move_to(line.content_left, y); p.line_to(line.content_right, y); p.stroke();
+        if line.is_last_line {
+            if let Some(ref b) = line.border_bottom {
+                let y = bdr_top + line.line_height + b.space_px;
+                stroke_styled(p, &b.line, EdgeSide::Bottom, (left, y), (right, y));
+            }
         }
-    }
-    if let Some(ref b) = line.border_left {
-        p.set_stroke_style_str(&b.color);
-        p.set_line_width(b.width_px);
-        let x = line.content_left - b.space_px;
-        p.begin_path(); p.move_to(x, bdr_top); p.line_to(x, bdr_top + line.line_height); p.stroke();
-    }
-    if let Some(ref b) = line.border_right {
-        p.set_stroke_style_str(&b.color);
-        p.set_line_width(b.width_px);
-        let x = line.content_right + b.space_px;
-        p.begin_path(); p.move_to(x, bdr_top); p.line_to(x, bdr_top + line.line_height); p.stroke();
+        if let Some(ref b) = line.border_left {
+            let x = left - b.space_px;
+            stroke_styled(p, &b.line, EdgeSide::Left, (x, bdr_top), (x, bdr_top + line.line_height));
+        }
+        if let Some(ref b) = line.border_right {
+            let x = right + b.space_px;
+            stroke_styled(p, &b.line, EdgeSide::Right, (x, bdr_top), (x, bdr_top + line.line_height));
+        }
     }
 
     // §17.18.84 bar tab: a vertical rule at the stop position, spanning the

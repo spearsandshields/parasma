@@ -138,10 +138,10 @@ pub(crate) fn layout_hdr_ftr_blocks(
                 // space + line width above/below the text, which counts toward the
                 // header/footer band height (and thus the content area).
                 if let Some(ref b) = cache.layout.border_top {
-                    total_height += b.space_px + b.width_px;
+                    total_height += b.space_px + b.line.band_width();
                 }
                 if let Some(ref b) = cache.layout.border_bottom {
-                    total_height += b.space_px + b.width_px;
+                    total_height += b.space_px + b.line.band_width();
                 }
                 hf_prev_after = cache.layout.space_after_px;
                 hf_prev = Some((cache.layout.style_id.clone(), cache.layout.contextual_spacing));

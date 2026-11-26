@@ -1287,7 +1287,7 @@ fn build_slide_connector(
         .unwrap_or(DEFAULT_OUTLINE_PX)
         .max(DEFAULT_OUTLINE_PX);
     let dash = ln.and_then(|l| line_dash(l.line_dash_properties.as_deref()));
-    let outline = ShapeOutline { color, width_px, dash };
+    let outline = ShapeOutline { color, width_px, dash, ..Default::default() };
 
     // Arrowheads (§20.1.8.30/.43): headEnd at the line START, tailEnd at the END.
     // The triangle size scales with the pen width and the sm/med/lg @w/@len
@@ -1993,7 +1993,7 @@ fn shape_outline(sp: &Shape, theme: &SlideTheme) -> Option<ShapeOutline> {
         .unwrap_or(DEFAULT_OUTLINE_PX)
         .max(DEFAULT_OUTLINE_PX);
     let dash = ln.and_then(|l| line_dash(l.line_dash_properties.as_deref()));
-    Some(ShapeOutline { color, width_px, dash })
+    Some(ShapeOutline { color, width_px, dash, ..Default::default() })
 }
 
 /// The line's dash pattern: `<a:ln>/<a:prstDash val="…">` → a canonical

@@ -230,7 +230,10 @@ impl PagedLine {
         for (name, edge) in [("bt", border_top), ("bb", border_bottom),
                              ("bl", border_left), ("br", border_right)] {
             if let Some(e) = edge {
-                let _ = write!(out, " {name}={}/{:.2}/{:.2}", e.color, e.width_px, e.space_px);
+                let _ = write!(out, " {name}={}/{:.2}/{:.2}", e.line.color, e.line.width_px, e.space_px);
+                if e.line.style != crate::engine::border::LineStyle::Single {
+                    let _ = write!(out, "/{:?}", e.line.style);
+                }
             }
         }
         if !bar_tabs.is_empty() {

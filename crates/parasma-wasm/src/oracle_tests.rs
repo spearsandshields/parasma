@@ -10462,7 +10462,7 @@ fn shading_patterns_and_theme_colours() {
     assert_eq!(line("ThemeFill").para_shading.as_deref(), Some("#4472C4"), "the theme fill wins");
     assert_eq!(line("Cleared").para_shading, None, "clear over auto hides the style's shading");
     assert_eq!(line("Inherited").para_shading.as_deref(), Some("#FF0000"));
-    assert_eq!(line("Border").border_top.as_ref().map(|b| b.color.as_str()), Some("#ED7D31"));
+    assert_eq!(line("Border").border_top.as_ref().map(|b| b.line.color.as_str()), Some("#ED7D31"));
 }
 
 /// §17.3.2.40 underlines: an underlined tab is a fill-in blank and is drawn;

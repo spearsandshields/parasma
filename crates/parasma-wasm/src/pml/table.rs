@@ -594,7 +594,7 @@ fn line_to_outline(
         .unwrap_or(DEFAULT_OUTLINE_PX)
         .max(DEFAULT_OUTLINE_PX);
     let dash = super::shape::line_dash(ln.line_dash_properties.as_deref());
-    Some(ShapeOutline { color, width_px, dash })
+    Some(ShapeOutline { color, width_px, dash, ..Default::default() })
 }
 
 /// Cell margins (`tcPr/@marL,@marR,@marT,@marB`, EMU) with PowerPoint defaults

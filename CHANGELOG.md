@@ -242,6 +242,11 @@ are held stable regardless.
 - Columns: a newsletter or brochure layout, with a full-width heading and then
   columns that run onto later pages, no longer draws its second column over
   the heading. The column lines start below it too.
+- Borders: paragraph, table and page borders draw at their real weight
+  (they were a quarter too thin) and sit at their real distance from the
+  text. They draw in their own line style: double and triple rules,
+  thick-thin frames, dotted, dashed and dot-dash lines, waves and 3-D
+  borders. Each side of a page border keeps its own distance from the page.
 
 ### Changed
 
