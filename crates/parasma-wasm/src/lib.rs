@@ -3378,6 +3378,15 @@ impl Viewer {
             };
 
             let page_color = w.page_color.as_deref();
+            // Where this section's columns begin on a page: below the band a
+            // preceding continuous section left on the page the two share
+            // (§17.6.22), else at the top. Balancing reads the same band.
+            let column_top = |section_page_idx: usize| -> f64 {
+                match &carried_in {
+                    Some((_, carried_y)) if section_page_idx == carried_in_spi => *carried_y,
+                    _ => 0.0,
+                }
+            };
             let finish_page = |current: &mut PageLayout, section_page_idx: &mut usize,
                                global_page_idx: &mut usize, y_in_page: &mut f64,
                                laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry|
@@ -3424,7 +3433,8 @@ impl Viewer {
                     // BOTTOM is deliberately NOT `y_start + content_height`:
                     // that is `top + (h - top - bottom)`, and f64 addition is
                     // not associative, so it is not the pinned `h - bottom`.
-                    let y_start = effective_margin_top(laid_out_hf, geo, *section_page_idx);
+                    // The rules span the columns only, below a carried band.
+                    let y_start = effective_margin_top(laid_out_hf, geo, *section_page_idx) + column_top(*section_page_idx);
                     let y_end = geo.height_px - effective_margin_bottom(laid_out_hf, geo, *section_page_idx);
                     for i in 0..geo.columns.len() - 1 {
                         let col = &geo.columns[i];
@@ -3793,7 +3803,10 @@ impl Viewer {
                     resume_at = $resume;
                     if col_idx + 1 < geo.columns.len() {
                         col_idx += 1;
-                        y_in_page = 0.0;
+                        // A column starts where the section's columns do on
+                        // this page: below a band carried in from a preceding
+                        // continuous section, else the page top.
+                        y_in_page = column_top(section_page_idx);
                         scope.clear_column();
                     } else {
                         seal_or_rollback!($relay);

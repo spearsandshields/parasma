@@ -239,6 +239,9 @@ are held stable regardless.
   by the end of their range, as some generators and older Word files write
   them, appear in the panel. A comment listed twice appears once, and its
   text includes words inside links, tables and content controls.
+- Columns: a newsletter or brochure layout, with a full-width heading and then
+  columns that run onto later pages, no longer draws its second column over
+  the heading. The column lines start below it too.
 
 ### Changed
 

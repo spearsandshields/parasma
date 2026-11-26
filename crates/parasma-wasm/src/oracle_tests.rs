@@ -1330,7 +1330,11 @@ fn oracle_objects_layout_snapshot() {
     // paragraph left alone at the foot of a page's last column now opens the
     // next page with the rest of its paragraph. One line moved; page count
     // held at 5.
-    assert_oracle("oracle-objects", oracle_objects_docx(), 5, 0xf98a7d7d58822b6d);
+    // Re-baselined for §17.6.22 continuous sections: the two-column section
+    // that starts below page 1's single-column band put its second column at
+    // the page top, over that band; it now starts at the band's foot (y 635),
+    // as does the column rule. Later pages reflow; page count held at 5.
+    assert_oracle("oracle-objects", oracle_objects_docx(), 5, 0x11a33772578a9711);
 }
 
 // ─── oracle document: "hdr-ftr-inherit" ─────────────────────────────────────
@@ -11552,4 +11556,26 @@ fn comment_text_reads_wrappers_and_tables() {
     let v = layout(comment_docx(&body, &comment(1, &card)));
     let text = v.resolve_comments()[0].0.text.clone();
     assert_eq!(text, "linked words\ncell words\n", "the empty paragraph after the table is a line too");
+}
+
+/// §17.6.22: a continuous section in two columns, starting below a
+/// full-width title and running onto the next page, starts its second
+/// column below the title too, not at the page top over it.
+#[test]
+fn continuous_columns_start_below_the_band_above_them() {
+    let body = format!("{}{}", section_end("Title of the newsletter", ""), fillers(150));
+    let docx = numbering_docx("", "", &body);
+    let docx = unzip_replace(docx, "word/document.xml", "<w:sectPr>\n  <w:pgSz",
+        r#"<w:sectPr><w:type w:val="continuous"/><w:cols w:num="2" w:space="720"/>
+  <w:pgSz"#);
+    let v = layout(docx);
+    let pages = v.pages.borrow();
+    assert!(pages.len() > 1, "the columns run onto page 2");
+    let lines: Vec<(f64, f64)> = pages[0].elements.iter().filter_map(|e| match e {
+        PageElement::Line(l) => Some((l.segments[0].x_start, l.baseline_y)),
+        _ => None,
+    }).collect();
+    let title_y = lines[0].1;
+    let col2_top = lines.iter().filter(|(x, _)| *x > 400.0).map(|(_, y)| *y).fold(f64::INFINITY, f64::min);
+    assert!(col2_top > title_y, "column 2 starts at {col2_top}, below the title at {title_y}");
 }
