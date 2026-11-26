@@ -1058,20 +1058,6 @@ pub(crate) fn collect_row_cells(row: &ooxml_wml::types::CTRow) -> Vec<&ooxml_wml
     out
 }
 
-/// A cell's paragraphs, through content controls and custom XML at any depth.
-/// Paragraphs of nested tables are not included.
-pub(crate) fn collect_cell_paragraphs(cell: &ooxml_wml::types::TableCell) -> Vec<&ooxml_wml::types::Paragraph> {
-    let mut blocks = Vec::new();
-    flatten_blocks(&cell.block_content, &mut blocks);
-    blocks
-        .into_iter()
-        .filter_map(|b| match b {
-            FlatBlock::Para(p) => Some(p),
-            FlatBlock::Table(_) => None,
-        })
-        .collect()
-}
-
 fn extract_table_border_info(props: &ooxml_wml::types::TableProperties) -> (String, bool) {
     let borders = props.tbl_borders.as_ref();
     let has_borders = borders.is_none_or(|b| {

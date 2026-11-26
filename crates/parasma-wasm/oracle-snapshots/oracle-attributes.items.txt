@@ -17,7 +17,8 @@ y15 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0
 y16 b0 i0 pt11.00 fam"arimo" ea"arimo" cs"Arimo" rcx0 col"#C00000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 y17 b0 i0 pt11.00 fam"XITS Math" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 y18 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#0563C1" u=single st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
-y19 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga1
+y19 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#1f2328" u=single st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y20 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx1 col"#1f2328" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga1
 == page 0 num1 sect0
 L0 p0 f1 l1 segs1 shade"#FFF2CC" bt=#1F4E79/1.50/4.00 bb=#C00000/1.00/2.00 bl=#00B050/0.75/3.00 br=#7030A0/3.00/1.00 bars1
   S0 n14
@@ -75,8 +76,8 @@ L4 p3 f1 l1 segs1
     i3 y18 w22.01 cw22.01 c24+4 "link" sh4g adv22.01 r0 s1 link"url:https://example.invalid/spec"
     i4 y0 w4.07 cw0.00 c28+1 " " sh1g adv4.07 r0 s1
     i5 y0 w28.55 cw24.47 c29+4 "and " sh4g adv28.55 r0 s1
-    i6 y18 w52.18 cw48.10 c33+9 "internal " sh9g adv52.18 r0 s1 link"anchor:target"
-    i7 y18 w22.01 cw22.01 c42+4 "link" sh4g adv22.01 r0 s1 link"anchor:target"
+    i6 y19 w52.18 cw48.10 c33+9 "internal " sh9g adv52.18 r0 s1 link"anchor:target"
+    i7 y19 w22.01 cw22.01 c42+4 "link" sh4g adv22.01 r0 s1 link"anchor:target"
 L5 p4 f1 l1 segs1
   S0 n8
     i0 y0 w31.78 cw27.71 c0+5 "This " sh5g adv31.78 r0 s1 bm"\u{1}comment\u{1}0" cmt[0]
@@ -92,5 +93,5 @@ L6 p5 f1 l1 segs1
     i0 y0 w30.98 cw26.91 c18+6 "latin " sh6g adv30.98 r0 s1
     i1 y0 w22.82 cw18.75 c24+5 "tail " sh5g adv22.82 r0 s1
     i2 y0 w24.47 cw24.47 c29+3 "123" sh3g adv24.47 r0 s1
-    i3 y19 w34.14 cw30.06 c9+9 "עולם " rtl sh5g adv34.14 r1 s0
-    i4 y19 w36.31 cw32.23 c0+9 "שלום " rtl sh5g adv36.31 r1 s0
+    i3 y20 w34.14 cw30.06 c9+9 "עולם " rtl sh5g adv34.14 r1 s0
+    i4 y20 w36.31 cw32.23 c0+9 "שלום " rtl sh5g adv36.31 r1 s0

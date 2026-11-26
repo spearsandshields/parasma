@@ -322,6 +322,52 @@ pub(crate) fn inject_builtin_hdr_ftr_styles(ctx: &mut ooxml_wml::ext::StyleConte
 
 // ─── Section builder ───────────────────────────────────────────────────────
 
+/// A section ends at a paragraph carrying `w:sectPr` (§17.6.18). When that
+/// paragraph sits inside a block-level content control or custom XML element
+/// (§17.5.2.29, §17.5.1.6), the wrapper is replaced by its child blocks so the
+/// section split below can see the break. Wrappers holding no section break
+/// are kept: layout unwraps them anyway.
+fn unwrap_section_breaks(blocks: Vec<BlockContent>) -> Vec<BlockContent> {
+    use ooxml_wml::types::BlockContentChoice as C;
+    fn ends_section(p: &ooxml_wml::types::Paragraph) -> bool {
+        p.p_pr.as_ref().and_then(|ppr| ppr.sect_pr.as_ref()).is_some()
+    }
+    fn holds_break(children: &[C]) -> bool {
+        children.iter().any(|c| match c {
+            C::P(p) => ends_section(p),
+            C::Sdt(s) => s.sdt_content.as_ref().is_some_and(|c| holds_break(&c.block_content)),
+            C::CustomXml(c) => holds_break(&c.block_content),
+            _ => false,
+        })
+    }
+    fn lift(children: Vec<C>, out: &mut Vec<BlockContent>) {
+        for c in children {
+            match c {
+                C::P(p) => out.push(BlockContent::P(p)),
+                C::Tbl(t) => out.push(BlockContent::Tbl(t)),
+                C::Sdt(s) if s.sdt_content.as_ref().is_some_and(|c| holds_break(&c.block_content)) => {
+                    lift(s.sdt_content.map(|c| c.block_content).unwrap_or_default(), out);
+                }
+                C::CustomXml(c) if holds_break(&c.block_content) => lift(c.block_content, out),
+                C::Sdt(s) => out.push(BlockContent::Sdt(s)),
+                C::CustomXml(c) => out.push(BlockContent::CustomXml(c)),
+                _ => {}
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(blocks.len());
+    for block in blocks {
+        match block {
+            BlockContent::Sdt(s) if s.sdt_content.as_ref().is_some_and(|c| holds_break(&c.block_content)) => {
+                lift(s.sdt_content.map(|c| c.block_content).unwrap_or_default(), &mut out);
+            }
+            BlockContent::CustomXml(c) if holds_break(&c.block_content) => lift(c.block_content, &mut out),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
     doc: &mut ooxml_wml::Document<R>,
 ) -> Vec<Section> {
@@ -331,7 +377,7 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
         });
 
     let body_sect_pr = doc.body().section_properties().cloned();
-    let blocks = std::mem::take(&mut doc.body_mut().block_content);
+    let blocks = unwrap_section_breaks(std::mem::take(&mut doc.body_mut().block_content));
 
     let mut sections: Vec<Section> = Vec::new();
     let mut current_blocks: Vec<BlockContent> = Vec::new();

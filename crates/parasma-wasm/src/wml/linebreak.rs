@@ -29,7 +29,7 @@ use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::bidi::bidi_reorder_line;
 use crate::wml::drawing::{
     extract_drawing_text_box, extract_pict_text_box, extract_vml_dimensions, inline_dist_px,
-    is_layout_control, parse_anchor_position, TextBoxFrame, WrapInfo,
+    drawing_is_hidden, is_layout_control, parse_anchor_position, pict_is_hidden, TextBoxFrame, WrapInfo,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
 use crate::wml::content_walk::{self, Revision, Visit};
@@ -86,6 +86,9 @@ struct RunEntry<'a> {
     text_override: Option<String>,
     track_change: Option<TrackChange>,
     comment_ids: CommentIds,
+    /// The run sits in a table-of-contents entry: a hyperlink to a `_Toc`
+    /// bookmark, as Word's TOC field writes them.
+    toc_entry: bool,
 }
 
 /// A queued paragraph-content atom, in document order: either a text run
@@ -109,6 +112,7 @@ impl<'a> RunEntry<'a> {
             text_override: None,
             track_change: None,
             comment_ids,
+            toc_entry: false,
         }
     }
 }
@@ -271,6 +275,10 @@ pub(crate) fn collect_items(
                 // (§17.13.5) render with redline styling.
                 let entry = RunEntry {
                     link: ctx.hyperlink.and_then(hyperlink_target),
+                    toc_entry: ctx
+                        .hyperlink
+                        .and_then(|h| h.anchor.as_deref())
+                        .is_some_and(|a| a.starts_with("_Toc")),
                     track_change: ctx.revision.map(|(kind, author)| match kind {
                         Revision::Inserted => TrackChange::Inserted(author.to_owned()),
                         Revision::Deleted => TrackChange::Deleted(author.to_owned()),
@@ -390,6 +398,7 @@ pub(crate) fn collect_items(
             text_override,
             track_change,
             comment_ids: run_comment_ids,
+            toc_entry,
         } = entry;
         // Deleted runs store their text in <w:delText>. In All-Markup view that
         // text must still render (struck through), so it counts for deletions.
@@ -413,10 +422,34 @@ pub(crate) fn collect_items(
         // onto every item produced for a hyperlink run (see end of loop body).
         let link_start = items.len();
 
-        let mut style = RunStyle::from_resolved(run, style_ctx, &para_style_rprs, table_style_rprs, font_cache, theme_fonts);
-        if link.is_some() {
+        // WORD-BEHAVIOR: Word's TOC entries carry the Hyperlink character style,
+        // yet Word draws them in their TOC paragraph style, not blue and
+        // underlined (checked against a Word-rendered PDF of a Word-written
+        // TOC). The style is dropped for runs in a TOC entry.
+        let unstyled;
+        let style_run = if *toc_entry && names_hyperlink_style(run, style_ctx) {
+            let mut r = (*run).clone();
+            if let Some(rpr) = r.r_pr.as_mut() {
+                rpr.run_style = None;
+            }
+            unstyled = r;
+            &unstyled
+        } else {
+            *run
+        };
+        let mut style = RunStyle::from_resolved(style_run, style_ctx, &para_style_rprs, table_style_rprs, font_cache, theme_fonts);
+        // A hyperlink adds no formatting of its own (§17.16.22): its runs look
+        // as their properties say, normally through the Hyperlink character
+        // style.
+        //
+        // WORD-BEHAVIOR: a run naming the Hyperlink style that the document does
+        // not define gets Word's built-in one, the theme's hyperlink colour and
+        // a single underline. Not in a TOC entry (see `style_run` above).
+        if !*toc_entry && names_undefined_style(run, style_ctx, "Hyperlink") {
             if style.color == DEFAULT_TEXT_COLOR {
-                style.color = "#0563C1".to_owned();
+                style.color = theme_fonts
+                    .scheme_color("hlink")
+                    .map_or_else(|| "#0563C1".to_owned(), |hex| format!("#{}", hex.trim_start_matches('#')));
             }
             if style.underline == Underline::None {
                 style.underline = Underline::Single;
@@ -587,7 +620,7 @@ pub(crate) fn collect_items(
             }
         }
 
-        for drawing in &drawings {
+        for drawing in drawings.iter().filter(|d| !drawing_is_hidden(d)) {
             let inline_rel_ids = drawing.inline_image_rel_ids();
             if !inline_rel_ids.is_empty() {
                 let (width_px, height_px) = match drawing.extent_emu() {
@@ -708,6 +741,9 @@ pub(crate) fn collect_items(
         // VML text boxes from RunContent::Pict
         for rc in &run.run_content {
             if let ooxml_wml::types::RunContent::Pict(pict) = rc {
+                if pict_is_hidden(pict) {
+                    continue;
+                }
                 if let Some(etb) = extract_pict_text_box(pict) {
                     let (tw, th) = extract_vml_dimensions(pict).unwrap_or((200.0, 100.0));
                     items.push(Item {
@@ -2010,6 +2046,28 @@ pub(crate) fn symbol_face_families(
 fn sym_code(sym: &ooxml_wml::types::CTSym) -> Option<u32> {
     let bytes = sym.char.as_deref().filter(|b| !b.is_empty() && b.len() <= 3)?;
     Some(bytes.iter().fold(0u32, |acc, b| acc << 8 | u32::from(*b)))
+}
+
+/// Whether `run`'s character style (`w:rStyle`) is the Hyperlink style: by id,
+/// or by its built-in name when the id is localized (`Hiperhivatkozs`).
+fn names_hyperlink_style(run: &ooxml_wml::types::Run, ctx: &StyleContext) -> bool {
+    let Some(id) = run.r_pr.as_ref().and_then(|rpr| rpr.run_style.as_ref()).map(|s| s.value.as_str()) else {
+        return false;
+    };
+    id == "Hyperlink"
+        || ctx
+            .style(id)
+            .and_then(|st| st.name.as_ref())
+            .is_some_and(|n| n.value.eq_ignore_ascii_case("hyperlink"))
+}
+
+/// Whether `run` names the character style `style_id` (`w:rStyle`) and the
+/// document defines no style by that id.
+fn names_undefined_style(run: &ooxml_wml::types::Run, ctx: &StyleContext, style_id: &str) -> bool {
+    run.r_pr
+        .as_ref()
+        .and_then(|rpr| rpr.run_style.as_ref())
+        .is_some_and(|s| s.value == style_id && ctx.style(style_id).is_none())
 }
 
 /// A hyperlink's target (§17.16.22): its external URL, through the

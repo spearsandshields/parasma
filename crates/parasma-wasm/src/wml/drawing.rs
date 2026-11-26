@@ -134,6 +134,32 @@ pub(crate) fn parse_anchor_position(drawing: &ooxml_wml::types::CTDrawing, obj_w
     (h_pos, v_pos, h_rel, v_rel, behind, wrap)
 }
 
+/// Whether a DrawingML object is hidden: present in the document but not
+/// displayed (`wp:docPr@hidden`, §20.4.2.5). Word hides it; so does layout.
+pub(crate) fn drawing_is_hidden(drawing: &ooxml_wml::types::CTDrawing) -> bool {
+    drawing.extra_children.iter().any(|child| {
+        let ooxml_xml::RawXmlNode::Element(ref elem) = child.node else { return false };
+        matches!(xml_local_name(&elem.name), "inline" | "anchor")
+            && elem.children.iter().any(|c| match c {
+                ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == "docPr" => {
+                    matches!(vml_attr(e, "hidden"), Some("1" | "true" | "on"))
+                }
+                _ => false,
+            })
+    })
+}
+
+/// Whether a VML picture's shape is hidden: `visibility:hidden` in its CSS
+/// `style`, a property every VML shape element defines (Part 4 §19.1.2, e.g.
+/// §19.1.2.1).
+pub(crate) fn pict_is_hidden(pict: &ooxml_wml::types::CTPicture) -> bool {
+    pict.extra_children.iter().any(|child| {
+        let ooxml_xml::RawXmlNode::Element(ref elem) = child.node else { return false };
+        matches!(xml_local_name(&elem.name), "shape" | "rect" | "roundrect" | "oval" | "group" | "line")
+            && vml_style_value(elem, "visibility") == Some("hidden")
+    })
+}
+
 /// Read the text-distance padding `(distL, distT, distR, distB)` in CSS px
 /// from a drawing's first `<wp:inline>` (or `<wp:anchor>`) element — the
 /// `distL`/`distT`/`distR`/`distB` attributes (ECMA-376 §20.4.2.8 / §20.4.2.3,
@@ -327,6 +353,10 @@ pub(crate) struct TextBoxFrame {
     pub(crate) border_width_px: f64,
     pub(crate) insets: Insets,
     pub(crate) anchor: TextBoxAnchor,
+    /// The colour of text that sets none of its own: a shape style's
+    /// `fontRef` colour (§20.1.4.1.17), white on Word's coloured shapes.
+    /// `None` keeps the document's default text colour.
+    pub(crate) text_color: Option<String>,
 }
 
 impl Default for TextBoxFrame {
@@ -337,6 +367,7 @@ impl Default for TextBoxFrame {
             border_width_px: 0.0,
             insets: Insets::default_px(),
             anchor: TextBoxAnchor::Top,
+            text_color: None,
         }
     }
 }
@@ -347,11 +378,15 @@ impl TextBoxFrame {
     /// destructure fails to compile when a field is added and not emitted.
     pub(crate) fn dump_into(&self, out: &mut String) {
         use std::fmt::Write;
-        let TextBoxFrame { fill_color, border_color, border_width_px, insets, anchor } = self;
+        let TextBoxFrame { fill_color, border_color, border_width_px, insets, anchor, text_color } = self;
         let Insets { left, top, right, bottom } = insets;
         let _ = write!(out, "fill{} border{}/{border_width_px:.2} ins{left:.2},{top:.2},{right:.2},{bottom:.2} anc{anchor:?}",
             fill_color.as_deref().unwrap_or("-"),
             border_color.as_deref().unwrap_or("-"));
+        // Written only when set, so frames without one dump as before.
+        if let Some(c) = text_color {
+            let _ = write!(out, " text{c}");
+        }
     }
 }
 
@@ -456,6 +491,9 @@ fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame
             }
         }
     }
+
+    // Text colour from the style's font reference, whatever the geometry.
+    frame.text_color = style.and_then(|st| child(st, "fontRef")).and_then(|f| dml_color(f, theme));
 
     if let Some(body) = child(wsp, "bodyPr") {
         let emu = |name: &str, default: f64| {
@@ -620,6 +658,7 @@ pub(crate) fn extract_pict_text_box(pict: &ooxml_wml::types::CTPicture) -> Optio
                         Some(v) if v.starts_with("bottom") => TextBoxAnchor::Bottom,
                         _ => TextBoxAnchor::Top,
                     },
+                    text_color: None,
                 },
             });
         }

@@ -124,7 +124,7 @@ use wml::float::{
     ActiveFloat, AnchorVRelFrom, WRAP_EPS,
 };
 use wml::float_resolve::{resolve_anchor_position, FrameCtx};
-use wml::content_walk::{flatten_blocks, FlatBlock};
+use wml::content_walk::{all_paragraphs, flatten_blocks, FlatBlock};
 use wml::hdr_ftr::{layout_section_hdr_ftr, position_hdr_ftr_lines, LaidOutHdrFtr};
 use wml::linebreak::{
     author_color, comment_anchor_name, justify_line, pack_lines, LineSegment, OPEN_COMMENT_IDS,
@@ -160,7 +160,7 @@ pub(crate) use wml::paragraph::{
 use wml::render::{layout_text_box, render_line, render_table_row, render_text_box, substitute_page_fields};
 use wml::section::{PageGeometry, SectionBreakType};
 use wml::table::{
-    collect_cell_paragraphs, collect_row_cells, layout_table, table_rows, CellFloatDraw, CellVAlign,
+    layout_table, CellFloatDraw, CellVAlign,
 };
 use wml::watermark::{find_watermark_in_blocks, Watermark};
 use engine::paint::{GlyphFeatures, Kerning, RunStyle, Underline, VertAlign};
@@ -2189,20 +2189,8 @@ impl Viewer {
                     }
                 }
             };
-            for block in &doc.body().block_content {
-                match block {
-                    BlockContent::P(p) => collect_from_para(p),
-                    BlockContent::Tbl(t) => {
-                        for row in table_rows(t) {
-                            for cell in collect_row_cells(row) {
-                                for para in collect_cell_paragraphs(cell) {
-                                    collect_from_para(para);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+            for p in all_paragraphs(&doc.body().block_content) {
+                collect_from_para(p);
             }
             ids
         };
@@ -2254,20 +2242,8 @@ impl Viewer {
                     }
                 }
             };
-            for block in &doc.body().block_content {
-                match block {
-                    BlockContent::P(p) => collect_charts(p),
-                    BlockContent::Tbl(t) => {
-                        for row in table_rows(t) {
-                            for cell in collect_row_cells(row) {
-                                for para in collect_cell_paragraphs(cell) {
-                                    collect_charts(para);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+            for p in all_paragraphs(&doc.body().block_content) {
+                collect_charts(p);
             }
 
             for chart_rel_id in chart_rel_ids {
@@ -2626,20 +2602,8 @@ impl Viewer {
 
         let fc = &self.font_cache;
         let collect_from_blocks = |blocks: &[BlockContent], families: &mut HashSet<String>, w: &WmlRenderer| {
-            for block in blocks {
-                match block {
-                    BlockContent::P(para) => w.collect_para_fonts(para, families, fc),
-                    BlockContent::Tbl(table) => {
-                        for row in table_rows(table) {
-                            for cell in collect_row_cells(row) {
-                                for para in collect_cell_paragraphs(cell) {
-                                    w.collect_para_fonts(para, families, fc);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+            for para in all_paragraphs(blocks) {
+                w.collect_para_fonts(para, families, fc);
             }
         };
 
@@ -2691,17 +2655,7 @@ impl Viewer {
             return false;
         };
         let block_has_math = |blocks: &[BlockContent]| -> bool {
-            blocks.iter().any(|block| match block {
-                BlockContent::P(para) => crate::wml::math::paragraph_has_math(para),
-                BlockContent::Tbl(table) => table_rows(table).iter().any(|row| {
-                    collect_row_cells(row).into_iter().any(|cell| {
-                        collect_cell_paragraphs(cell)
-                            .into_iter()
-                            .any(crate::wml::math::paragraph_has_math)
-                    })
-                }),
-                _ => false,
-            })
+            all_paragraphs(blocks).into_iter().any(crate::wml::math::paragraph_has_math)
         };
         w.sections.iter().any(|section| {
             block_has_math(&section.blocks)
@@ -2728,20 +2682,8 @@ impl Viewer {
         let collect_from_blocks = |blocks: &[BlockContent],
                                     fcp: &mut HashMap<String, HashSet<u32>>,
                                     w: &WmlRenderer| {
-            for block in blocks {
-                match block {
-                    BlockContent::P(para) => w.collect_para_codepoints(para, fcp),
-                    BlockContent::Tbl(table) => {
-                        for row in table_rows(table) {
-                            for cell in collect_row_cells(row) {
-                                for para in collect_cell_paragraphs(cell) {
-                                    w.collect_para_codepoints(para, fcp);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+            for para in all_paragraphs(blocks) {
+                w.collect_para_codepoints(para, fcp);
             }
         };
 

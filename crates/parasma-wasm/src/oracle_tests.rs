@@ -10224,3 +10224,92 @@ fn a_float_that_does_not_wrap_text_is_drawn_in_a_table_cell() {
     let text = all_text(&v);
     assert!(text.contains("Overlay") && text.contains("Cell text"), "{text}");
 }
+
+// ─── W2 wrap-up: hyperlink look, hidden objects, shape text colour, sections ─
+
+#[test]
+fn a_hyperlink_takes_its_look_from_its_runs_not_from_the_link() {
+    // A table-of-contents entry: an internal hyperlink whose run has no style.
+    let plain = walk_items(&format!(r#"<w:hyperlink w:anchor="t">{}</w:hyperlink>"#, run("Entry")));
+    assert_eq!(plain[0].style.color, crate::DEFAULT_TEXT_COLOR);
+    assert_eq!(plain[0].style.underline, crate::engine::paint::Underline::None);
+    // A run naming the Hyperlink style the document does not define: Word's
+    // built-in look.
+    let styled = walk_items(&format!(
+        r#"<w:hyperlink w:anchor="t"><w:r><w:rPr><w:rStyle w:val="Hyperlink"/></w:rPr><w:t>Linked</w:t></w:r></w:hyperlink>"#
+    ));
+    assert_eq!(styled[0].style.color, "#0563C1");
+    assert_eq!(styled[0].style.underline, crate::engine::paint::Underline::Single);
+}
+
+#[test]
+fn a_toc_entry_drops_the_hyperlink_style_as_word_draws_it() {
+    // Word writes each TOC entry as a hyperlink to a `_Toc` bookmark whose run
+    // carries the Hyperlink style, and draws it in the TOC paragraph style.
+    let hyperlink_style = r#"<w:style w:type="character" w:styleId="Hiperhivatkozs"><w:name w:val="Hyperlink"/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>"#;
+    let entry = |anchor: &str| format!(
+        r#"<w:p><w:hyperlink w:anchor="{anchor}"><w:r><w:rPr><w:rStyle w:val="Hiperhivatkozs"/></w:rPr><w:t>Chapter</w:t></w:r></w:hyperlink></w:p>"#
+    );
+    let toc = text_items(&layout(numbering_docx(hyperlink_style, "", &entry("_Toc123"))));
+    assert_eq!(toc[0].style.color, crate::DEFAULT_TEXT_COLOR, "a TOC entry is not blue");
+    assert_eq!(toc[0].style.underline, crate::engine::paint::Underline::None);
+    let link = text_items(&layout(numbering_docx(hyperlink_style, "", &entry("elsewhere"))));
+    assert_eq!(link[0].style.color, "#0563C1", "control: an ordinary link keeps the (localized) style");
+}
+
+#[test]
+fn hidden_drawings_are_not_drawn() {
+    let shown = layout(wrapped_text_box_docx("wps", "Visible", "Fallbackbranch"));
+    assert_eq!(occurrences(&shown, "Visible"), 1);
+    let hidden = unzip_replace(
+        wrapped_text_box_docx("wps", "Visible", "Fallbackbranch"),
+        "word/document.xml",
+        r#"<wp:docPr id="1" name="Text Box 1"/>"#,
+        r#"<wp:docPr id="1" name="Text Box 1" hidden="1"/>"#,
+    );
+    assert_eq!(occurrences(&layout(hidden), "Visible"), 0);
+}
+
+#[test]
+fn text_in_a_styled_shape_takes_the_style_font_colour() {
+    let docx = unzip_replace(
+        wrapped_text_box_docx("wps", "Onshape", "Fallbackbranch"),
+        "word/document.xml",
+        "<wps:bodyPr/>",
+        r#"<wps:style><a:lnRef idx="2"><a:srgbClr val="000000"/></a:lnRef><a:fillRef idx="1"><a:srgbClr val="4472C4"/></a:fillRef><a:effectRef idx="0"><a:srgbClr val="000000"/></a:effectRef><a:fontRef idx="minor"><a:srgbClr val="FFFFFF"/></a:fontRef></wps:style><wps:bodyPr/>"#,
+    );
+    let tb = body_lines(&layout(docx))
+        .into_iter()
+        .flat_map(|l| l.segments.into_iter().flat_map(|s| s.items))
+        .find_map(|it| it.text_box)
+        .expect("a text box");
+    let item = tb.lines[0].segments[0].items.iter().find(|i| i.text.contains("Onshape")).expect("text");
+    assert_eq!(item.style.color, "#FFFFFF");
+}
+
+#[test]
+fn a_section_break_inside_a_content_control_still_splits_the_document() {
+    let section_end = r#"<w:p><w:pPr><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr><w:r><w:t>First section</w:t></w:r></w:p>"#;
+    let body = sdt(section_end) + &para("Second section");
+    let v = layout(numbering_docx("", "", &body));
+    assert_eq!(v.wml().expect("wml").sections.len(), 2);
+    assert_eq!(v.pages.borrow().len(), 2, "a next-page section break");
+}
+
+#[test]
+fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
+    let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);
+    let v = layout(numbering_docx("", "", &body));
+    assert!(v.families_used_native().iter().any(|f| f == "Tinos"));
+}
+
+#[test]
+fn a_watermark_inside_a_content_control_is_found() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/watermark/watermark-text.docx");
+    let docx = std::fs::read(path).expect("watermark fixture");
+    assert!(layout(docx.clone()).wml().expect("wml").watermark.is_some(), "control: the plain fixture has one");
+    // Word's watermark gallery wraps the header paragraph in a content control.
+    let wrapped = unzip_replace(docx, "word/header1.xml", "<w:p>", "<w:sdt><w:sdtPr/><w:sdtContent><w:p>");
+    let wrapped = unzip_replace(wrapped, "word/header1.xml", "</w:p>", "</w:p></w:sdtContent></w:sdt>");
+    assert!(layout(wrapped).wml().expect("wml").watermark.is_some());
+}

@@ -138,14 +138,14 @@ pub(crate) fn find_watermark_in_blocks(
     part_paths: &[String],
     image_keys: &HashSet<String>,
 ) -> Option<Watermark> {
-    for b in blocks {
-        if let ooxml_wml::types::BlockContent::P(p) = b {
-            for run in crate::wml::content_walk::paragraph_runs(p) {
-                for rc in &run.run_content {
-                    if let ooxml_wml::types::RunContent::Pict(pict) = rc {
-                        if let Some(wm) = extract_watermark(pict, part_paths, image_keys) {
-                            return Some(wm);
-                        }
+    // Every paragraph, through content controls: Word's watermark gallery
+    // wraps the watermark's header paragraph in one.
+    for p in crate::wml::content_walk::all_paragraphs(blocks) {
+        for run in crate::wml::content_walk::paragraph_runs(p) {
+            for rc in &run.run_content {
+                if let ooxml_wml::types::RunContent::Pict(pict) = rc {
+                    if let Some(wm) = extract_watermark(pict, part_paths, image_keys) {
+                        return Some(wm);
                     }
                 }
             }

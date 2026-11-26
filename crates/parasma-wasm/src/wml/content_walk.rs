@@ -166,6 +166,32 @@ fn flatten_block_choices<'a>(
     }
 }
 
+/// Every paragraph in `blocks`, in document order: through block wrappers and
+/// into every table cell, nested tables included. The load-time collectors
+/// (images, charts, fonts, code points, math) read the document through it,
+/// so content inside a cover page's content control is not missed.
+pub(crate) fn all_paragraphs(blocks: &[ooxml_wml::types::BlockContent]) -> Vec<&Paragraph> {
+    fn walk_blocks<'a>(blocks: &'a [ooxml_wml::types::BlockContent], out: &mut Vec<&'a Paragraph>) {
+        let mut flat = Vec::new();
+        flatten_blocks(blocks, &mut flat);
+        for block in flat {
+            match block {
+                FlatBlock::Para(p) => out.push(p),
+                FlatBlock::Table(t) => {
+                    for row in crate::wml::table::table_rows(t) {
+                        for cell in crate::wml::table::collect_row_cells(row) {
+                            walk_blocks(&cell.block_content, out);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk_blocks(blocks, &mut out);
+    out
+}
+
 /// Every run of `paragraph`, at any depth, in document order.
 pub(crate) fn paragraph_runs(paragraph: &Paragraph) -> Vec<&Run> {
     let mut runs = Vec::new();

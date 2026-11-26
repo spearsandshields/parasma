@@ -44,6 +44,16 @@ are held stable regardless.
   cell, are laid out. Fonts used only inside such wrappers are now fetched.
 - Documents: pictures and text boxes anchored in a table cell and set in
   front of or behind the text are drawn; they were dropped.
+- Documents: cover pages and other content kept in a content control now
+  show their pictures and charts, use their own fonts, and keep their section
+  breaks, and a watermark inside a content control is found.
+- Documents: links take their colour and underline from their text's
+  formatting, as Word does, instead of always drawing blue and underlined, so
+  table of contents entries are no longer blue. Text styled as a hyperlink in
+  a document that does not define that style uses Word's built-in look.
+- Documents: pictures and shapes marked hidden are no longer drawn.
+- Documents: text in a shape takes the font colour of the shape's style, such
+  as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
 - Fonts: names the font map had silently dropped, such as Consolas, Palatino
   Linotype, Futura and Menlo, now reach their substitute, so monospaced text
