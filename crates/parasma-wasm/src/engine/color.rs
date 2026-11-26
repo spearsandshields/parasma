@@ -383,6 +383,16 @@ pub(crate) fn apply_color_transforms(hex: &str, xs: &[DmlTransform]) -> (String,
     (rgb_hex(c[0] * 255.0, c[1] * 255.0, c[2] * 255.0), alpha)
 }
 
+/// Whether a `#rrggbb` background is dark enough that Word draws automatic
+/// text on it in white: ITU-R BT.601 luma at most 0.61.
+///
+/// Declared: the cutoff is not measured against Word, whose scripting cannot
+/// export a rendering on the machine used; 50 % grey (`808080`) and darker
+/// count as dark.
+pub(crate) fn is_dark_background(hex: &str) -> bool {
+    hex_to_rgb(hex).is_some_and(|(r, g, b)| (0.299 * r + 0.587 * g + 0.114 * b) / 255.0 <= 0.61)
+}
+
 /// A resolved colour as CSS: the `#rrggbb` itself when opaque, else
 /// `rgba(r,g,b,a)`.
 pub(crate) fn css_color(hex: &str, alpha: f64) -> String {

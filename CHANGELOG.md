@@ -55,6 +55,10 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: text with automatic colour is black, as in Word, and turns
+  white on a dark background (cell, paragraph or text shading, or a dark
+  page colour), so dark table headers and callouts are readable. It was a
+  fixed dark grey everywhere.
 - Documents: sections set to centre or bottom-align their text vertically,
   as cover and title pages often are, now place it there instead of at the
   top. Text spread over the page ("justified") still starts at the top.

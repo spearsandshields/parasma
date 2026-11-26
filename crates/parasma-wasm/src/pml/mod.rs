@@ -1640,6 +1640,7 @@ fn run_style(run: &SlideRun) -> RunStyle {
         family_complex: run.family_complex.clone(),
         run_is_complex: false,
         color: run.color.clone(),
+        auto_color: false,
         underline: Underline::None,
         strikethrough: false,
         double_strike: false,

@@ -195,9 +195,10 @@ const CSS_FONT_FALLBACK: &str = "-apple-system, BlinkMacSystemFont, sans-serif";
 /// `memory_budget_bytes` field doc for the derivation and why the value
 /// may still change.
 const DEFAULT_MEMORY_BUDGET_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-/// Default text colour when a run has no explicit `<w:color>`. Picked for
-/// dark text on the white page background.
-pub(crate) const DEFAULT_TEXT_COLOR: &str = "#1f2328";
+/// Word's automatic text colour (§17.3.2.6 `auto`, and a run with no
+/// `w:color`) on a light background. See `resolve_auto_text_colour` for the
+/// dark case.
+pub(crate) const DEFAULT_TEXT_COLOR: &str = "#000000";
 
 /// Alpha for the comment-highlight additive paint pass. Bounded so
 /// body text keeps a 4.5:1 contrast ratio over the densest expected shading;
@@ -1078,6 +1079,58 @@ fn effective_margin_top(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
         geo.header_margin_px + header_height
     } else {
         geo.margin_top_px
+    }
+}
+
+/// Word's automatic text colour (§17.3.2.6 `auto`) on one line: black, or
+/// white over a dark background. The background behind a run is, nearest
+/// first, its highlight, its shading, its paragraph's shading, then
+/// `backdrop` (the cell, text-box or page fill under the line).
+fn resolve_auto_text_colour(line: &mut PagedLine, backdrop: Option<&str>) {
+    let paragraph = line.para_shading.clone();
+    for item in line.segments.iter_mut().flat_map(|s| s.items.iter_mut()) {
+        if !item.style.auto_color {
+            continue;
+        }
+        let behind = item.style.highlight.as_deref()
+            .or(item.style.run_shading.as_deref())
+            .or(paragraph.as_deref())
+            .or(backdrop);
+        if behind.is_some_and(crate::engine::color::is_dark_background) {
+            item.style.color = "#FFFFFF".to_owned();
+        }
+    }
+}
+
+/// [`resolve_auto_text_colour`] for every line on a finished page: body,
+/// table cells, text boxes, header and footer. Declared: footnote text is
+/// laid out when painted and keeps the default colour.
+fn resolve_page_auto_colours(page: &mut PageLayout, page_color: Option<&str>) {
+    fn row(row: &mut PagedTableRow, page_color: Option<&str>) {
+        for cell in &mut row.cells {
+            let backdrop = cell.fill_color.as_deref().or(page_color);
+            for line in &mut cell.lines {
+                resolve_auto_text_colour(line, backdrop);
+            }
+        }
+    }
+    for element in &mut page.elements {
+        match element {
+            PageElement::Line(line) => resolve_auto_text_colour(line, page_color),
+            PageElement::TableRow(r) => row(r, page_color),
+        }
+    }
+    for line in page.header_lines.iter_mut().chain(page.footer_lines.iter_mut()) {
+        resolve_auto_text_colour(line, page_color);
+    }
+    for r in page.header_rows.iter_mut().chain(page.footer_rows.iter_mut()) {
+        row(r, page_color);
+    }
+    for tb in &mut page.positioned_text_boxes {
+        let backdrop = tb.frame.fill_color.as_deref().or(page_color);
+        for line in &mut tb.lines {
+            resolve_auto_text_colour(line, backdrop);
+        }
     }
 }
 
@@ -3197,6 +3250,7 @@ impl Viewer {
             };
 
             let hf_font_cache = &self.font_cache;
+            let page_color = w.page_color.as_deref();
             let finish_page = |current: &mut PageLayout, section_page_idx: &mut usize,
                                global_page_idx: &mut usize, y_in_page: &mut f64,
                                laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry|
@@ -3233,6 +3287,7 @@ impl Viewer {
                     current.footer_rows = rows;
                 }
                 current.page_number = page_num;
+                resolve_page_auto_colours(current, page_color);
                 // Column separator lines (§17.6.4 w:sep).
                 if geo.col_sep && geo.columns.len() > 1 {
                     // The band's TOP is `effective_margin_top` — one rule, one
@@ -8875,8 +8930,9 @@ impl RunStyle {
                 ))
             },
         )
-        .flatten()
-        .unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_owned());
+        .flatten();
+        let auto_color = color.is_none();
+        let color = color.unwrap_or_else(|| DEFAULT_TEXT_COLOR.to_owned());
 
         let underline = resolve_run_option(
             &run.r_pr, &char_style_rprs, para_style_rprs, table_style_rprs, ctx,
@@ -8997,7 +9053,7 @@ impl RunStyle {
         .map(|half_pts| pt_to_px(half_pts / 2.0))
         .unwrap_or(0.0);
 
-        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None }
+        Self { bold, italic, font_pt, family, family_east_asia, family_complex, run_is_complex, color, auto_color, underline, strikethrough, double_strike, vert_align, highlight, run_shading, char_spacing_px, all_caps, small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px, glyph_features, line_metrics_family: None }
     }
 
     fn font_css(&self) -> String {

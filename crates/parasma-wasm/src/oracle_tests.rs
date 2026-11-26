@@ -10345,6 +10345,56 @@ fn the_page_colour_fills_the_page() {
     assert_eq!(first_fill(r#"<w:background w:color="FFF2CC"/>"#).0, "#FFF2CC");
 }
 
+/// §17.3.2.6: automatic text is black, and white over a dark background:
+/// cell, paragraph or run shading, or the page colour. An explicit black
+/// stays black.
+#[test]
+fn automatic_text_turns_white_on_dark_backgrounds() {
+    fn colours(docx: Vec<u8>) -> Vec<(String, String)> {
+        let v = layout(docx);
+        let pages = v.pages.borrow();
+        let mut out = Vec::new();
+        let mut take = |l: &PagedLine| {
+            for it in l.segments.iter().flat_map(|s| &s.items) {
+                if !it.text.trim().is_empty() {
+                    out.push((it.text.trim().to_owned(), it.style.color.clone()));
+                }
+            }
+        };
+        for e in &pages[0].elements {
+            match e {
+                PageElement::Line(l) => take(l),
+                PageElement::TableRow(r) => r.cells.iter().flat_map(|c| &c.lines).for_each(&mut take),
+            }
+        }
+        out
+    }
+    let cell = |fill: &str, run: &str| format!(
+        r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="{fill}"/></w:tcPr><w:p>{run}</w:p></w:tc></w:tr>"#
+    );
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{}{}{}</w:tbl>"#,
+        cell("1F3864", "<w:r><w:t>DarkCell</w:t></w:r>"),
+        cell("1F3864", r#"<w:r><w:rPr><w:color w:val="000000"/></w:rPr><w:t>Explicit</w:t></w:r>"#),
+        cell("D9E2F3", "<w:r><w:t>LightCell</w:t></w:r>"),
+    );
+    let body = format!(
+        r#"<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="404040"/></w:pPr><w:r><w:t>DarkPara</w:t></w:r></w:p><w:p><w:r><w:rPr><w:shd w:val="clear" w:color="auto" w:fill="000000"/></w:rPr><w:t>DarkRun</w:t></w:r></w:p><w:p><w:r><w:t>Plain</w:t></w:r></w:p>{table}"#
+    );
+    let got = colours(numbering_docx("", "", &body));
+    let colour = |t: &str| got.iter().find(|(x, _)| x == t).map(|(_, c)| c.as_str()).unwrap_or("missing");
+    assert_eq!(colour("Plain"), "#000000");
+    assert_eq!(colour("DarkPara"), "#FFFFFF");
+    assert_eq!(colour("DarkRun"), "#FFFFFF");
+    assert_eq!(colour("DarkCell"), "#FFFFFF");
+    assert_eq!(colour("Explicit"), "#000000");
+    assert_eq!(colour("LightCell"), "#000000");
+
+    // A dark page colour turns the plain paragraph white too.
+    let dark_page = unzip_replace(numbering_docx("", "", &para("Plain")), "word/document.xml", "<w:body>", r#"<w:background w:color="202020"/><w:body>"#);
+    assert_eq!(colours(dark_page)[0].1, "#FFFFFF");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

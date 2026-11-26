@@ -121,6 +121,10 @@ pub(crate) struct RunStyle {
     pub(crate) family_complex: String,
     pub(crate) run_is_complex: bool,
     pub(crate) color: String,
+    /// Word: the run's colour is automatic (`w:color` absent or `auto`,
+    /// §17.3.2.6), so `color` is the default and the page pass may turn it
+    /// white over a dark background.
+    pub(crate) auto_color: bool,
     pub(crate) underline: Underline,
     pub(crate) strikethrough: bool,
     pub(crate) double_strike: bool,
@@ -167,6 +171,7 @@ impl Default for RunStyle {
             family_complex: String::new(),
             run_is_complex: false,
             color: crate::DEFAULT_TEXT_COLOR.to_owned(),
+            auto_color: true,
             underline: Underline::None,
             strikethrough: false,
             double_strike: false,
@@ -209,6 +214,9 @@ impl RunStyle {
             vert_align, highlight, run_shading, char_spacing_px, all_caps,
             small_caps, vanish, outline, shadow, emboss, imprint, baseline_shift_px,
             glyph_features, line_metrics_family,
+            // An input to `color`: the page pass has already turned automatic
+            // text white where it sits on a dark background, so `col` shows it.
+            auto_color: _,
         } = self;
         let kern = match glyph_features.kerning {
             Kerning::HostDefault => "host",

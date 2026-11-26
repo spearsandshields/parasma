@@ -301,7 +301,10 @@ pub(crate) fn layout_paragraph(
         if let Some(pt) = ov.font_pt { style.font_pt = pt; }
         if let Some(b) = ov.bold { style.bold = b; }
         if let Some(i) = ov.italic { style.italic = i; }
-        if let Some(c) = &ov.color { style.color = c.clone(); }
+        if let Some(c) = &ov.color {
+            style.color = c.clone();
+            style.auto_color = false;
+        }
         if let Some(u) = ov.underline { style.underline = u; }
         if let Some(s) = ov.strikethrough { style.strikethrough = s; }
         if let Some(d) = ov.double_strike { style.double_strike = d; }

@@ -36,7 +36,7 @@ use crate::wml::content_walk::{self, Revision, Visit};
 use crate::wml::symbol_font::SymbolFont;
 use crate::{
     collect_char_style_rprs, collect_paragraph_style_rprs, field, PagedLine,
-    ResolvedTabStops, TabAlignment, TabLeader, DEFAULT_TEXT_COLOR, FIELD_DATES,
+    ResolvedTabStops, TabAlignment, TabLeader, FIELD_DATES,
     HYPERLINK_RELS, RESERVE_TRAILING_BLANKS,
 };
 
@@ -446,7 +446,8 @@ pub(crate) fn collect_items(
         // not define gets Word's built-in one, the theme's hyperlink colour and
         // a single underline. Not in a TOC entry (see `style_run` above).
         if !*toc_entry && names_undefined_style(run, style_ctx, "Hyperlink") {
-            if style.color == DEFAULT_TEXT_COLOR {
+            if style.auto_color {
+                style.auto_color = false;
                 style.color = theme_fonts
                     .scheme_color("hlink")
                     .map_or_else(|| "#0563C1".to_owned(), |hex| format!("#{}", hex.trim_start_matches('#')));
@@ -460,12 +461,14 @@ pub(crate) fn collect_items(
         match track_change {
             Some(TrackChange::Inserted(author)) => {
                 style.color = author_color(author).to_owned();
+                style.auto_color = false;
                 if style.underline == Underline::None {
                     style.underline = Underline::Single;
                 }
             }
             Some(TrackChange::Deleted(author)) => {
                 style.color = author_color(author).to_owned();
+                style.auto_color = false;
                 style.strikethrough = true;
             }
             None => {}

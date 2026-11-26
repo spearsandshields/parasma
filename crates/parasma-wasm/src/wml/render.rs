@@ -242,8 +242,9 @@ pub(crate) fn layout_text_box(
         // Text that set no colour of its own takes the shape style's.
         if let Some(color) = &frame.text_color {
             for item in line.segments.iter_mut().flat_map(|s| s.items.iter_mut()) {
-                if item.style.color == crate::DEFAULT_TEXT_COLOR {
+                if item.style.auto_color {
                     item.style.color = color.clone();
+                    item.style.auto_color = false;
                 }
             }
         }
