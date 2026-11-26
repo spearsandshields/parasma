@@ -1146,7 +1146,17 @@ L35 p25 f0 l1 segs1
     i2 y2 w16.31 cw12.23 c91+3 "of " sh3g adv16.31 r0 s1
     i3 y2 w12.23 cw8.16 c94+2 "a " sh2g adv12.23 r0 s1
     i4 y2 w26.07 cw22.00 c96+6 "list. " sh6g adv26.07 r0 s1
-L36 p26 f1 l0 segs1
+F0 p4294967295 f0 l0 segs1
+  S0 n2
+    i0 y3 w31.36 cw28.03 c0+5 "Page " sh5g adv31.36 r0 s1
+    i1 y3 w6.67 cw6.67 c5+1 "2" sh1g adv6.67 r0 s1 fld=Page
+== page 2 num3 sect0
+H0 p4294967295 f0 l0 segs1
+  S0 n3
+    i0 y0 w51.35 cw48.02 c0+8 "Parasma " sh8g adv51.35 r0 s1
+    i1 y0 w39.36 cw36.03 c8+7 "Layout " sh7g adv39.36 r0 s1
+    i2 y0 w35.34 cw35.34 c15+6 "Oracle" sh6g adv35.34 r0 s1
+L0 p26 f1 l0 segs1
   S0 n14
     i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w59.51 cw55.44 c0+8 "Headers " sh8g adv59.51 r0 s1
@@ -1162,22 +1172,12 @@ L36 p26 f1 l0 segs1
     i11 y2 w40.76 cw36.69 c61+6 "never " sh6g adv40.76 r0 s1
     i12 y2 w56.25 cw52.18 c67+9 "intrudes " sh9g adv56.25 r0 s1
     i13 y2 w27.72 cw23.65 c76+5 "into " sh5g adv27.72 r0 s1
-F0 p4294967295 f0 l0 segs1
-  S0 n2
-    i0 y3 w31.36 cw28.03 c0+5 "Page " sh5g adv31.36 r0 s1
-    i1 y3 w6.67 cw6.67 c5+1 "2" sh1g adv6.67 r0 s1 fld=Page
-== page 2 num3 sect0
-H0 p4294967295 f0 l0 segs1
-  S0 n3
-    i0 y0 w51.35 cw48.02 c0+8 "Parasma " sh8g adv51.35 r0 s1
-    i1 y0 w39.36 cw36.03 c8+7 "Layout " sh7g adv39.36 r0 s1
-    i2 y0 w35.34 cw35.34 c15+6 "Oracle" sh6g adv35.34 r0 s1
-L0 p26 f0 l1 segs1
+L1 p26 f0 l1 segs1
   S0 n3
     i0 y2 w40.76 cw36.69 c81+7 "either " sh7g adv40.76 r0 s1
     i1 y2 w16.31 cw12.23 c88+3 "of " sh3g adv16.31 r0 s1
     i2 y2 w40.76 cw36.68 c91+6 "them. " sh6g adv40.76 r0 s1
-L1 p27 f1 l1 segs1
+L2 p27 f1 l1 segs1
   S0 n12
     i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -1191,7 +1191,7 @@ L1 p27 f1 l1 segs1
     i9 y2 w42.40 cw38.32 c48+7 "single " sh7g adv42.40 r0 s1
     i10 y2 w36.70 cw32.63 c55+5 "page " sh5g adv36.70 r0 s1
     i11 y2 w45.64 cw41.57 c60+8 "exists. " sh8g adv45.64 r0 s1
-L2 p28 f1 l0 segs1
+L3 p28 f1 l0 segs1
   S0 n14
     i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w79.90 cw75.83 c0+11 "Paragraphs " sh11g adv79.90 r0 s1
@@ -1207,13 +1207,13 @@ L2 p28 f1 l0 segs1
     i11 y2 w26.90 cw22.82 c67+4 "say " sh4g adv26.90 r0 s1
     i12 y2 w31.80 cw27.72 c71+5 "they " sh5g adv31.80 r0 s1
     i13 y2 w39.93 cw35.86 c76+6 "must, " sh6g adv39.93 r0 s1
-L3 p28 f0 l1 segs1
+L4 p28 f0 l1 segs1
   S0 n4
     i0 y2 w40.76 cw36.69 c82+6 "never " sh6g adv40.76 r0 s1
     i1 y2 w12.23 cw8.16 c88+2 "a " sh2g adv12.23 r0 s1
     i2 y2 w34.24 cw30.16 c90+6 "pixel " sh6g adv34.24 r0 s1
     i3 y2 w39.94 cw35.86 c96+7 "early. " sh7g adv39.94 r0 s1
-L4 p29 f1 l0 segs1
+L5 p29 f1 l0 segs1
   S0 n16
     i0 y2 w24.00 cw24.00 c- "•" sh1g adv5.13 r0 s1
     i1 y2 w13.86 cw9.78 c0+2 "A " sh2g adv13.86 r0 s1
@@ -1231,13 +1231,13 @@ L4 p29 f1 l0 segs1
     i13 y2 w24.46 cw20.39 c66+4 "the " sh4g adv24.46 r0 s1
     i14 y2 w70.10 cw66.03 c70+10 "remainder " sh10g adv70.10 r0 s1
     i15 y2 w48.08 cw44.01 c80+8 "carries " sh8g adv48.08 r0 s1
-L5 p29 f0 l1 segs1
+L6 p29 f0 l1 segs1
   S0 n4
     i0 y2 w16.31 cw12.23 c88+3 "to " sh3g adv16.31 r0 s1
     i1 y2 w24.46 cw20.39 c91+4 "the " sh4g adv24.46 r0 s1
     i2 y2 w31.80 cw27.72 c95+5 "next " sh5g adv31.80 r0 s1
     i3 y2 w40.78 cw36.70 c100+6 "page. " sh6g adv40.78 r0 s1
-T6 cells3
+T7 cells3
   C0L0 p30 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1262,7 +1262,7 @@ T6 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w8.16 cw8.16 c21+1 "2" sh1g adv8.16 r0 s1
-T7 cells3
+T8 cells3
   C0L0 p33 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1287,7 +1287,7 @@ T7 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w8.16 cw8.16 c21+1 "5" sh1g adv8.16 r0 s1
-T8 cells3
+T9 cells3
   C0L0 p36 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1312,7 +1312,7 @@ T8 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w8.16 cw8.16 c21+1 "8" sh1g adv8.16 r0 s1
-T9 cells3
+T10 cells3
   C0L0 p39 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1337,7 +1337,7 @@ T9 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "11" sh2g adv16.31 r0 s1
-T10 cells3
+T11 cells3
   C0L0 p42 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1362,7 +1362,7 @@ T10 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "14" sh2g adv16.31 r0 s1
-T11 cells3
+T12 cells3
   C0L0 p45 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1387,7 +1387,7 @@ T11 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "17" sh2g adv16.31 r0 s1
-T12 cells3
+T13 cells3
   C0L0 p48 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1412,7 +1412,7 @@ T12 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "20" sh2g adv16.31 r0 s1
-T13 cells3
+T14 cells3
   C0L0 p51 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1437,7 +1437,7 @@ T13 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "23" sh2g adv16.31 r0 s1
-T14 cells3
+T15 cells3
   C0L0 p54 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1462,7 +1462,7 @@ T14 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "26" sh2g adv16.31 r0 s1
-T15 cells3
+T16 cells3
   C0L0 p57 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1487,7 +1487,7 @@ T15 cells3
       i3 y2 w16.31 cw12.23 c11+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c14+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c21+2 "29" sh2g adv16.31 r0 s1
-T16 cells3
+T17 cells3
   C0L0 p60 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1512,7 +1512,7 @@ T16 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "32" sh2g adv16.31 r0 s1
-T17 cells3
+T18 cells3
   C0L0 p63 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1537,7 +1537,7 @@ T17 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "35" sh2g adv16.31 r0 s1
-T18 cells3
+T19 cells3
   C0L0 p66 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1562,7 +1562,7 @@ T18 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "38" sh2g adv16.31 r0 s1
-T19 cells3
+T20 cells3
   C0L0 p69 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1587,7 +1587,7 @@ T19 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "41" sh2g adv16.31 r0 s1
-T20 cells3
+T21 cells3
   C0L0 p72 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1612,7 +1612,7 @@ T20 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "44" sh2g adv16.31 r0 s1
-T21 cells3
+T22 cells3
   C0L0 p75 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1637,7 +1637,7 @@ T21 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "47" sh2g adv16.31 r0 s1
-T22 cells3
+T23 cells3
   C0L0 p78 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1662,7 +1662,7 @@ T22 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "50" sh2g adv16.31 r0 s1
-T23 cells3
+T24 cells3
   C0L0 p81 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1687,7 +1687,7 @@ T23 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "53" sh2g adv16.31 r0 s1
-T24 cells3
+T25 cells3
   C0L0 p84 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1712,7 +1712,7 @@ T24 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "56" sh2g adv16.31 r0 s1
-T25 cells3
+T26 cells3
   C0L0 p87 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1737,7 +1737,7 @@ T25 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "59" sh2g adv16.31 r0 s1
-T26 cells3
+T27 cells3
   C0L0 p90 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1762,7 +1762,7 @@ T26 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "62" sh2g adv16.31 r0 s1
-T27 cells3
+T28 cells3
   C0L0 p93 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1787,7 +1787,7 @@ T27 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "65" sh2g adv16.31 r0 s1
-T28 cells3
+T29 cells3
   C0L0 p96 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1812,7 +1812,7 @@ T28 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "68" sh2g adv16.31 r0 s1
-T29 cells3
+T30 cells3
   C0L0 p99 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1837,7 +1837,7 @@ T29 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "71" sh2g adv16.31 r0 s1
-T30 cells3
+T31 cells3
   C0L0 p102 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1862,7 +1862,7 @@ T30 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "74" sh2g adv16.31 r0 s1
-T31 cells3
+T32 cells3
   C0L0 p105 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1887,7 +1887,7 @@ T31 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "77" sh2g adv16.31 r0 s1
-T32 cells3
+T33 cells3
   C0L0 p108 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1912,7 +1912,17 @@ T32 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "80" sh2g adv16.31 r0 s1
-T33 cells3
+F0 p4294967295 f0 l0 segs1
+  S0 n2
+    i0 y3 w31.36 cw28.03 c0+5 "Page " sh5g adv31.36 r0 s1
+    i1 y3 w6.67 cw6.67 c5+1 "3" sh1g adv6.67 r0 s1 fld=Page
+== page 3 num4 sect0
+H0 p4294967295 f0 l0 segs1
+  S0 n3
+    i0 y0 w51.35 cw48.02 c0+8 "Parasma " sh8g adv51.35 r0 s1
+    i1 y0 w39.36 cw36.03 c8+7 "Layout " sh7g adv39.36 r0 s1
+    i2 y0 w35.34 cw35.34 c15+6 "Oracle" sh6g adv35.34 r0 s1
+T0 cells3
   C0L0 p111 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1937,17 +1947,7 @@ T33 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "83" sh2g adv16.31 r0 s1
-F0 p4294967295 f0 l0 segs1
-  S0 n2
-    i0 y3 w31.36 cw28.03 c0+5 "Page " sh5g adv31.36 r0 s1
-    i1 y3 w6.67 cw6.67 c5+1 "3" sh1g adv6.67 r0 s1 fld=Page
-== page 3 num4 sect0
-H0 p4294967295 f0 l0 segs1
-  S0 n3
-    i0 y0 w51.35 cw48.02 c0+8 "Parasma " sh8g adv51.35 r0 s1
-    i1 y0 w39.36 cw36.03 c8+7 "Layout " sh7g adv39.36 r0 s1
-    i2 y0 w35.34 cw35.34 c15+6 "Oracle" sh6g adv35.34 r0 s1
-T0 cells3
+T1 cells3
   C0L0 p114 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1972,7 +1972,7 @@ T0 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "86" sh2g adv16.31 r0 s1
-T1 cells3
+T2 cells3
   C0L0 p117 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -1997,7 +1997,7 @@ T1 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "89" sh2g adv16.31 r0 s1
-T2 cells3
+T3 cells3
   C0L0 p120 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -2022,7 +2022,7 @@ T2 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "92" sh2g adv16.31 r0 s1
-T3 cells3
+T4 cells3
   C0L0 p123 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -2047,7 +2047,7 @@ T3 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "95" sh2g adv16.31 r0 s1
-T4 cells3
+T5 cells3
   C0L0 p126 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -2072,7 +2072,7 @@ T4 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w16.31 cw16.31 c22+2 "98" sh2g adv16.31 r0 s1
-T5 cells3
+T6 cells3
   C0L0 p129 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -2097,7 +2097,7 @@ T5 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w24.47 cw24.47 c22+3 "101" sh3g adv24.47 r0 s1
-T6 cells3
+T7 cells3
   C0L0 p132 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1
@@ -2122,7 +2122,7 @@ T6 cells3
       i3 y2 w16.31 cw12.23 c12+3 "2: " sh3g adv16.31 r0 s1
       i4 y2 w44.00 cw39.93 c15+7 "metric " sh7g adv44.00 r0 s1
       i5 y2 w24.47 cw24.47 c22+3 "104" sh3g adv24.47 r0 s1
-T7 cells3
+T8 cells3
   C0L0 p135 f0 l0 segs1
     S0 n6
       i0 y2 w33.42 cw29.34 c0+4 "Row " sh4g adv33.42 r0 s1

@@ -219,6 +219,11 @@ are held stable regardless.
   saved value as stray text, so footers such as "Continued" show cleanly.
   Links written as HYPERLINK fields, and page references marked as links,
   can be clicked.
+- Pagination: a run of headings kept with the next paragraph moves to the
+  next page together instead of stranding the first heading at the page
+  foot, counting the space between them. Widow and orphan control also stops
+  a paragraph's first line sitting alone at the bottom of a page. A heading
+  kept with a paragraph that starts on a new page anyway stays where it is.
 
 ### Changed
 

@@ -1297,7 +1297,10 @@ fn oracle_flow_layout_snapshot() {
     // band's real text edges (left and right margin less indents) instead of
     // `x_start` and a fake `x_start + 200`. Only those `l`/`r` values moved;
     // every segment start and glyph is unchanged.
-    assert_oracle("oracle-flow", oracle_flow_docx(), 5, 0xff10541feb33c5a7);
+    // Re-baselined for §17.3.1.44 orphan control: a list paragraph's first
+    // line, alone at the foot of page 2, now opens page 3 with its paragraph.
+    // One line moved; page count held at 5.
+    assert_oracle("oracle-flow", oracle_flow_docx(), 5, 0x6950e46561868218);
 }
 
 #[test]
@@ -1323,7 +1326,11 @@ fn oracle_objects_layout_snapshot() {
     // the float start at x=300 instead of 288 (exactly distR) and re-partition
     // their words; the next two lines refill. Baselines, heights, line and
     // page counts are unchanged.
-    assert_oracle("oracle-objects", oracle_objects_docx(), 5, 0x74676609b741ae30);
+    // Re-baselined for §17.3.1.44 orphan control: the first line of a
+    // paragraph left alone at the foot of a page's last column now opens the
+    // next page with the rest of its paragraph. One line moved; page count
+    // held at 5.
+    assert_oracle("oracle-objects", oracle_objects_docx(), 5, 0xf98a7d7d58822b6d);
 }
 
 // ─── oracle document: "hdr-ftr-inherit" ─────────────────────────────────────
@@ -11356,4 +11363,54 @@ fn hyperlink_and_page_reference_fields_are_links() {
     let link_of = |l: &PagedLine| l.segments[0].items[0].link.clone();
     assert_eq!(link_of(&lines[0]).as_deref(), Some("url:https://example.com"));
     assert_eq!(link_of(&lines[1]).as_deref(), Some("anchor:_Toc1"));
+}
+
+// ── Pagination controls: keepNext chains, orphans (§17.3.1.15, §17.3.1.44) ──
+
+/// Lines of exactly 16px and no paragraph spacing: 54 lines fill a page.
+fn paged_docx(body: &str) -> Vec<u8> {
+    let docx = numbering_docx("", "", body);
+    unzip_replace(
+        docx,
+        "word/styles.xml",
+        "<w:pPrDefault><w:pPr/></w:pPrDefault>",
+        r#"<w:pPrDefault><w:pPr><w:widowControl/><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="exact"/></w:pPr></w:pPrDefault>"#,
+    )
+}
+
+fn fillers(n: usize) -> String {
+    (0..n).map(|i| p("", &r("", &format!("f{i}")))).collect()
+}
+
+/// Which page the line starting with `text` lands on.
+fn page_of(v: &Viewer, text: &str) -> usize {
+    page_texts(v).iter().position(|t| t.split('|').any(|l| l.starts_with(text))).unwrap_or(usize::MAX)
+}
+
+/// A keepNext chain moves together: Heading 1 and Heading 2 fit at the foot
+/// of page 1, the body's first line does not, so all three start page 2.
+#[test]
+fn a_keep_with_next_chain_moves_together() {
+    let keep = "<w:keepNext/>";
+    let body = format!("{}{}{}{}", fillers(52), p(keep, &r("", "H1")), p(keep, &r("", "H2")), p("", &r("", "Body")));
+    let v = layout(paged_docx(&body));
+    assert_eq!((page_of(&v, "H1"), page_of(&v, "H2"), page_of(&v, "Body")), (1, 1, 1));
+}
+
+/// An orphan: only the first of a two-line paragraph's lines fits, so the
+/// paragraph starts the next page.
+#[test]
+fn widow_control_prevents_an_orphaned_first_line() {
+    let body = format!("{}{}", fillers(53), p("", r#"<w:r><w:t>first</w:t><w:br/><w:t>second</w:t></w:r>"#));
+    let v = layout(paged_docx(&body));
+    assert_eq!((page_of(&v, "first"), page_of(&v, "second")), (1, 1));
+}
+
+/// keepNext cannot hold a paragraph to one that starts a new page anyway;
+/// the heading, on the last line of page 1, stays where it is.
+#[test]
+fn keep_with_next_does_not_follow_a_page_break_before() {
+    let body = format!("{}{}{}", fillers(53), p("<w:keepNext/>", &r("", "Heading")), p("<w:pageBreakBefore/>", &r("", "Next")));
+    let v = layout(paged_docx(&body));
+    assert_eq!((page_of(&v, "Heading"), page_of(&v, "Next")), (0, 1));
 }

@@ -1192,6 +1192,45 @@ fn shift_page_body(page: &mut PageLayout, dy: f64) {
 /// Spelled as `page_height - top - bottom`, in that order: the arithmetic is
 /// pinned by the byte-identity oracle and f64 addition is not associative, so
 /// do not regroup it (for example as `page_height - (top + bottom)`).
+/// The height a keepNext paragraph at `from` must find room for after
+/// itself on its page (§17.3.1.15): each following keepNext paragraph
+/// whole, then the first line, or first table row, of the block that ends
+/// the chain, with the gaps between them. A paragraph that starts on a new
+/// page (pageBreakBefore) ends the chain without joining it: Word cannot keep
+/// with it, and does not try.
+///
+/// DEVIATION, accepted: a splittable multi-line first table row is reserved
+/// whole, not its first line, which errs toward keeping a heading with its
+/// table; a table's own keepNext rows are not read.
+fn keep_next_chain_height(caches: &[BlockCache], from: usize) -> f64 {
+    let line_h = |pc: &ParagraphCache, l: &crate::wml::linebreak::LayoutLine| {
+        pc.layout.line_height(l.max_font_pt, l.max_ascent + l.max_descent, l.max_image_height)
+    };
+    let Some(BlockCache::Paragraph(first)) = caches.get(from) else { return 0.0 };
+    let mut prev: &ParagraphCache = first;
+    let mut total = 0.0;
+    for next in &caches[from + 1..] {
+        match next {
+            BlockCache::Paragraph(nc) => {
+                if nc.layout.page_break_before {
+                    return total;
+                }
+                let gap = paragraph_gap(
+                    Some((prev.layout.style_id.as_deref(), prev.layout.contextual_spacing, prev.layout.space_after_px)),
+                    &nc.layout,
+                );
+                if !nc.layout.keep_next {
+                    return total + gap + nc.lines.first().map_or(0.0, |l| line_h(nc, l));
+                }
+                total += gap + nc.lines.iter().map(|l| line_h(nc, l)).sum::<f64>();
+                prev = nc;
+            }
+            BlockCache::Table(tc) => return total + tc.rows.first().map_or(0.0, |r| r.height_px),
+        }
+    }
+    total
+}
+
 fn effective_content_height(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
                            section_page_idx: usize) -> f64 {
     geo.height_px
@@ -4494,29 +4533,11 @@ impl Viewer {
                             let need_break = if cache.layout.keep_lines && y_in_page + para_height > content_height {
                                 true
                             } else if cache.layout.keep_next {
-                                let next_first_line_h = block_caches.get(block_idx + 1).and_then(|next| match next {
-                                    BlockCache::Paragraph(nc) =>
-                                        nc.lines.first().map(|l| nc.layout.line_height(l.max_font_pt, l.max_ascent + l.max_descent, l.max_image_height)),
-                                    // §17.3.1.15: keepNext also binds the paragraph to the
-                                    // FIRST row of a following table. Reserve that (non-
-                                    // splittable) row's height so a keepNext heading breaks
-                                    // to the next page WITH its table's first row instead of
-                                    // orphaning at the page bottom. Empty table -> no rows ->
-                                    // None -> 0.0 reserve (behaviour-identical to pre-fix).
-                                    //
-                                    // DEVIATIONS (accepted, non-looping, follow-on-tracked):
-                                    // (i) For a SPLITTABLE multi-line first row this reserves
-                                    //     the WHOLE row height, not the spec-literal first
-                                    //     LINE; it can push the heading one page earlier than
-                                    //     Word. Errs toward keeping heading+table together.
-                                    // (ii) A cantSplit first row TALLER than a full page
-                                    //     leaves the heading on a lonely page (the row then
-                                    //     whole-pushes again at its own break test); this is
-                                    //     an unsolvable pathology, not a loop (the
-                                    //     `!current.is_empty()` guard below holds).
-                                    BlockCache::Table(tc) => tc.rows.first().map(|r| r.height_px),
-                                }).unwrap_or(0.0);
-                                y_in_page + para_height + next_first_line_h > content_height
+                                // The paragraph and the rest of its chain must
+                                // share this page. A chain taller than a page
+                                // cannot, and Word lets it break.
+                                let together = para_height + keep_next_chain_height(&block_caches, block_idx);
+                                y_in_page + together > content_height && together <= content_height
                             } else {
                                 false
                             };
@@ -4981,17 +5002,25 @@ impl Viewer {
                             } else {
                             let mut should_break = y_in_page + line_height > content_height && !current.is_empty();
 
-                            if !should_break && cache.layout.widow_control && cache.lines.len() > 2 {
-                                let remaining = cache.lines.len() - line_idx;
-                                if remaining == 2 {
-                                    let next_lh = cache.layout.line_height(
-                                        cache.lines[line_idx + 1].max_font_pt,
-                                        cache.lines[line_idx + 1].max_ascent + cache.lines[line_idx + 1].max_descent,
-                                        cache.lines[line_idx + 1].max_image_height,
-                                    );
-                                    if y_in_page + line_height + next_lh > content_height {
+                            // §17.3.1.44 widowControl: no line of the paragraph
+                            // alone on a page, first (an orphan) or last (a widow).
+                            if !should_break && cache.layout.widow_control {
+                                let n = cache.lines.len();
+                                let lh = |i: usize| {
+                                    let l = &cache.lines[i];
+                                    cache.layout.line_height(l.max_font_pt, l.max_ascent + l.max_descent, l.max_image_height)
+                                };
+                                let fit_through = |last: usize| y_in_page + (line_idx..=last).map(lh).sum::<f64>() <= content_height;
+                                if line_idx == 0 && n >= 2 && !current.is_empty() {
+                                    // Only the first line would fit here; or, in a
+                                    // three-line paragraph, moving the last line
+                                    // would strand the first: the whole paragraph
+                                    // starts the next page.
+                                    if !fit_through(1) || (n == 3 && !fit_through(2)) {
                                         should_break = true;
                                     }
+                                } else if n > 2 && n - line_idx == 2 && !fit_through(line_idx + 1) {
+                                    should_break = true;
                                 }
                             }
 
