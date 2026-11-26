@@ -791,6 +791,9 @@ pub(crate) struct WmlRenderer {
     /// common case, incl. compat-less docs) → Word DOES apply the first
     /// paragraph's before-spacing at a page top. Default false (= apply).
     suppress_top_spacing: bool,
+    /// `noColumnBalance` compatibility setting: never balance columns before
+    /// a continuous section break.
+    no_column_balance: bool,
     /// Numbering level definitions keyed by `(num_id, ilvl)`. Built from
     /// `word/numbering.xml` during `load_docx` by resolving the chain:
     /// `NumberingInstance.num_id` → `abstract_num_id` → `Level[ilvl]`.
@@ -1072,6 +1075,11 @@ fn seal_page(scope: &FloatScope,
 /// on `&self` would borrow the whole cursor.
 fn effective_margin_top(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
                         section_page_idx: usize) -> f64 {
+    // §17.6.11: a negative top margin is measured from the page edge whatever
+    // the header holds, so the text may run under it.
+    if geo.margin_top_px < 0.0 {
+        return -geo.margin_top_px;
+    }
     let header_height = laid_out_hf.header_for_page(section_page_idx)
         .map_or(0.0, |h| h.total_height);
     let header_gap = geo.margin_top_px - geo.header_margin_px;
@@ -1079,6 +1087,24 @@ fn effective_margin_top(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
         geo.header_margin_px + header_height
     } else {
         geo.margin_top_px
+    }
+}
+
+/// The bottom of a page's body band, measured up from the page edge:
+/// `effective_margin_top`'s rule at the bottom edge (the footer pushes the
+/// band up when it is taller than its gap; a negative margin ignores it).
+fn effective_margin_bottom(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
+                           section_page_idx: usize) -> f64 {
+    if geo.margin_bottom_px < 0.0 {
+        return -geo.margin_bottom_px;
+    }
+    let footer_height = laid_out_hf.footer_for_page(section_page_idx)
+        .map_or(0.0, |f| f.total_height);
+    let footer_gap = geo.margin_bottom_px - geo.footer_margin_px;
+    if footer_height > footer_gap {
+        geo.footer_margin_px + footer_height
+    } else {
+        geo.margin_bottom_px
     }
 }
 
@@ -1154,28 +1180,14 @@ fn shift_page_body(page: &mut PageLayout, dy: f64) {
 /// The height of a page's body band — `effective_margin_top`'s rule applied at
 /// both edges, subtracted from the page height. Same purity contract.
 ///
-/// NOT `page_height - effective_margin_top(..) - effective_bottom`: it is
-/// spelled as one subtraction chain because the arithmetic is pinned by the
-/// byte-identity oracle and f64 addition is not associative.
+/// Spelled as `page_height - top - bottom`, in that order: the arithmetic is
+/// pinned by the byte-identity oracle and f64 addition is not associative, so
+/// do not regroup it (for example as `page_height - (top + bottom)`).
 fn effective_content_height(laid_out_hf: &LaidOutHdrFtr, geo: &PageGeometry,
                            section_page_idx: usize) -> f64 {
-    let header_height = laid_out_hf.header_for_page(section_page_idx)
-        .map_or(0.0, |h| h.total_height);
-    let footer_height = laid_out_hf.footer_for_page(section_page_idx)
-        .map_or(0.0, |f| f.total_height);
-    let header_gap = geo.margin_top_px - geo.header_margin_px;
-    let effective_top = if header_height > header_gap {
-        geo.header_margin_px + header_height
-    } else {
-        geo.margin_top_px
-    };
-    let footer_gap = geo.margin_bottom_px - geo.footer_margin_px;
-    let effective_bottom = if footer_height > footer_gap {
-        geo.footer_margin_px + footer_height
-    } else {
-        geo.margin_bottom_px
-    };
-    geo.height_px - effective_top - effective_bottom
+    geo.height_px
+        - effective_margin_top(laid_out_hf, geo, section_page_idx)
+        - effective_margin_bottom(laid_out_hf, geo, section_page_idx)
 }
 
 /// Emit any image deferred from an earlier page at the top of the *current*
@@ -2232,6 +2244,7 @@ impl Viewer {
         // default; the prior unconditional page-top suppression dropped e.g. a
         // Title's 12pt before-spacing at the document top).
         let suppress_top_spacing = setting("suppressTopSpacing");
+        let no_column_balance = setting("noColumnBalance");
         self.pages.borrow_mut().clear();
         self.layout_truncated_at.set(None); // fresh doc/run starts untruncated
         self.para_meta.borrow_mut().clear(); // drop stale selection metadata
@@ -2515,6 +2528,7 @@ impl Viewer {
             ul_trail_space,
             reserve_trailing_blanks,
             suppress_top_spacing,
+            no_column_balance,
             numbering_levels,
             style_ctx,
             default_ppr,
@@ -3294,11 +3308,7 @@ impl Viewer {
                     // that is `top + (h - top - bottom)`, and f64 addition is
                     // not associative, so it is not the pinned `h - bottom`.
                     let y_start = effective_margin_top(laid_out_hf, geo, *section_page_idx);
-                    let ftr_h = laid_out_hf.footer_for_page(*section_page_idx)
-                        .map_or(0.0, |f| f.total_height);
-                    let ftr_gap = geo.margin_bottom_px - geo.footer_margin_px;
-                    let eff_bottom = if ftr_h > ftr_gap { geo.footer_margin_px + ftr_h } else { geo.margin_bottom_px };
-                    let y_end = geo.height_px - eff_bottom;
+                    let y_end = geo.height_px - effective_margin_bottom(laid_out_hf, geo, *section_page_idx);
                     for i in 0..geo.columns.len() - 1 {
                         let col = &geo.columns[i];
                         let next_col = &geo.columns[i + 1];
@@ -5431,12 +5441,18 @@ impl Viewer {
             }
 
             // Last-page column balancing (§17.6.3).
-            // If the final page has unused columns, reflow its blocks with a
-            // reduced column height so all columns have approximately equal content.
-            // Balancing is skipped for single-column sections and when all columns
-            // were used (content fills the page completely).
+            // Word balances a section's columns only where the next section
+            // starts on the same page (a continuous break, §17.6.22); before a
+            // page break or at the end of the document the columns fill one
+            // after another. Never under the `noColumnBalance` compatibility
+            // setting (§17.15.3.x). If the final page has unused columns,
+            // reflow its blocks with a reduced column height so all columns
+            // have approximately equal content.
             let num_cols = geo.columns.len();
-            if num_cols > 1 && col_idx < num_cols - 1
+            let balance = w.sections.get(sec_idx + 1)
+                .is_some_and(|n| matches!(n.break_type, SectionBreakType::Continuous))
+                && !w.no_column_balance;
+            if balance && num_cols > 1 && col_idx < num_cols - 1
                 && last_page_start_block < block_caches.len()
             {
                 let total_h: f64 = block_caches[last_page_start_block..]

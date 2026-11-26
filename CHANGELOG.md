@@ -55,6 +55,13 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: columns are balanced only where Word balances them, before a
+  continuous section break; at the end of a document or before a page break
+  they fill one after another, and the "don't balance columns" setting is
+  read. Columns of custom widths no longer get a half-inch gap they did not
+  ask for.
+- Documents: the binding gutter margin is applied, and a negative top or
+  bottom margin lets the text run under the header or footer as in Word.
 - Documents: hanging indents (references, glossaries, definitions) line up
   as in Word: a hanging indent replaces a style's first-line indent instead
   of adding to it, a tab after the term goes to the hanging indent, and

@@ -10622,6 +10622,56 @@ fn indents_and_tab_stops_follow_word() {
     assert!((x - 48.0).abs() < 0.5, "first automatic stop at 0.5in from the margin: {x}");
 }
 
+/// Page and column geometry: columns balance only before a continuous
+/// section break (§17.6.22); an explicit column's space defaults to 0; the
+/// gutter widens the binding margin; a negative top margin is measured from
+/// the page edge.
+#[test]
+fn page_and_column_geometry() {
+    let sect = |cols: &str, mar: &str| format!(
+        r#"<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar {mar} w:header="720" w:footer="720"/>{cols}</w:sectPr>"#
+    );
+    let mar = r#"w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:gutter="0""#;
+    let firsts = |v: &Viewer| -> Vec<(f64, f64)> {
+        body_lines(v).iter().map(|l| (l.segments[0].x_start, l.baseline_y)).collect()
+    };
+    let two = r#"<w:cols w:num="2" w:space="720"/>"#;
+    let paras = (0..4).map(|i| para(&format!("Line {i}"))).collect::<String>();
+
+    // At the end of the document: the columns fill in order, no balancing.
+    let docx = unzip_replace(numbering_docx("", "", &paras), "word/document.xml", "</w:sectPr>", &format!("{two}</w:sectPr>"));
+    let xs: Vec<f64> = firsts(&layout(docx)).iter().map(|p| p.0).collect();
+    assert!(xs.iter().all(|x| (x - xs[0]).abs() < 0.5), "all in the first column: {xs:?}");
+
+    // Before a continuous section: balanced across both columns.
+    let body = format!(
+        r#"{paras}<w:p><w:pPr>{}</w:pPr></w:p>{}"#,
+        sect(two, mar),
+        para("After"),
+    );
+    // The section after it starts continuously (its own sectPr says so).
+    let docx = unzip_replace(numbering_docx("", "", &body), "word/document.xml", "<w:sectPr>\n  <w:pgSz", r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz"#);
+    let xs: Vec<f64> = firsts(&layout(docx)).iter().map(|p| p.0).collect();
+    assert!(xs.iter().any(|x| *x > 300.0), "some lines in the second column: {xs:?}");
+
+    // Explicit columns with no space: the second starts where the first ends.
+    let explicit = r#"<w:cols w:equalWidth="0"><w:col w:w="3000"/><w:col w:w="3000"/></w:cols>"#;
+    let docx = unzip_replace(numbering_docx("", "", &para("One")), "word/document.xml", "</w:sectPr>", &format!("{explicit}</w:sectPr>"));
+    let v = layout(docx);
+    let wml = v.wml().expect("wml");
+    let cols = &wml.sections[0].geometry.columns;
+    assert!((cols[1].x_offset_px - (96.0 + 200.0)).abs() < 0.5, "3000 twips = 200 px, no gap: {}", cols[1].x_offset_px);
+
+    // A 0.5" gutter moves the text 48 px right.
+    let gutter = unzip_replace(numbering_docx("", "", &para("G")), "word/document.xml", r#"w:gutter="0""#, r#"w:gutter="720""#);
+    assert!((firsts(&layout(gutter))[0].0 - 144.0).abs() < 0.5);
+
+    // A negative top margin starts the text that far down, under a tall header.
+    let neg = unzip_replace(numbering_docx("", "", &para("N")), "word/document.xml", r#"w:top="1440""#, r#"w:top="-720""#);
+    let y = firsts(&layout(neg))[0].1;
+    assert!(y > 48.0 && y < 80.0, "body starts 0.5in from the top edge: {y}");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

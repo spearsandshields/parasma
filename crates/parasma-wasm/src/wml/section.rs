@@ -145,9 +145,17 @@ impl PageGeometry {
         let bottom = margins
             .and_then(|m| parse_twips_signed(&m.bottom))
             .unwrap_or(DEFAULT_MARGIN_TWIPS);
-        let left = margins
+        let mut left = margins
             .and_then(|m| parse_twips(&m.left))
             .unwrap_or(DEFAULT_MARGIN_TWIPS);
+        // §17.6.11 gutter: extra binding space added to the left margin, or to
+        // the right one when `w:rtlGutter` is set (§17.6.16). Declared: the
+        // settings `w:gutterAtTop` placement is not read.
+        let gutter = margins.and_then(|m| parse_twips(&m.gutter)).unwrap_or(0);
+        let rtl_gutter = sect_pr.rtl_gutter.as_deref()
+            .is_some_and(|g| g.value.as_deref().is_none_or(|v| matches!(v, "1" | "true" | "on")));
+        let mut right = right;
+        if rtl_gutter { right += gutter } else { left += gutter }
         let header = margins
             .and_then(|m| parse_twips(&m.header))
             .unwrap_or(DEFAULT_HEADER_MARGIN_TWIPS);
@@ -349,10 +357,12 @@ pub(crate) fn columns_from_sect_pr(
                 .unwrap_or(content_width_px / cols.col.len() as f64);
             result.push(ColumnDef { x_offset_px: x, width_px: w });
             if i + 1 < cols.col.len() {
+                // Annex A: `CT_Column/@space` defaults to 0, not the
+                // section's equal-width gap.
                 let gap = col.space.as_deref()
                     .and_then(|s| s.parse::<i64>().ok())
                     .map(twips_to_px)
-                    .unwrap_or(default_gutter_px);
+                    .unwrap_or(0.0);
                 x += w + gap;
             }
         }
