@@ -113,6 +113,19 @@ are held stable regardless.
   colour, if they have one.
 - Documents: the faint grey rectangle around the text area is gone; Word
   does not show one.
+- Charts (all formats): horizontal bar charts are drawn horizontally;
+  stacked and 100 % stacked bar, column, line and area charts stack; bars
+  have the widths and spacing the chart sets; a legend appears only when the
+  chart has one, where it says (bottom, top, left, right) and without
+  deleted entries; axes the chart hides are hidden, and fixed axis ranges,
+  steps, reversed order and logarithmic scales are honoured; line markers
+  follow the chart (including none), smoothed lines are curves, and lines
+  use their own colour and width; blank cells leave gaps instead of
+  shifting later values; categories given as numbers (such as years), or
+  not given, are labelled; unnamed series are named "Series1", "Series2" as
+  in Office and keep their colours; 3-D bar, line and area charts are drawn
+  flat instead of not at all; doughnuts with several series draw every
+  ring.
 - Colours: lighter and darker theme colour variants made with a tint or
   shade are mixed with white or black as the standard defines, so the banded
   rows of PowerPoint's table styles and other tinted fills are pale, not
