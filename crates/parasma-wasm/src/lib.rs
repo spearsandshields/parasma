@@ -4035,13 +4035,12 @@ impl Viewer {
                     // Flatten every cell once (content-relative line protos +
                     // structural metadata). `cell_protos[i]` is the flat line list
                     // for `row.cells[i]`; vMerge-away cells have an empty list.
-                    let mut cell_x = cell_x_start;
                     let mut cell_protos: Vec<Vec<CellLineProto>> = Vec::with_capacity(row.cells.len());
                     let mut cell_xs: Vec<f64> = Vec::with_capacity(row.cells.len());
                     for cell in &row.cells {
+                        let cell_x = cell_x_start + cell.x_px;
                         cell_xs.push(cell_x);
                         cell_protos.push(flatten_cell_lines(cell, cell_x));
-                        cell_x += cell.width_px;
                     }
 
                     // Total row content extent (max cell content bottom) and how
@@ -5258,10 +5257,11 @@ impl Viewer {
                                 STJcTable::End | STJcTable::Right => col_cw - table_width,
                                 _ => table.indent_px,
                             };
-                            let mut cell_x = col_ml + table_offset;
+                            let cell_x_start = col_ml + table_offset;
 
 
                             for cell in &row.cells {
+                                let cell_x = cell_x_start + cell.x_px;
                                 let mut cell_lines = Vec::new();
                                 let cell_vmar = cell.mar_top + cell.mar_bottom;
                                 let v_offset = match cell.v_align {
@@ -5344,7 +5344,6 @@ impl Viewer {
                                     border_right: cell.border_right.clone(),
                                 diagonals: cell.diagonals.clone(),
                                 });
-                                cell_x += cell.width_px;
                             }
 
                             current.push(PageElement::TableRow(PagedTableRow {
@@ -5515,8 +5514,8 @@ impl Viewer {
                                     let cell_x_start = col_ml + table_offset;
                                     // Rebuild paged cells at the new column position.
                                     let mut paged_cells = Vec::new();
-                                    let mut cell_x = cell_x_start;
                                     for cell in &row.cells {
+                                        let cell_x = cell_x_start + cell.x_px;
                                         // The shared cell walk, at the cell's content top.
                                         // Declared: vertical alignment is not applied here.
                                         let cell_lines: Vec<PagedLine> = flatten_cell_lines(cell, cell_x).into_iter()
@@ -5533,7 +5532,6 @@ impl Viewer {
                                             border_top: cell.border_top.clone(), border_bottom: cell.border_bottom.clone(),
                                             border_left: cell.border_left.clone(), border_right: cell.border_right.clone(), diagonals: cell.diagonals.clone(),
                                         });
-                                        cell_x += cell.width_px;
                                     }
                                     current.push(PageElement::TableRow(PagedTableRow {
                                         cells: paged_cells, y_top: row_y_top, height_px: row.height_px,

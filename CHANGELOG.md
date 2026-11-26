@@ -272,6 +272,9 @@ are held stable regardless.
   right (or top and bottom) padding wrap and size their rows as Word does.
   Table widths written as "50%" or with a unit, or with no unit type, are
   honoured.
+- Tables: rows that leave leading grid columns empty (forms, tables
+  converted from PDF or HTML, tables with deleted cells) line up with the
+  rows around them instead of sliding to the left edge.
 
 ### Changed
 

@@ -11865,3 +11865,24 @@ fn an_untyped_or_unit_table_width_is_a_length() {
     let (inches, _) = table_width_px(r#"<w:tblW w:w="1.5in" w:type="dxa"/>"#);
     assert_px(inches, 144.0, "1.5in");
 }
+
+// ── Rows that skip grid columns (§17.4.15 gridBefore, §17.4.14 gridAfter) ───
+
+/// A row that skips a leading grid column starts under the second column
+/// of the rows around it, and its cells take that column's widths.
+#[test]
+fn a_row_with_grid_before_starts_at_its_grid_column() {
+    let cell = |w: u32, text: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{}</w:tc>"#, p("", &r("", text)));
+    let body = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="2000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{a}{b}{c}</w:tr><w:tr><w:trPr><w:gridBefore w:val="1"/><w:wBefore w:w="1000" w:type="dxa"/></w:trPr>{b}{c}</w:tr><w:tr><w:trPr><w:gridAfter w:val="1"/></w:trPr>{a}{b}</w:tr><w:tr><w:trPr><w:gridBefore w:val="7"/></w:trPr>{a}{b}{c}</w:tr></w:tbl><w:p/>"#,
+        a = cell(1000, "a"), b = cell(2000, "b"), c = cell(3000, "c"),
+    );
+    let v = layout(numbering_docx("", "", &body));
+    let rows = table_rows_of(&v);
+    let geometry = |r: usize| rows[r].cells.iter().map(|c| ((c.x - rows[0].cells[0].x).round(), c.width_px.round())).collect::<Vec<_>>();
+    let px = |twips: f64| (twips * PX_PER_TWIP).round();
+    assert_eq!(geometry(0), [(0.0, px(1000.0)), (px(1000.0), px(2000.0)), (px(3000.0), px(3000.0))]);
+    assert_eq!(geometry(1), [(px(1000.0), px(2000.0)), (px(3000.0), px(3000.0))], "one grid column skipped");
+    assert_eq!(geometry(2), [(0.0, px(1000.0)), (px(1000.0), px(2000.0))], "a trailing column left empty");
+    assert_eq!(geometry(3), geometry(0), "a gridBefore wider than the grid is ignored");
+}

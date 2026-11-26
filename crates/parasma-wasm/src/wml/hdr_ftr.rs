@@ -308,9 +308,9 @@ fn position_hf_table(
 
     for row in &table.rows {
         let row_y_top = *y;
-        let mut cell_x = cell_x_start;
         let mut paged_cells = Vec::with_capacity(row.cells.len());
         for cell in &row.cells {
+            let cell_x = cell_x_start + cell.x_px;
             let mut cell_lines = Vec::new();
             let cell_vmar = cell.mar_top + cell.mar_bottom;
             let v_offset = match cell.v_align {
@@ -344,7 +344,6 @@ fn position_hf_table(
                 border_right: cell.border_right.clone(),
                                 diagonals: cell.diagonals.clone(),
             });
-            cell_x += cell.width_px;
         }
         rows.push(PagedTableRow {
             cells: paged_cells,

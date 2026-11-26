@@ -60,6 +60,8 @@ pub(crate) struct TableCellCache {
     pub(crate) blocks: Vec<CellBlock>,
     pub(crate) col_start: usize,
     pub(crate) col_span: usize,
+    /// The cell's left edge, from the table's: the grid columns before it.
+    pub(crate) x_px: f64,
     pub(crate) width_px: f64,
     pub(crate) fill_color: Option<String>,
     pub(crate) v_align: CellVAlign,
@@ -239,7 +241,7 @@ pub(crate) fn flatten_cell_lines(cell: &TableCellCache, cell_x: f64) -> Vec<Cell
                     let nrow_top = cur;
                     for ncell in &nrow.cells {
                         if ncell.v_merged_away { continue; }
-                        let ncell_x = nested_x + nested.col_widths_px[..ncell.col_start].iter().sum::<f64>();
+                        let ncell_x = nested_x + ncell.x_px;
                         let mut ny = nrow_top + ncell.mar_top;
                         for nb in &ncell.blocks {
                             if let CellBlock::Paragraph(npc) = nb {
@@ -814,7 +816,16 @@ pub(crate) fn layout_table(
     for (row_idx, row) in table_rows.iter().enumerate() {
         let mut cells = Vec::new();
         let mut row_direct = Vec::new();
-        let mut col_idx: usize = 0;
+        // §17.4.15 gridBefore: the grid columns the row leaves empty before
+        // its first cell. A count that leaves no column for the cells is
+        // ignored. The columns a row leaves empty after its last cell
+        // (§17.4.14 gridAfter) need no reading: the cells simply end early.
+        // wBefore and wAfter are not read: the grid already sizes the gap.
+        let mut col_idx: usize = row.row_properties.as_ref()
+            .and_then(|p| p.grid_before.as_ref())
+            .and_then(|g| usize::try_from(g.value).ok())
+            .filter(|skipped| *skipped < col_widths_px.len())
+            .unwrap_or(0);
         let row_cells = collect_row_cells(row);
         let num_cols = row_cells.len();
 
@@ -951,6 +962,7 @@ pub(crate) fn layout_table(
                 blocks: cell_blocks,
                 col_start: col_idx,
                 col_span,
+                x_px: col_widths_px[..col_idx].iter().sum(),
                 width_px: cell_width,
                 fill_color: if v_merged_away { None } else { fill_color },
                 v_align,
@@ -1672,6 +1684,7 @@ mod tests {
             blocks: Vec::new(),
             col_start: 0,
             col_span: 1,
+            x_px: 0.0,
             width_px: 100.0,
             fill_color: fill.map(str::to_string),
             v_align: CellVAlign::Top,
