@@ -70,6 +70,9 @@ pub(crate) struct TableCellCache {
     pub(crate) border_bottom: Option<CellBorderEdge>,
     pub(crate) border_left: Option<CellBorderEdge>,
     pub(crate) border_right: Option<CellBorderEdge>,
+    /// §17.4.74 / §17.4.75 diagonal borders, top-left to bottom-right and
+    /// top-right to bottom-left. Boxed: few cells have them.
+    pub(crate) diagonals: Option<Box<CellDiagonals>>,
     // Effective per-cell margins in px (§17.4.42 tcMar overrides the table/row
     // default §17.4.41/§17.4.43 tblCellMar). Default to the table-level value.
     pub(crate) mar_top: f64,
@@ -84,6 +87,21 @@ pub(crate) struct TableCellCache {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CellVAlign { Top, Center, Bottom }
+
+/// A cell's diagonal borders.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CellDiagonals {
+    pub(crate) down: Option<CellBorderEdge>,
+    pub(crate) up: Option<CellBorderEdge>,
+}
+
+/// A cell's own diagonal borders, if it sets any.
+fn cell_diagonals(theme: &ThemeFonts, cell: &ooxml_wml::types::TableCell) -> Option<Box<CellDiagonals>> {
+    let b = cell.properties().and_then(|p| p.tc_borders.as_ref())?;
+    let down = border_to_edge(theme, &b.tl2br);
+    let up = border_to_edge(theme, &b.tr2bl);
+    (down.is_some() || up.is_some()).then(|| Box::new(CellDiagonals { down, up }))
+}
 
 /// A table cell's float-aware layout, resolved once at cache-build time in
 /// CELL-LOCAL coordinates (origin = cell content top-left, i.e. cell.mar_left /
@@ -622,8 +640,12 @@ pub(crate) fn layout_table(
     let num_rows = table_rows.len();
 
     let mut rows = Vec::new();
+    // Which of each cell's edges its own tcBorders set: a cell border beats
+    // a table border in a conflict (§17.4.66).
+    let mut direct_edges: Vec<Vec<[bool; 4]>> = Vec::new();
     for (row_idx, row) in table_rows.iter().enumerate() {
         let mut cells = Vec::new();
+        let mut row_direct = Vec::new();
         let mut col_idx: usize = 0;
         let row_cells = collect_row_cells(row);
         let num_cols = row_cells.len();
@@ -738,7 +760,8 @@ pub(crate) fn layout_table(
                 style_overrides,
             );
             let (cell_bdr_top, cell_bdr_bottom, cell_bdr_left, cell_bdr_right) =
-                extract_cell_borders(theme_fonts, cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, col_count);
+                extract_cell_borders(theme_fonts, cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, num_cols);
+            row_direct.push(direct_cell_edges(cell));
 
             // Pre-resolve a cell-hosted wrapping float (None = fast path). Built
             // before `cell_blocks` is moved into the cache.
@@ -763,6 +786,7 @@ pub(crate) fn layout_table(
                 border_bottom: cell_bdr_bottom,
                 border_left: cell_bdr_left,
                 border_right: cell_bdr_right,
+                diagonals: if v_merged_away { None } else { cell_diagonals(theme_fonts, cell) },
                 mar_top: cmar_top,
                 mar_bottom: cmar_bottom,
                 mar_left: cmar_left,
@@ -803,7 +827,9 @@ pub(crate) fn layout_table(
             .unwrap_or(false);
 
         rows.push(TableRowCache { cells, height_px: row_height, cant_split });
+        direct_edges.push(row_direct);
     }
+    resolve_border_conflicts(&mut rows, &direct_edges);
 
     Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, cell_margin_h, cell_margin_v, indent_px })
 }
@@ -920,15 +946,30 @@ fn resolve_conditional_cell_borders(
     // Some(..) so the cell-resolution short-circuits the table default (a
     // firstRow region can thus explicitly REMOVE the header separator).
     for region in regions.iter() {
+        // Where this cell sits on the region's outline: a row region (the
+        // header and total rows, a band) spans the row; a column region spans
+        // the column.
+        use ooxml_wml::types::STTblStyleOverrideType as R;
+        let (on_top, on_bottom, on_left, on_right) = match region {
+            R::FirstCol | R::LastCol => (is_top, is_bottom, true, true),
+            _ => (true, true, is_left, is_right),
+        };
         for ov in overrides {
             if ov.r#type != *region { continue; }
-            // Region cell tcBorders → outer edges of cells in the region.
+            // Region cell tcBorders: its top, bottom, left and right draw the
+            // region's outline, its insideH and insideV the edges between the
+            // region's cells (§17.7.6).
             if let Some(ref tcp) = ov.cell_properties {
                 if let Some(ref b) = tcp.tc_borders {
-                    if let Some(v) = edge_override(theme, &b.top) { top = Some(v); }
-                    if let Some(v) = edge_override(theme, &b.bottom) { bottom = Some(v); }
-                    if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { left = Some(v); }
-                    if let Some(v) = edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end)) { right = Some(v); }
+                    let start = || edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start));
+                    let end = || edge_override(theme, &b.right).or_else(|| edge_override(theme, &b.end));
+                    let pick = |outline: bool, edge: Option<Option<CellBorderEdge>>, inside: &Option<Box<ooxml_wml::types::CTBorder>>| {
+                        if outline { edge } else { edge_override(theme, inside) }
+                    };
+                    if let Some(v) = pick(on_top, edge_override(theme, &b.top), &b.inside_h) { top = Some(v); }
+                    if let Some(v) = pick(on_bottom, edge_override(theme, &b.bottom), &b.inside_h) { bottom = Some(v); }
+                    if let Some(v) = pick(on_left, start(), &b.inside_v) { left = Some(v); }
+                    if let Some(v) = pick(on_right, end(), &b.inside_v) { right = Some(v); }
                 }
             }
             // Region tblPr tblBorders → outer edges + insideH/V for the region.
@@ -955,18 +996,9 @@ fn collect_conditional_para_properties(
     first_row: bool, last_row: bool, first_col: bool, last_col: bool, no_h_band: bool,
     overrides: &[ooxml_wml::types::TableStyleProperties],
 ) -> Vec<&ooxml_wml::types::CTPPrGeneral> {
-    use ooxml_wml::types::STTblStyleOverrideType::*;
-
-    let mut regions: Vec<ooxml_wml::types::STTblStyleOverrideType> = Vec::new();
-    if !no_h_band {
-        let band_row = if first_row { row_idx.saturating_sub(1) } else { row_idx };
-        if band_row % 2 == 0 { regions.push(Band1Horz); }
-        else { regions.push(Band2Horz); }
-    }
-    if first_col && col_idx == 0 { regions.push(FirstCol); }
-    if last_col && col_idx + 1 >= num_cols { regions.push(LastCol); }
-    if first_row && row_idx == 0 { regions.push(FirstRow); }
-    if last_row && row_idx + 1 >= num_rows { regions.push(LastRow); }
+    let regions = conditional_regions(
+        row_idx, col_idx, num_rows, num_cols,
+        first_row, last_row, first_col, last_col, no_h_band);
 
     let mut result = Vec::new();
     for region in regions.iter().rev() {
@@ -988,18 +1020,9 @@ fn collect_conditional_run_properties<'a>(
     overrides: &'a [ooxml_wml::types::TableStyleProperties],
     table_style_rpr: Option<&'a ooxml_wml::types::RunProperties>,
 ) -> Vec<&'a ooxml_wml::types::RunProperties> {
-    use ooxml_wml::types::STTblStyleOverrideType::*;
-
-    let mut regions: Vec<ooxml_wml::types::STTblStyleOverrideType> = Vec::new();
-    if !no_h_band {
-        let band_row = if first_row { row_idx.saturating_sub(1) } else { row_idx };
-        if band_row % 2 == 0 { regions.push(Band1Horz); }
-        else { regions.push(Band2Horz); }
-    }
-    if first_col && col_idx == 0 { regions.push(FirstCol); }
-    if last_col && col_idx + 1 >= num_cols { regions.push(LastCol); }
-    if first_row && row_idx == 0 { regions.push(FirstRow); }
-    if last_row && row_idx + 1 >= num_rows { regions.push(LastRow); }
+    let regions = conditional_regions(
+        row_idx, col_idx, num_rows, num_cols,
+        first_row, last_row, first_col, last_col, no_h_band);
 
     let mut result = Vec::new();
     for region in regions.iter().rev() {
@@ -1095,6 +1118,97 @@ struct TableBorderEdges {
 // on a PRESENT element — the caller decides presence.
 fn border_value(theme: &ThemeFonts, b: &ooxml_wml::types::CTBorder) -> Option<CellBorderEdge> {
     crate::wml::border::border_element_line(b, theme)
+}
+
+/// Which of a cell's edges (top, bottom, left, right) its own tcBorders set.
+fn direct_cell_edges(cell: &ooxml_wml::types::TableCell) -> [bool; 4] {
+    let Some(b) = cell.properties().and_then(|p| p.tc_borders.as_ref()) else { return [false; 4] };
+    [
+        b.top.is_some(),
+        b.bottom.is_some(),
+        b.left.is_some() || b.start.is_some(),
+        b.right.is_some() || b.end.is_some(),
+    ]
+}
+
+/// The border that shows where two cells' borders meet, as Office resolves
+/// it ([MS-OI29500] §17.4.66; cell spacing is not modelled, so every shared
+/// edge conflicts): a missing border yields to the other; a cell's own
+/// border beats a table border; then the heavier border (width in eighths
+/// of a point times its style's border number; dotted and dashed weigh 1);
+/// then the style earlier on the precedence list; then the darker colour;
+/// then the first in reading order (`a`). DEVIATION, declared: `nil` and
+/// `none` both yield to the other border (Office shows nothing for `nil`).
+fn stronger_border(a: Option<&CellBorderEdge>, a_direct: bool, b: Option<&CellBorderEdge>, b_direct: bool) -> Option<CellBorderEdge> {
+    use crate::engine::border::LineStyle as S;
+    let (a, b) = match (a, b) {
+        (None, other) | (other, None) => return other.cloned(),
+        (Some(a), Some(b)) => (a, b),
+    };
+    if a_direct != b_direct {
+        return Some(if a_direct { a } else { b }.clone());
+    }
+    let weight = |e: &CellBorderEdge| match e.style {
+        S::Dotted | S::Dashed => 1.0,
+        // px → eighths of a point is ×6.
+        style => (e.width_px * 6.0).round() * style.number(),
+    };
+    let rgb = |e: &CellBorderEdge| {
+        let h = e.color.trim_start_matches('#');
+        let ch = |i: usize| h.get(i..i + 2).and_then(|x| u8::from_str_radix(x, 16).ok()).unwrap_or(0) as i64;
+        (ch(0), ch(2), ch(4))
+    };
+    let brightness = |e: &CellBorderEdge| {
+        let (r, g, b) = rgb(e);
+        (r + b + 2 * g, b + 2 * g, g)
+    };
+    let a_wins = weight(a).total_cmp(&weight(b))
+        .then_with(|| (b.style as u8).cmp(&(a.style as u8)))
+        .then_with(|| brightness(b).cmp(&brightness(a)))
+        .is_ge();
+    Some(if a_wins { a } else { b }.clone())
+}
+
+/// Resolve every shared cell edge to the one border that shows
+/// (`stronger_border`): between neighbours in a row, and between a cell and
+/// the cell below it when both cover the same grid columns. Both cells keep
+/// the winner, so a row that starts a new page still draws its top. Declared:
+/// cells whose grid columns only partly overlap keep their own edges, and
+/// merged-away cells are not compared.
+fn resolve_border_conflicts(rows: &mut [TableRowCache], direct: &[Vec<[bool; 4]>]) {
+    const TOP: usize = 0;
+    const BOTTOM: usize = 1;
+    const LEFT: usize = 2;
+    const RIGHT: usize = 3;
+    for (r, row) in rows.iter_mut().enumerate() {
+        for i in 1..row.cells.len() {
+            let (l, rt) = (&row.cells[i - 1], &row.cells[i]);
+            if l.v_merged_away || rt.v_merged_away { continue; }
+            let won = stronger_border(
+                l.border_right.as_ref(), direct[r][i - 1][RIGHT],
+                rt.border_left.as_ref(), direct[r][i][LEFT],
+            );
+            row.cells[i - 1].border_right = won.clone();
+            row.cells[i].border_left = won;
+        }
+    }
+    for r in 1..rows.len() {
+        let (upper, lower) = rows.split_at_mut(r);
+        let upper = &mut upper[r - 1];
+        let lower = &mut lower[0];
+        for li in 0..lower.cells.len() {
+            let l = &lower.cells[li];
+            if l.v_merged_away { continue; }
+            let Some(ui) = upper.cells.iter().position(|u| u.col_start == l.col_start && u.col_span == l.col_span) else { continue };
+            if upper.cells[ui].v_merged_away { continue; }
+            let won = stronger_border(
+                upper.cells[ui].border_bottom.as_ref(), direct[r - 1][ui][BOTTOM],
+                l.border_top.as_ref(), direct[r][li][TOP],
+            );
+            upper.cells[ui].border_bottom = won.clone();
+            lower.cells[li].border_top = won;
+        }
+    }
 }
 
 // Two-state (absent OR nil BOTH collapse to None). Correct for TABLE-level
@@ -1372,6 +1486,7 @@ mod tests {
             border_bottom: Some(border.clone()),
             border_left: Some(border.clone()),
             border_right: Some(border.clone()),
+            diagonals: None,
             mar_top: 0.0,
             mar_bottom: 0.0,
             mar_left: 0.0,

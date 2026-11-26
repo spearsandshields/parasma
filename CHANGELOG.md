@@ -247,6 +247,11 @@ are held stable regardless.
   text. They draw in their own line style: double and triple rules,
   thick-thin frames, dotted, dashed and dot-dash lines, waves and 3-D
   borders. Each side of a page border keeps its own distance from the page.
+- Tables: rows with merged cells keep the table's outer frame. Where two
+  cells' borders meet, the one Word shows wins (a cell's own border over the
+  table's, then the heavier, then the darker), instead of whichever was
+  painted last. Built-in table styles no longer rule lines between header
+  cells that Word leaves open, and diagonal cell borders are drawn.
 
 ### Changed
 

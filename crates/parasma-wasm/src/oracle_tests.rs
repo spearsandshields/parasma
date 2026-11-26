@@ -719,10 +719,11 @@ fn geometry_dump(viewer: &Viewer) -> String {
                     //    declared-unread aggregates (the painter reads the
                     //    per-cell resolved edges; see #[allow(dead_code)] at
                     //    the struct).
-                    //  - cell `fill_color`/`v_merged_away`/`border_*`: pinned
-                    //    by targeted table tests (row-split border repetition,
-                    //    shading fixtures), not by a stream — a NEW field
-                    //    still lands here for a stream decision.
+                    //  - cell `fill_color`/`v_merged_away`/`border_*`/`diagonals`:
+                    //    pinned by targeted table tests (row-split border
+                    //    repetition, shading fixtures, the table-border tests),
+                    //    not by a stream — a NEW field still lands here for a
+                    //    stream decision.
                     let PagedTableRow {
                         cells,
                         y_top,
@@ -744,6 +745,7 @@ fn geometry_dump(viewer: &Viewer) -> String {
                             border_bottom: _,
                             border_left: _,
                             border_right: _,
+                            diagonals: _,
                         } = cell;
                         out.push_str(&format!("C x{x:.2} w{width_px:.2}\n"));
                         for l in lines {
@@ -11578,4 +11580,73 @@ fn continuous_columns_start_below_the_band_above_them() {
     let title_y = lines[0].1;
     let col2_top = lines.iter().filter(|(x, _)| *x > 400.0).map(|(_, y)| *y).fold(f64::INFINITY, f64::min);
     assert!(col2_top > title_y, "column 2 starts at {col2_top}, below the title at {title_y}");
+}
+
+// ── Table borders: outer frame, conflicts, regions, diagonals (§17.4) ───────
+
+/// A table from rows of raw `<w:tc>` XML, on a two-column grid, with
+/// `tbl_pr` inside its tblPr.
+fn bordered_table_docx(tbl_pr: &str, rows: &[&str], styles: &str) -> Vec<u8> {
+    let rows: String = rows.iter().map(|r| format!("<w:tr>{r}</w:tr>")).collect();
+    let body = format!(
+        r#"<w:tbl><w:tblPr>{tbl_pr}<w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#
+    );
+    numbering_docx(styles, "", &body)
+}
+
+fn bcell(props: &str, text: &str) -> String {
+    format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{props}</w:tcPr>{}</w:tc>"#, p("", &r("", text)))
+}
+
+const GRID: &str = r#"<w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="thick" w:sz="24" w:color="FF0000"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="dotted" w:sz="4"/></w:tblBorders>"#;
+
+fn table_rows_of(v: &Viewer) -> Vec<PagedTableRow> {
+    v.pages.borrow()[0].elements.iter().filter_map(|e| match e {
+        PageElement::TableRow(r) => Some(r.clone()),
+        _ => None,
+    }).collect()
+}
+
+/// The last cell of a row whose cell spans both grid columns still takes
+/// the table's right border, not insideV.
+#[test]
+fn a_spanning_cell_keeps_the_table_frame() {
+    let span = bcell(r#"<w:gridSpan w:val="2"/>"#, "wide").replace(r#"w:w="2000" w:type="dxa"/>"#, r#"w:w="4000" w:type="dxa"/>"#);
+    let v = layout(bordered_table_docx(GRID, &[&format!("{}{}", bcell("", "a"), bcell("", "b")), &span], ""));
+    let rows = table_rows_of(&v);
+    let right = rows[1].cells[0].border_right.as_ref().expect("a right border");
+    assert_eq!(right.color, "#FF0000", "the table's thick red right border");
+}
+
+/// §17.4.66: a cell's own border beats the table's inside border it meets;
+/// both cells draw the winner.
+#[test]
+fn a_cell_border_wins_its_shared_edge() {
+    let red = r#"<w:tcBorders><w:right w:val="single" w:sz="18" w:color="C00000"/></w:tcBorders>"#;
+    let v = layout(bordered_table_docx(GRID, &[&format!("{}{}", bcell(red, "a"), bcell("", "b"))], ""));
+    let rows = table_rows_of(&v);
+    let (a, b) = (&rows[0].cells[0], &rows[0].cells[1]);
+    assert_eq!(a.border_right.as_ref().map(|e| e.color.as_str()), Some("#C00000"));
+    assert_eq!(b.border_left, a.border_right, "the neighbour draws the same winning line");
+}
+
+/// A table-style header region's borders draw its outline; its insideV
+/// (nil here) governs the edges between header cells.
+#[test]
+fn a_style_region_draws_its_outline_not_every_cell() {
+    let style = r#"<w:style w:type="table" w:styleId="Grid"><w:name w:val="Grid"/><w:tblPr><w:tblBorders><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblStylePr w:type="firstRow"><w:tcPr><w:tcBorders><w:left w:val="single" w:sz="12"/><w:right w:val="single" w:sz="12"/><w:insideV w:val="nil"/></w:tcBorders></w:tcPr></w:tblStylePr></w:style>"#;
+    let tbl_pr = r#"<w:tblStyle w:val="Grid"/><w:tblLook w:firstRow="1" w:noHBand="1"/>"#;
+    let v = layout(bordered_table_docx(tbl_pr, &[&format!("{}{}", bcell("", "h1"), bcell("", "h2")), &format!("{}{}", bcell("", "a"), bcell("", "b"))], style));
+    let rows = table_rows_of(&v);
+    assert!(rows[0].cells[0].border_left.is_some() && rows[0].cells[1].border_right.is_some(), "the outline");
+    assert!(rows[0].cells[0].border_right.is_none() && rows[0].cells[1].border_left.is_none(), "no rule between header cells");
+}
+
+/// §17.4.74: a diagonal cell border is carried to the page.
+#[test]
+fn diagonal_cell_borders_are_drawn() {
+    let diag = r#"<w:tcBorders><w:tl2br w:val="single" w:sz="4"/></w:tcBorders>"#;
+    let v = layout(bordered_table_docx(GRID, &[&format!("{}{}", bcell(diag, "x"), bcell("", "y"))], ""));
+    let rows = table_rows_of(&v);
+    assert!(rows[0].cells[0].diagonals.as_ref().is_some_and(|d| d.down.is_some() && d.up.is_none()));
 }

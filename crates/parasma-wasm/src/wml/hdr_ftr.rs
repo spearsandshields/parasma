@@ -365,6 +365,7 @@ fn position_hf_table(
                 border_bottom: cell.border_bottom.clone(),
                 border_left: cell.border_left.clone(),
                 border_right: cell.border_right.clone(),
+                                diagonals: cell.diagonals.clone(),
             });
             cell_x += cell.width_px;
         }

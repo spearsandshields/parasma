@@ -407,6 +407,7 @@ pub(crate) struct PagedTableCell {
     pub(crate) border_bottom: Option<CellBorderEdge>,
     pub(crate) border_left: Option<CellBorderEdge>,
     pub(crate) border_right: Option<CellBorderEdge>,
+    pub(crate) diagonals: Option<Box<crate::wml::table::CellDiagonals>>,
 }
 
 /// How many whole content heights an anchored object at `y` must move down for

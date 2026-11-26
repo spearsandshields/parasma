@@ -138,6 +138,7 @@ fn table_cell_text_participates() {
         border_bottom: None,
         border_left: None,
         border_right: None,
+        diagonals: None,
     };
     page.push(PageElement::TableRow(PagedTableRow {
         cells: vec![cell],

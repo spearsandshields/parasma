@@ -4256,6 +4256,7 @@ impl Viewer {
                                 border_bottom,
                                 border_left: cell.border_left.clone(),
                                 border_right: cell.border_right.clone(),
+                                diagonals: cell.diagonals.clone(),
                             });
                         }
 
@@ -5541,6 +5542,7 @@ impl Viewer {
                                     border_bottom: cell.border_bottom.clone(),
                                     border_left: cell.border_left.clone(),
                                     border_right: cell.border_right.clone(),
+                                diagonals: cell.diagonals.clone(),
                                 });
                                 cell_x += cell.width_px;
                             }
@@ -5753,7 +5755,7 @@ impl Viewer {
                                             width_px: cell.width_px, fill_color: cell.fill_color.clone(),
                                             v_merged_away: cell.v_merged_away,
                                             border_top: cell.border_top.clone(), border_bottom: cell.border_bottom.clone(),
-                                            border_left: cell.border_left.clone(), border_right: cell.border_right.clone(),
+                                            border_left: cell.border_left.clone(), border_right: cell.border_right.clone(), diagonals: cell.diagonals.clone(),
                                         });
                                         cell_x += cell.width_px;
                                     }

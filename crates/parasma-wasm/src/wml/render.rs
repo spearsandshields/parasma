@@ -367,6 +367,15 @@ pub(crate) fn render_table_row(
                 stroke_styled(p, e, side, a, b);
             }
         }
+        // Diagonals run corner to corner.
+        if let Some(d) = &cell.diagonals {
+            if let Some(e) = &d.down {
+                stroke_styled(p, e, EdgeSide::Top, (x0, y0), (x1, y1));
+            }
+            if let Some(e) = &d.up {
+                stroke_styled(p, e, EdgeSide::Top, (x1, y0), (x0, y1));
+            }
+        }
     }
     p.set_text_baseline("alphabetic");
     for cell in &row.cells {
