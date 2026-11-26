@@ -202,3 +202,120 @@ pub(crate) fn paragraph_runs(paragraph: &Paragraph) -> Vec<&Run> {
     });
     runs
 }
+
+// ─── Mutable walk ────────────────────────────────────────────────────────────
+//
+// The writable twin of `walk` + `all_paragraphs`, for load-time rewrites (a
+// header part's image ids). It must list the same wrappers as the readers
+// above: a wrapper missing here keeps content the readers then lay out
+// unrewritten.
+
+/// Call `f` on every run in `blocks`, at any depth: through block wrappers,
+/// into table cells and nested tables, and through every paragraph-content
+/// wrapper `walk` descends into.
+pub(crate) fn for_each_run_mut(blocks: &mut [ooxml_wml::types::BlockContent], f: &mut impl FnMut(&mut Run)) {
+    use ooxml_wml::types::{BlockContent as B, BlockContentChoice as BC};
+    fn choices(blocks: &mut [BC], f: &mut impl FnMut(&mut Run)) {
+        for b in blocks {
+            match b {
+                BC::P(p) => runs_mut(&mut p.paragraph_content, f),
+                BC::Tbl(t) => table(t, f),
+                BC::Sdt(s) => {
+                    if let Some(c) = s.sdt_content.as_mut() {
+                        choices(&mut c.block_content, f);
+                    }
+                }
+                BC::CustomXml(c) => choices(&mut c.block_content, f),
+                _ => {}
+            }
+        }
+    }
+    fn table(t: &mut ooxml_wml::types::Table, f: &mut impl FnMut(&mut Run)) {
+        use ooxml_wml::types::{CellContent as C, RowContent as R};
+        fn cells(list: &mut [C], f: &mut impl FnMut(&mut Run)) {
+            for c in list {
+                match c {
+                    C::Tc(tc) => for_each_run_mut(&mut tc.block_content, f),
+                    C::Sdt(s) => {
+                        if let Some(content) = s.sdt_content.as_mut() {
+                            cells(&mut content.cells, f);
+                        }
+                    }
+                    C::CustomXml(x) => cells(&mut x.cells, f),
+                    _ => {}
+                }
+            }
+        }
+        fn rows(list: &mut [R], f: &mut impl FnMut(&mut Run)) {
+            for r in list {
+                match r {
+                    R::Tr(tr) => cells(&mut tr.cells, f),
+                    R::Sdt(s) => {
+                        if let Some(content) = s.sdt_content.as_mut() {
+                            rows(&mut content.rows, f);
+                        }
+                    }
+                    R::CustomXml(x) => rows(&mut x.rows, f),
+                    _ => {}
+                }
+            }
+        }
+        rows(&mut t.rows, f);
+    }
+    for b in blocks {
+        match b {
+            B::P(p) => runs_mut(&mut p.paragraph_content, f),
+            B::Tbl(t) => table(t, f),
+            B::Sdt(s) => {
+                if let Some(c) = s.sdt_content.as_mut() {
+                    choices(&mut c.block_content, f);
+                }
+            }
+            B::CustomXml(c) => choices(&mut c.block_content, f),
+            _ => {}
+        }
+    }
+}
+
+/// [`for_each_run_mut`] for one paragraph's content.
+fn runs_mut(content: &mut [ParagraphContent], f: &mut impl FnMut(&mut Run)) {
+    use ParagraphContent as P;
+    for item in content {
+        match item {
+            P::R(r) => f(r),
+            P::Hyperlink(h) => runs_mut(&mut h.paragraph_content, f),
+            P::FldSimple(x) => runs_mut(&mut x.paragraph_content, f),
+            P::Sdt(s) => {
+                if let Some(c) = s.sdt_content.as_mut() {
+                    runs_mut(&mut c.paragraph_content, f);
+                }
+            }
+            P::SmartTag(x) => runs_mut(&mut x.paragraph_content, f),
+            P::CustomXml(x) => runs_mut(&mut x.paragraph_content, f),
+            P::Dir(x) => runs_mut(&mut x.paragraph_content, f),
+            P::Bdo(x) => runs_mut(&mut x.paragraph_content, f),
+            P::Ins(c) | P::MoveTo(c) | P::Del(c) | P::MoveFrom(c) => revision_runs_mut(c, f),
+            _ => {}
+        }
+    }
+}
+
+fn revision_runs_mut(change: &mut CTRunTrackChange, f: &mut impl FnMut(&mut Run)) {
+    use RunContentChoice as C;
+    for item in &mut change.run_content {
+        match item {
+            C::R(r) => f(r),
+            C::Sdt(s) => {
+                if let Some(c) = s.sdt_content.as_mut() {
+                    runs_mut(&mut c.paragraph_content, f);
+                }
+            }
+            C::SmartTag(x) => runs_mut(&mut x.paragraph_content, f),
+            C::CustomXml(x) => runs_mut(&mut x.paragraph_content, f),
+            C::Dir(x) => runs_mut(&mut x.paragraph_content, f),
+            C::Bdo(x) => runs_mut(&mut x.paragraph_content, f),
+            C::Ins(c) | C::MoveTo(c) | C::Del(c) | C::MoveFrom(c) => revision_runs_mut(c, f),
+            _ => {}
+        }
+    }
+}

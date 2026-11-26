@@ -40,20 +40,25 @@ pub(crate) struct LaidOutHdrFtr {
 }
 
 impl LaidOutHdrFtr {
+    /// The header for a page of the section (§17.10.1). A first-page or even
+    /// page uses its own slot, never the default one: a slot that is still
+    /// empty after inheritance (§17.10.5, §17.10.2) is a blank header, as is
+    /// an empty header part.
     pub(crate) fn header_for_page(&self, section_page_idx: usize) -> Option<&HdrFtrCache> {
         if section_page_idx == 0 && self.title_pg {
-            self.first_header.as_ref().or(self.default_header.as_ref())
+            self.first_header.as_ref()
         } else if section_page_idx % 2 == 1 && self.even_odd {
-            self.even_header.as_ref().or(self.default_header.as_ref())
+            self.even_header.as_ref()
         } else {
             self.default_header.as_ref()
         }
     }
+    /// The footer for a page; see [`LaidOutHdrFtr::header_for_page`].
     pub(crate) fn footer_for_page(&self, section_page_idx: usize) -> Option<&HdrFtrCache> {
         if section_page_idx == 0 && self.title_pg {
-            self.first_footer.as_ref().or(self.default_footer.as_ref())
+            self.first_footer.as_ref()
         } else if section_page_idx % 2 == 1 && self.even_odd {
-            self.even_footer.as_ref().or(self.default_footer.as_ref())
+            self.even_footer.as_ref()
         } else {
             self.default_footer.as_ref()
         }

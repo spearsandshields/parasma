@@ -10470,6 +10470,73 @@ fn underlines_draw_tabs_styles_and_their_own_colour() {
     assert!(wavy.iter().any(|c| matches!(c, DrawCmd::QuadraticCurveTo { .. })));
 }
 
+/// A document with a default header (`header1.xml`, its picture in a table
+/// cell) and a first-page header (`header2.xml`), whose pictures both use
+/// `rId1` in their own part. `title_pg` sets `w:titlePg`; `first` includes the
+/// first-page header reference.
+fn two_header_docx(title_pg: bool, first: bool, settings: Option<&str>) -> Vec<u8> {
+    const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture""#;
+    let picture = r#"<w:r><w:drawing><wp:inline><wp:extent cx="457200" cy="457200"/><wp:docPr id="1" name="Logo"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="1" name="Logo"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="457200" cy="457200"/></a:xfrm><a:prstGeom prst="rect"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#;
+    let header1 = format!(r#"<w:hdr {NS}><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr><w:p>{picture}</w:p></w:tc></w:tr></w:tbl><w:p/></w:hdr>"#);
+    let header2 = format!(r#"<w:hdr {NS}><w:p>{picture}</w:p></w:hdr>"#);
+    let rels = |target: &str| format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{target}"/></Relationships>"#);
+    let refs = format!(
+        r#"<w:headerReference w:type="default" r:id="rId10"/>{}<w:pgSz"#,
+        if first { r#"<w:headerReference w:type="first" r:id="rId11"/>"# } else { "" },
+    );
+    let body = format!(r#"{}<w:p><w:r><w:br w:type="page"/></w:r></w:p>{}"#, para("Page one"), para("Page two"));
+    let mut docx = numbering_docx("", "", &body);
+    docx = unzip_replace(docx, "word/document.xml", "<w:pgSz", &refs);
+    if title_pg {
+        docx = unzip_replace(docx, "word/document.xml", "</w:sectPr>", "<w:titlePg/></w:sectPr>");
+    }
+    docx = unzip_replace(docx, "word/_rels/document.xml.rels", "</Relationships>",
+        r#"<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId11" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/></Relationships>"#);
+    docx = unzip_add(docx, "word/header1.xml", &header1);
+    docx = unzip_add(docx, "word/header2.xml", &header2);
+    docx = unzip_add(docx, "word/_rels/header1.xml.rels", &rels("media/a.png"));
+    docx = unzip_add(docx, "word/_rels/header2.xml.rels", &rels("media/b.png"));
+    docx = unzip_add(docx, "word/media/a.png", "A");
+    docx = unzip_add(docx, "word/media/b.png", "B");
+    if let Some(xml) = settings {
+        docx = unzip_add(docx, "word/settings.xml", xml);
+    }
+    docx
+}
+
+/// The picture ids in a page's header, at any depth.
+fn header_pictures(v: &Viewer, page: usize) -> Vec<String> {
+    let pages = v.pages.borrow();
+    let p = &pages[page];
+    p.header_lines.iter()
+        .chain(p.header_rows.iter().flat_map(|r| r.cells.iter().flat_map(|c| c.lines.iter())))
+        .flat_map(|l| l.segments.iter().flat_map(|s| s.items.iter()))
+        .filter_map(|i| i.image.as_ref().map(|im| im.rel_id.clone()))
+        .collect()
+}
+
+/// §17.10: each header's pictures are read against its own part, also
+/// inside a header table; two parts that both use `rId1` keep their own.
+#[test]
+fn header_pictures_resolve_against_their_own_part() {
+    let v = layout(two_header_docx(true, true, None));
+    assert_eq!(header_pictures(&v, 0), vec!["word/header2.xml::rId1".to_owned()], "first page");
+    assert_eq!(header_pictures(&v, 1), vec!["word/header1.xml::rId1".to_owned()], "in the header table");
+}
+
+/// §17.10.5: with a different first page and no first-page header, the
+/// first page's header is blank, not the default one.
+#[test]
+fn an_omitted_first_page_header_is_blank() {
+    let v = layout(two_header_docx(true, false, None));
+    assert!(header_pictures(&v, 0).is_empty(), "first page blank");
+    assert_eq!(header_pictures(&v, 1).len(), 1, "default header on page two");
+    // evenAndOddHeaders w:val="0" is off: page two keeps the default header.
+    let settings = r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:evenAndOddHeaders w:val="0"/></w:settings>"#;
+    let v = layout(two_header_docx(false, false, Some(settings)));
+    assert_eq!(header_pictures(&v, 1).len(), 1, "val=0 is off");
+}
+
 #[test]
 fn a_font_inside_a_block_content_control_reaches_the_font_plan() {
     let body = sdt(r#"<w:p><w:r><w:rPr><w:rFonts w:ascii="Tinos" w:hAnsi="Tinos"/></w:rPr><w:t>Cover</w:t></w:r></w:p>"#);

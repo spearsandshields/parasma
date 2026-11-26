@@ -28,6 +28,10 @@ pub(crate) struct SectionHdrFtr {
     pub(crate) even_footer: Option<Vec<BlockContent>>,
     /// Part paths for each loaded header/footer (for resolving part-level rels).
     pub(crate) part_paths: Vec<String>,
+    /// The part each slot above came from, in the same order (default, first,
+    /// even header; default, first, even footer), so a slot's image ids are
+    /// read against its own part's relationships.
+    pub(crate) slot_parts: [Option<String>; 6],
     pub(crate) title_pg: bool,
     pub(crate) even_odd: bool,
 }
@@ -368,14 +372,32 @@ fn unwrap_section_breaks(blocks: Vec<BlockContent>) -> Vec<BlockContent> {
     out
 }
 
+/// Whether the on/off setting `name` (an element of `word/settings.xml`) is
+/// on: present with no `w:val`, or `w:val` of `true`, `on` or `1`
+/// (§17.17.4 `ST_OnOff`). Absent is off.
+pub(crate) fn settings_on_off(settings_xml: &str, name: &str) -> bool {
+    use quick_xml::events::Event;
+    let mut reader = quick_xml::Reader::from_str(settings_xml);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e) | Event::Empty(e)) if e.local_name().as_ref() == name.as_bytes() => {
+                let val = e.attributes().flatten()
+                    .find(|a| a.key.local_name().as_ref() == b"val")
+                    .and_then(|a| a.unescape_value().ok().map(|v| v.into_owned()));
+                return val.is_none_or(|v| matches!(v.as_str(), "true" | "on" | "1"));
+            }
+            Ok(Event::Eof) | Err(_) => return false,
+            _ => {}
+        }
+    }
+}
+
 pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
     doc: &mut ooxml_wml::Document<R>,
     theme: &crate::engine::fonts::ThemeFonts,
 ) -> Vec<Section> {
-    let even_odd = doc.package_mut().read_part("word/settings.xml")
-        .is_ok_and(|xml| {
-            std::str::from_utf8(&xml).is_ok_and(|s| s.contains("evenAndOddHeaders"))
-        });
+    let even_odd = doc.package_mut().read_part_string("word/settings.xml")
+        .is_ok_and(|xml| settings_on_off(&xml, "evenAndOddHeaders"));
 
     let body_sect_pr = doc.body().section_properties().cloned();
     let blocks = unwrap_section_breaks(std::mem::take(&mut doc.body_mut().block_content));
@@ -440,6 +462,7 @@ pub(crate) fn build_sections<R: std::io::Read + std::io::Seek>(
             default_header: None, first_header: None, even_header: None,
             default_footer: None, first_footer: None, even_footer: None,
             part_paths: Vec::new(),
+            slot_parts: Default::default(),
             title_pg: false, even_odd,
         }, SectionBreakType::NextPage)
     };
@@ -472,6 +495,7 @@ pub(crate) fn load_section_hdr_ftr<R: std::io::Read + std::io::Seek>(
         default_header: None, first_header: None, even_header: None,
         default_footer: None, first_footer: None, even_footer: None,
         part_paths: Vec::new(),
+        slot_parts: Default::default(),
         title_pg, even_odd,
     };
 
@@ -480,16 +504,23 @@ pub(crate) fn load_section_hdr_ftr<R: std::io::Read + std::io::Seek>(
             HeaderFooterRef::HeaderReference(h) => &h.id,
             HeaderFooterRef::FooterReference(f) => &f.id,
         };
-        if let Some(rel) = doc.doc_relationships().get(hf_rel_id) {
-            let path = if rel.target.starts_with('/') {
+        let part = doc.doc_relationships().get(hf_rel_id).map(|rel| {
+            if rel.target.starts_with('/') {
                 rel.target.trim_start_matches('/').to_string()
             } else {
                 format!("word/{}", rel.target.trim_start_matches("word/").trim_start_matches('/'))
-            };
-            if !hf.part_paths.contains(&path) {
-                hf.part_paths.push(path);
+            }
+        });
+        if let Some(path) = &part {
+            if !hf.part_paths.contains(path) {
+                hf.part_paths.push(path.clone());
             }
         }
+        let slot = match r {
+            HeaderFooterRef::HeaderReference(h) => match h.r#type { STHdrFtr::Default => 0, STHdrFtr::First => 1, STHdrFtr::Even => 2 },
+            HeaderFooterRef::FooterReference(f) => match f.r#type { STHdrFtr::Default => 3, STHdrFtr::First => 4, STHdrFtr::Even => 5 },
+        };
+        hf.slot_parts[slot] = part;
 
         match r {
             HeaderFooterRef::HeaderReference(href) => {
@@ -526,13 +557,17 @@ pub(crate) fn load_section_hdr_ftr<R: std::io::Read + std::io::Seek>(
 /// and even_odd (doc-global) are left untouched.
 fn inherit_hdr_ftr(cur: &mut SectionHdrFtr, prev: &SectionHdrFtr) {
     let mut inherited = false;
-    macro_rules! carry { ($slot:ident) => {
+    macro_rules! carry { ($slot:ident, $i:expr) => {
         if cur.$slot.is_none() {
-            if let Some(b) = &prev.$slot { cur.$slot = Some(b.clone()); inherited = true; }
+            if let Some(b) = &prev.$slot {
+                cur.$slot = Some(b.clone());
+                cur.slot_parts[$i] = prev.slot_parts[$i].clone();
+                inherited = true;
+            }
         }
     }; }
-    carry!(default_header); carry!(first_header); carry!(even_header);
-    carry!(default_footer); carry!(first_footer); carry!(even_footer);
+    carry!(default_header, 0); carry!(first_header, 1); carry!(even_header, 2);
+    carry!(default_footer, 3); carry!(first_footer, 4); carry!(even_footer, 5);
     if inherited {
         for p in &prev.part_paths {
             if !cur.part_paths.contains(p) { cur.part_paths.push(p.clone()); }
@@ -545,9 +580,11 @@ pub(crate) fn extract_hdr_ftr_images<R: std::io::Read + std::io::Seek>(
     hdr_ftr: &mut SectionHdrFtr,
     images: &mut HashMap<String, ImageBytes>,
 ) {
-    let part_paths = hdr_ftr.part_paths.clone();
-    for part_path in &part_paths {
-        let part_rels = match doc.package_mut().read_part_relationships(part_path) {
+    // Each part's image relationships, namespaced as `<part>::<rId>` so two
+    // parts that both use `rId1` stay apart.
+    let mut remaps: HashMap<String, HashMap<String, String>> = HashMap::new();
+    for part_path in hdr_ftr.part_paths.clone() {
+        let part_rels = match doc.package_mut().read_part_relationships(&part_path) {
             Ok(r) => r,
             Err(_) => continue,
         };
@@ -591,36 +628,29 @@ pub(crate) fn extract_hdr_ftr_images<R: std::io::Read + std::io::Seek>(
                 Err(_) => continue,
             }
         }
-
-        if remap.is_empty() { continue; }
-
-        for blocks in [
-            &mut hdr_ftr.default_header, &mut hdr_ftr.first_header,
-            &mut hdr_ftr.even_header, &mut hdr_ftr.default_footer,
-            &mut hdr_ftr.first_footer, &mut hdr_ftr.even_footer,
-        ].into_iter().flatten() {
-            rewrite_image_rel_ids(blocks, &remap);
-        }
+        remaps.insert(part_path, remap);
     }
-}
 
-pub(crate) fn rewrite_image_rel_ids(blocks: &mut [BlockContent], remap: &HashMap<String, String>) {
-    for block in blocks {
-        if let BlockContent::P(p) = block {
-            for content in &mut p.paragraph_content {
-                if let ooxml_wml::types::ParagraphContent::R(run) = content {
-                    for rc in &mut run.run_content {
-                        if let ooxml_wml::types::RunContent::Drawing(d) = rc {
-                            for child in &mut d.extra_children {
-                                if let ooxml_xml::RawXmlNode::Element(ref mut elem) = child.node {
-                                    rewrite_blip_embed_ids(elem, remap);
-                                }
-                            }
+    // Rewrite each slot with its own part's map, at any depth (tables,
+    // content controls, hyperlinks), not every slot with every part's.
+    let slots = [
+        &mut hdr_ftr.default_header, &mut hdr_ftr.first_header, &mut hdr_ftr.even_header,
+        &mut hdr_ftr.default_footer, &mut hdr_ftr.first_footer, &mut hdr_ftr.even_footer,
+    ];
+    for (blocks, part) in slots.into_iter().zip(hdr_ftr.slot_parts.iter()) {
+        let (Some(blocks), Some(remap)) = (blocks.as_mut(), part.as_ref().and_then(|p| remaps.get(p))) else { continue };
+        if remap.is_empty() { continue; }
+        crate::wml::content_walk::for_each_run_mut(blocks, &mut |run| {
+            for rc in &mut run.run_content {
+                if let ooxml_wml::types::RunContent::Drawing(d) = rc {
+                    for child in &mut d.extra_children {
+                        if let ooxml_xml::RawXmlNode::Element(ref mut elem) = child.node {
+                            rewrite_blip_embed_ids(elem, remap);
                         }
                     }
                 }
             }
-        }
+        });
     }
 }
 

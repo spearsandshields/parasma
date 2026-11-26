@@ -2199,19 +2199,14 @@ impl Viewer {
         let mut doc = repair::load_docx_tolerant(bytes)
             .map_err(|e| JsValue::from_str(&format!("docx parse error: {e}")))?;
         self.page_size = PageGeometry::from_doc(&doc);
+        let settings = doc.package_mut().read_part_string("word/settings.xml").unwrap_or_default();
+        let setting = |name: &str| crate::wml::loader::settings_on_off(&settings, name);
         // The document line grid only snaps Latin body text when the document is
-        // NOT in Far-East layout (§17.6.5). Detect `useFELayout` from settings.xml
-        // with the same cheap string match used for `evenAndOddHeaders`.
-        let grid_enabled = doc.package_mut().read_part("word/settings.xml")
-            .map_or(true, |xml| {
-                std::str::from_utf8(&xml).map_or(true, |s| !s.contains("useFELayout"))
-            });
+        // NOT in Far-East layout (§17.6.5).
+        let grid_enabled = !setting("useFELayout");
         // §17.15.3.8 ulTrailSpace: underline end-of-line trailing spaces too
         // (default off when the element is absent).
-        let ul_trail_space = doc.package_mut().read_part("word/settings.xml")
-            .is_ok_and(|xml| {
-                std::str::from_utf8(&xml).is_ok_and(|s| s.contains("ulTrailSpace"))
-            });
+        let ul_trail_space = setting("ulTrailSpace");
         // `compatibilityMode` < 15 → Word's legacy line-fitter, which reserves
         // part of a word's trailing space at line end (gates pack_lines'
         // half-space reserve). Parse the value of the `compatibilityMode`
@@ -2233,10 +2228,7 @@ impl Viewer {
         // before-spacing at a page top. Absent → false → apply it (Word's
         // default; the prior unconditional page-top suppression dropped e.g. a
         // Title's 12pt before-spacing at the document top).
-        let suppress_top_spacing = doc.package_mut().read_part("word/settings.xml")
-            .is_ok_and(|xml| {
-                std::str::from_utf8(&xml).is_ok_and(|s| s.contains("suppressTopSpacing"))
-            });
+        let suppress_top_spacing = setting("suppressTopSpacing");
         self.pages.borrow_mut().clear();
         self.layout_truncated_at.set(None); // fresh doc/run starts untruncated
         self.para_meta.borrow_mut().clear(); // drop stale selection metadata

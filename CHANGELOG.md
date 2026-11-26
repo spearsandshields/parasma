@@ -55,6 +55,12 @@ are held stable regardless.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.
+- Documents: pictures in a header or footer table, content control or link
+  appear; they were missing, or showed another header's picture when two
+  headers both had one. A different first page with no first-page header
+  now shows a blank header, as Word does, instead of the normal one, and
+  settings turned off explicitly (such as different odd and even pages set
+  to "0") stay off.
 - Documents: underlined tabs are drawn, so fill-in blanks ("Name: ____")
   reappear. Dotted, dashed, dot-dash, long-dash and wavy underlines, and their
   heavy and double variants, draw in their own style instead of as a plain
