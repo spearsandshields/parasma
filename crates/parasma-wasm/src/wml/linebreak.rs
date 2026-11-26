@@ -438,9 +438,10 @@ pub(crate) fn collect_items(
         let drawings = run.drawings();
 
         let has_pict = run.run_content.iter().any(|rc| matches!(rc, ooxml_wml::types::RunContent::Pict(_)));
-        let has_footnote_ref = run.footnote_ref().is_some();
-        let has_endnote_ref = run.endnote_ref().is_some();
-        let has_content = has_text || !drawings.is_empty() || has_pict || has_footnote_ref || has_endnote_ref;
+        let has_note_mark = run.run_content.iter().any(|rc| matches!(rc,
+            ooxml_wml::types::RunContent::FootnoteReference(_) | ooxml_wml::types::RunContent::EndnoteReference(_)
+            | ooxml_wml::types::RunContent::FootnoteRef(_) | ooxml_wml::types::RunContent::EndnoteRef(_)));
+        let has_content = has_text || !drawings.is_empty() || has_pict || has_note_mark;
         if !has_content {
             continue;
         }
@@ -854,64 +855,45 @@ pub(crate) fn collect_items(
             }
         }
 
-        // Footnote references → superscript number
-        //
-        // ⚠️ DEVIATION (found by the oracle ITEM stream on its first run, NOT fixed
-        // here): `footnote_ids` is local to `collect_items`, which runs ONCE PER
-        // PARAGRAPH, so this counter restarts at 1 for every paragraph. A document
-        // whose footnotes sit in separate paragraphs — the normal case — paints
-        // the mark "1" for every one of them. §17.11.14 `w:numRestart` defaults to
-        // `continuous`, i.e. Word numbers footnotes across the WHOLE document, so
-        // the correct source is a document-scoped counter (or the resolved
-        // footnote order), not a paragraph-local `len()`.
-        //
-        // Left as-is deliberately: the fix changes painted text AND (via
-        // `fn_width`, which scales with `fn_num.len()`) line geometry, so it owes
-        // its own change with its own re-baseline. The oracle-objects golden
-        // records the wrong marks TODAY — three `fn1/fn2/fn3` items all carrying
-        // text "1" — so the fix will show up as a reviewable `"1"→"2"` diff
-        // instead of passing unnoticed, which is the whole point of the stream.
-        if let Some(fnref) = run.footnote_ref() {
-            let fn_id: i64 = fnref.id;
-            if fn_id > 0 {
-                footnote_ids.push(fn_id);
-                let fn_num = footnote_ids.len().to_string();
-                let mut fn_style = style.clone();
-                fn_style.vert_align = VertAlign::Superscript;
-                fn_style.font_pt = style.font_pt * 0.65;
-                let fn_width = pt_to_px(fn_style.font_pt) * 0.5 * fn_num.len() as f64;
-                items.push(Item {
-                    text: fn_num,
-                    style: fn_style,
-                    width: fn_width,
-                    content_width: fn_width,
-                    footnote_id: Some(fn_id),
-                    // Not born of paragraph text — sentinel.
-                    ..Default::default()
-                });
+        // Note references and marks (§17.11): a reference in the text, and
+        // the note's own mark (`footnoteRef`) when laying out that note, write
+        // the note's number from the document-wide numbering (`wml::notes`),
+        // in the run's own formatting. The built-in reference style is
+        // superscript, so a run that sets no vertical alignment is raised.
+        // A custom-mark reference writes nothing: the document supplies it.
+        for rc in &run.run_content {
+            use crate::wml::notes::{self, NoteKind};
+            let (kind, id, text) = match rc {
+                ooxml_wml::types::RunContent::FootnoteReference(r) => {
+                    footnote_ids.push(r.id);
+                    (NoteKind::Foot, Some(r.id), notes::mark(NoteKind::Foot, r.id))
+                }
+                ooxml_wml::types::RunContent::EndnoteReference(r) => {
+                    endnote_ids.push(r.id);
+                    (NoteKind::End, Some(r.id), notes::mark(NoteKind::End, r.id))
+                }
+                ooxml_wml::types::RunContent::FootnoteRef(_) => (NoteKind::Foot, None, notes::own_mark(NoteKind::Foot)),
+                ooxml_wml::types::RunContent::EndnoteRef(_) => (NoteKind::End, None, notes::own_mark(NoteKind::End)),
+                _ => continue,
+            };
+            let Some(text) = text else { continue };
+            let mut mark_style = style.clone();
+            if mark_style.vert_align == VertAlign::Baseline {
+                mark_style.vert_align = VertAlign::Superscript;
+                mark_style.font_pt *= crate::SCRIPT_SCALE;
             }
-        }
-
-        // Endnote references → superscript number (roman numerals by convention, but simple numbers for now)
-        if let Some(enref) = run.endnote_ref() {
-            let en_id: i64 = enref.id;
-            if en_id > 0 {
-                endnote_ids.push(en_id);
-                let en_num = endnote_ids.len().to_string();
-                let mut en_style = style.clone();
-                en_style.vert_align = VertAlign::Superscript;
-                en_style.font_pt = style.font_pt * 0.65;
-                let en_width = pt_to_px(en_style.font_pt) * 0.5 * en_num.len() as f64;
-                items.push(Item {
-                    text: en_num,
-                    style: en_style,
-                    width: en_width,
-                    content_width: en_width,
-                    endnote_id: Some(en_id),
-                    // Not born of paragraph text — sentinel.
-                    ..Default::default()
-                });
-            }
+            let (width, content_width, shaped) = measure_item_text(&text, &mark_style, font_cache, &faces);
+            items.push(Item {
+                text,
+                style: mark_style,
+                width,
+                content_width,
+                shaped,
+                footnote_id: id.filter(|_| kind == NoteKind::Foot),
+                endnote_id: id.filter(|_| kind == NoteKind::End),
+                // Not born of paragraph text — sentinel.
+                ..Default::default()
+            });
         }
 
         // Stamp the hyperlink target onto every item produced for this run.
@@ -1924,7 +1906,7 @@ pub(crate) struct TextBoxContent {
 /// A field whose result depends on where the page falls (§17.16.5), with
 /// its `\*` number format. Its item is laid out with the page's value when
 /// one is known (`with_page_fields`), else with the cached result, which
-/// `substitute_page_fields` replaces once the page count is known.
+/// `substitute_page_text` replaces once the page count is known.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum FieldCode {
     /// PAGE: the page's number, in its section's format unless the field

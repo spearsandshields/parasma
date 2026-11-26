@@ -11414,3 +11414,89 @@ fn keep_with_next_does_not_follow_a_page_break_before() {
     let v = layout(paged_docx(&body));
     assert_eq!((page_of(&v, "Heading"), page_of(&v, "Next")), (0, 1));
 }
+
+// ── Note numbering (§17.11) ─────────────────────────────────────────────────
+
+fn note_ref(kind: &str, id: i64, custom: bool) -> String {
+    let custom = if custom { r#" w:customMarkFollows="1""# } else { "" };
+    format!(r#"<w:r><w:{kind}Reference w:id="{id}"{custom}/></w:r>"#)
+}
+
+/// The note marks the body shows, in order.
+fn note_marks(v: &Viewer) -> Vec<String> {
+    body_lines(v).iter().flat_map(|l| l.segments.iter().flat_map(|s| &s.items))
+        .filter(|i| i.footnote_id.is_some() || i.endnote_id.is_some())
+        .map(|i| i.text.clone())
+        .collect()
+}
+
+/// Footnotes count on across paragraphs; endnotes count separately, in
+/// lower-case roman; a custom mark takes no number and does not advance it.
+#[test]
+fn notes_number_through_the_document() {
+    let body = format!(
+        "<w:p>{}</w:p><w:p>{}{}</w:p><w:p>{}{}</w:p>",
+        note_ref("footnote", 1, false),
+        note_ref("footnote", 2, true), note_ref("endnote", 1, false),
+        note_ref("footnote", 3, false), note_ref("endnote", 2, false),
+    );
+    let v = layout(numbering_docx("", "", &body));
+    assert_eq!(note_marks(&v), ["1", "i", "2", "ii"]);
+}
+
+/// A section's footnotePr overrides the document: here eachSect restarts and
+/// a chicago format (§17.11.19, §17.11.17).
+#[test]
+fn a_section_restarts_and_formats_its_footnotes() {
+    let fpr = r#"<w:footnotePr><w:numFmt w:val="chicago"/><w:numRestart w:val="eachSect"/></w:footnotePr>"#;
+    let body = format!(
+        r#"<w:p>{}{}</w:p><w:p><w:pPr><w:sectPr>{fpr}{PG}</w:sectPr></w:pPr></w:p><w:p>{}</w:p>"#,
+        note_ref("footnote", 1, false), note_ref("footnote", 2, false), note_ref("footnote", 3, false),
+    );
+    let docx = numbering_docx("", "", &body);
+    let docx = unzip_replace(docx, "word/document.xml", "<w:sectPr>\n  <w:pgSz", &format!("<w:sectPr>{fpr}\n  <w:pgSz"));
+    assert_eq!(note_marks(&layout(docx)), ["*", "\u{2020}", "*"]);
+}
+
+/// A note's own mark (footnoteRef) writes the number its reference shows.
+#[test]
+fn a_note_writes_its_own_mark() {
+    use crate::wml::notes::{within_note, NoteKind};
+    let para: ooxml_wml::types::Paragraph = {
+        let xml = format!(r#"<w:p {W_NS}><w:r><w:footnoteRef/></w:r><w:r><w:t>Note text</w:t></w:r></w:p>"#);
+        let mut reader = quick_xml::Reader::from_reader(std::io::Cursor::new(xml.as_bytes()));
+        let mut buf = Vec::new();
+        loop {
+            if let Ok(quick_xml::events::Event::Start(e)) = reader.read_event_into(&mut buf) {
+                break <ooxml_wml::types::Paragraph as ooxml_xml::FromXml>::from_xml(&mut reader, &e, false).unwrap();
+            }
+        }
+    };
+    let (items, ..) = within_note(NoteKind::Foot, Some("7".into()), || {
+        crate::wml::linebreak::collect_items(
+            &crate::engine::fonts::FontCache::new(), &para, &ooxml_wml::ext::StyleContext::default(),
+            &crate::engine::fonts::ThemeFonts::empty(), &[],
+        ).unwrap()
+    });
+    assert_eq!(items[0].text, "7");
+}
+
+/// The note band draws each note's text below a black separator rule (the
+/// note is laid out as a block band; separator notes are not drawn as notes).
+#[test]
+fn the_note_band_draws_the_note_below_a_black_separator() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/footnote/footnote-basic.docx"))
+        .expect("fixture");
+    let v = layout(bytes);
+    let rec = RecordingPainter::new();
+    v.paint_wml_page(0, &rec, None).expect("paint page 0");
+    let cmds = rec.take();
+    // Text is drawn with zero-width non-joiners between letters (kerning off).
+    let texts: Vec<String> = cmds.iter().filter_map(|c| match c {
+        DrawCmd::FillText { text, .. } => Some(text.replace('\u{200c}', "")),
+        _ => None,
+    }).collect();
+    assert!(texts.iter().any(|t| t.contains("Footnote")), "note text drawn: {texts:?}");
+    assert!(cmds.iter().any(|c| matches!(c, DrawCmd::SetStrokeStyle(s) if s == "#000000")), "black separator");
+}

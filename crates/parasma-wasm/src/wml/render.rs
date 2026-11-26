@@ -7,9 +7,9 @@
 //! `render_page` `#[wasm_bindgen]` method stays in `lib.rs`: its body has heavy
 //! inline canvas drawing (page borders, watermark, table cell fill/border,
 //! footnote/endnote layout+draw, column separators) that reads `self` fields and
-//! is not a clean free-fn lift. `substitute_page_fields` mutates `PagedLine` for
-//! PAGE/NUMPAGES fields and is called only from `render_page`; it moves with the
-//! render free fns. `layout_text_box` is a layout helper (produces
+//! is not a clean free-fn lift. `substitute_page_text` rewrites a `PagedLine`'s
+//! page-dependent fields and note marks once the pages are known (the layout's
+//! post-loop pass). `layout_text_box` is a layout helper (produces
 //! `Vec<PagedLine>`) that pairs with `render_text_box`, so it lives here too.
 
 use std::collections::HashMap;
@@ -96,7 +96,34 @@ fn tab_leader_count(width: f64, font_pt: f64) -> usize {
     }
 }
 
-pub(crate) fn substitute_page_fields(line: &mut PagedLine, fields: &PageFields, font_cache: &FontCache) {
+/// Rewrite the items whose text depends on the page: page-dependent fields
+/// with `fields`' values, and note marks with their marks on this page
+/// (a per-page numbering, `wml::notes::mark_on_page`), whose notes of each
+/// kind are `foot_ids` and `end_ids`.
+pub(crate) fn substitute_page_text(
+    line: &mut PagedLine,
+    fields: &PageFields,
+    foot_ids: &[i64],
+    end_ids: &[i64],
+    font_cache: &FontCache,
+) {
+    use crate::wml::notes::{mark_on_page, NoteKind};
+    substitute_item_text(line, font_cache, |item| {
+        if let Some(code) = item.field {
+            Some(fields.text(code))
+        } else if let Some(id) = item.footnote_id {
+            mark_on_page(NoteKind::Foot, id, foot_ids)
+        } else if let Some(id) = item.endnote_id {
+            mark_on_page(NoteKind::End, id, end_ids)
+        } else {
+            None
+        }
+    });
+}
+
+/// Give each item of `line` the text `text_of` returns for it, re-measured,
+/// and keep a right-aligned or centred segment on its edge.
+fn substitute_item_text(line: &mut PagedLine, font_cache: &FontCache, text_of: impl Fn(&Item) -> Option<String>) {
     // Shaping scope — one built face per (font, line) for the re-measures below.
     let faces = FaceCache::new();
     let content_left = line.content_left;
@@ -105,7 +132,7 @@ pub(crate) fn substitute_page_fields(line: &mut PagedLine, fields: &PageFields, 
         let old_total: f64 = seg.items.iter().map(|i| i.width).sum();
         let mut changed = false;
         for item in &mut seg.items {
-            let new_text = item.field.map(|code| fields.text(code));
+            let new_text = text_of(item);
             if let Some(nt) = new_text {
                 if nt != item.text {
                     // A wider result (e.g. "11" vs the cached "1") must update the

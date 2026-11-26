@@ -18,7 +18,7 @@ use ooxml_wml::ext::StyleContext;
 use ooxml_wml::types::{BlockContent, STJcTable};
 
 use crate::engine::fonts::{FontCache, ThemeFonts};
-use crate::wml::linebreak::{with_page_fields, Item, PageFields};
+use crate::wml::linebreak::{justify_line, with_page_fields, BreakAfter, Item, PageFields};
 use crate::wml::loader::SectionHdrFtr;
 use crate::wml::page::{
     CellBlock, HdrFtrCache, HfBlock, PagedLine, PagedTableCell, PagedTableRow, PARA_SENTINEL,
@@ -104,7 +104,7 @@ pub(crate) fn hf_table_height(table: &TableCache) -> f64 {
     table.rows.iter().map(|r| r.height_px).sum()
 }
 
-fn layout_hdr_ftr_blocks(
+pub(crate) fn layout_hdr_ftr_blocks(
     blocks: &[BlockContent],
     font_cache: &FontCache,
     content_width: f64,
@@ -242,7 +242,16 @@ pub(crate) fn position_hdr_ftr_lines(
                     let baseline_y = y + line.max_ascent;
                     // Page-dependent fields already hold the page's values
                     // (`layout_page_hdr_ftr`), so the packed line is final.
-                    let items: Vec<Item> = line.items.clone();
+                    let mut items: Vec<Item> = line.items.clone();
+                    // Justified lines stretch to the band, as in the body: all
+                    // but a paragraph's last line and one ending in a page or
+                    // column break.
+                    let last = li + 1 == pc.lines.len()
+                        || matches!(line.ends_with, BreakAfter::PageBreak | BreakAfter::ColumnBreak);
+                    if pc.layout.alignment == ooxml_wml::types::STJc::Both && !last {
+                        let avail = pc.layout.available_width(page_w, margin_left, margin_right, indent);
+                        justify_line(&mut items, avail);
+                    }
                     let line_w: f64 = items.iter().map(|i| i.width).sum();
                     let x_start = pc.layout.x_start(page_w, margin_left, margin_right, line_w, indent);
                     let lh = pc.layout.line_height(line.max_font_pt, line.max_ascent + line.max_descent, line.max_image_height);

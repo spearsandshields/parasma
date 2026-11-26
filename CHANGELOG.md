@@ -224,6 +224,16 @@ are held stable regardless.
   foot, counting the space between them. Widow and orphan control also stops
   a paragraph's first line sitting alone at the bottom of a page. A heading
   kept with a paragraph that starts on a new page anyway stays where it is.
+- Footnotes and endnotes: numbers count through the document instead of
+  restarting at 1 in every paragraph, and the number in the text always
+  matches the one at the note. Notes take the document's and the section's
+  number format, start value and restart (per section or per page); endnotes
+  default to i, ii, iii; a note with its own symbol takes no number. Marks
+  are drawn in the reference's own formatting at the usual superscript size.
+- Footnotes and endnotes: note text keeps its indents, alignment
+  (justified too), spacing and tables, and each note shows its number where
+  the note places it rather than in front of every paragraph. The separator
+  line is black and Word's length. Notes whose identifier is 0 now appear.
 
 ### Changed
 

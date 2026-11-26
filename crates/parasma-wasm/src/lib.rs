@@ -156,7 +156,7 @@ pub(crate) use wml::paragraph::{
     collect_paragraph_style_rprs, gap_prev, layout_paragraph, paragraph_gap,
     ParagraphCache, ResolvedTabStops, TabAlignment, TabLeader,
 };
-use wml::render::{layout_text_box, render_line, render_table_row, render_text_box, substitute_page_fields};
+use wml::render::{layout_text_box, render_line, render_table_row, render_text_box, substitute_page_text};
 use wml::section::{PageGeometry, SectionBreakType};
 use wml::table::{
     layout_table, CellFloatDraw, CellVAlign,
@@ -817,6 +817,8 @@ pub(crate) struct WmlRenderer {
     footnotes: HashMap<i64, FootnoteEndnote>,
     /// Endnotes keyed by id. Loaded from word/endnotes.xml during load_docx.
     endnotes: HashMap<i64, FootnoteEndnote>,
+    /// Every note's mark, numbered in document order at load (§17.11).
+    note_marks: wml::notes::NoteMarks,
     /// Comment display metadata in document order, parsed from
     /// `word/comments.xml` at load time. Empty when the document has no
     /// comments part. Joined to range-start positions by the `comments()`
@@ -2538,6 +2540,8 @@ impl Viewer {
         }
 
         let mut sections = build_sections(&mut doc, &theme_fonts);
+        let note_marks = wml::notes::NoteMarks::number(sections.iter().map(|s| (s.blocks.as_slice(), s.notes)));
+        wml::notes::publish(&note_marks);
 
         // Extract images referenced from header/footer parts. Each header/footer
         // has its own .rels namespace, so rIds are prefixed with the part path
@@ -2590,6 +2594,7 @@ impl Viewer {
             theme_fonts,
             footnotes: footnotes_map,
             endnotes: endnotes_map,
+            note_marks,
             comments: comments_meta,
         });
         Ok(())
@@ -3061,8 +3066,10 @@ impl Viewer {
         if w.sections.is_empty() {
             return Err(JsValue::from_str("no document loaded; call loadDocx first"));
         }
-        // Publish document dates so collect_items can resolve DATE/TIME/etc.
+        // Publish document dates so collect_items can resolve DATE/TIME/etc.,
+        // and the notes' marks.
         FIELD_DATES.with(|d| d.set(*self.doc_dates.borrow()));
+        wml::notes::publish(&w.note_marks);
         RESERVE_TRAILING_BLANKS.with(|c| c.set(w.reserve_trailing_blanks));
         // Reset the cross-paragraph open-comment-range carrier so this layout
         // (a fresh document, or a re-layout after a switch) starts with none open.
@@ -5917,13 +5924,14 @@ impl Viewer {
                         );
                     }
                 }
+                let (foot_ids, end_ids) = (page.footnote_ids.clone(), page.endnote_ids.clone());
                 for el in &mut page.elements {
                     match el {
-                        PageElement::Line(line) => substitute_page_fields(line, &fields, &self.font_cache),
+                        PageElement::Line(line) => substitute_page_text(line, &fields, &foot_ids, &end_ids, &self.font_cache),
                         PageElement::TableRow(row) => {
                             for cell in &mut row.cells {
                                 for line in &mut cell.lines {
-                                    substitute_page_fields(line, &fields, &self.font_cache);
+                                    substitute_page_text(line, &fields, &foot_ids, &end_ids, &self.font_cache);
                                 }
                             }
                         }
@@ -7158,170 +7166,64 @@ impl Viewer {
             band_bottom,
         );
         if let (true, true, Some(w)) = (has_notes, band_visible, wml) {
-            let content_bottom = band_bottom;
-            let mut fn_lines: Vec<PagedLine> = Vec::new();
-
-            for (idx, &fn_id) in page.footnote_ids.iter().enumerate() {
-                if let Some(fn_entry) = w.footnotes.get(&fn_id) {
-                    // Footnotes with id 0 or -1 are separators — skip
-                    if fn_id <= 0 { continue; }
-                    let fn_num = format!("{}  ", idx + 1);
-                    let fn_content_width = geo.content_width_px();
-                    for block in &fn_entry.block_content {
-                        if let BlockContent::P(p) = block {
-                            if let Ok(cache) = layout_paragraph(
-                                &self.font_cache, p, fn_content_width, None,
-                                &w.style_ctx, w.default_ppr.as_ref(),
-                                w.default_tab_stop_px, &w.theme_fonts,
-                                None, &[], &[],
-                                if w.grid_enabled { geo.grid_pitch_px } else { None },
-                                false,
-                                None, // footnote/endnote band re-lays out at paint time (no ParaMeta capture)
-                            ) {
-                                for (li, line) in cache.lines.iter().enumerate() {
-                                    let lh = cache.layout.line_height(
-                                        line.max_font_pt, line.max_ascent + line.max_descent,
-                                        line.max_image_height,
-                                    );
-                                    let mut items = line.items.clone();
-                                    // Prepend footnote number to first line
-                                    if li == 0 {
-                                        let num_style = RunStyle {
-                                            font_pt: 8.0,
-                                            family: DEFAULT_FONT_FAMILY.to_owned(),
-                                            family_east_asia: DEFAULT_FONT_FAMILY.to_owned(),
-                                            family_complex: DEFAULT_FONT_FAMILY.to_owned(),
-                                            vert_align: VertAlign::Superscript,
-                                            ..Default::default()
-                                        };
-                                        let num_width = pt_to_px(8.0) * 0.5 * fn_num.len() as f64;
-                                        items.insert(0, Item {
-                                            text: fn_num.clone(),
-                                            style: num_style,
-                                            width: num_width,
-                                            content_width: num_width,
-                                            // Paint-time footnote number, not paragraph text.
-                                            ..Default::default()
-                                        });
-                                    }
-                                    fn_lines.push(PagedLine {
-                                        segments: PagedLine::single(items, 0.0),
-                                        para: PARA_SENTINEL, // footnote/endnote band — non-captured stream
-                                        baseline_y: 0.0,
-                                        para_shading: None,
-                                        line_height: lh,
-                                        content_left: geo.margin_left_px,
-                                        content_right: geo.width_px - geo.margin_right_px,
-                                        border_top: None,
-                                        border_bottom: None,
-                                        border_left: None,
-                                        border_right: None,
-                                        // Bar tabs (§17.18.84) in the footnote/endnote band:
-                                        // documented floor — the band re-synthesizes its lines
-                                        // without the paragraph cache in scope, so bar rules are
-                                        // not painted here.
-                                        bar_tabs: Vec::new(),
-                                        is_first_line: false,
-                                        is_last_line: false,
-                                    });
-                                }
-                            }
-                        }
+            use crate::wml::notes::{self, NoteKind};
+            // Each note is laid out as a band of blocks, like a header
+            // (`layout_hdr_ftr_blocks`): its paragraphs keep their indents,
+            // alignment and spacing, and tables stay. Its own mark
+            // (`footnoteRef`) writes the number its reference shows on this
+            // page. Separators and continuation notices are not notes
+            // (§17.11.10 `w:type`). Declared: list markers in a note are not
+            // drawn, endnotes sit with the footnotes of the page that
+            // references them, and the body does not make room for the band.
+            let content_width = geo.content_width_px();
+            let mut bands = Vec::new();
+            for (kind, ids, entries) in [
+                (NoteKind::Foot, &page.footnote_ids, &w.footnotes),
+                (NoteKind::End, &page.endnote_ids, &w.endnotes),
+            ] {
+                for &id in ids.iter() {
+                    let Some(note) = entries.get(&id) else { continue };
+                    if note.r#type.is_some_and(|t| t != ooxml_wml::types::STFtnEdn::Normal) {
+                        continue;
                     }
+                    let mark = notes::mark_on_page(kind, id, ids);
+                    let band = notes::within_note(kind, mark, || {
+                        crate::wml::hdr_ftr::layout_hdr_ftr_blocks(
+                            &note.block_content, &self.font_cache, content_width,
+                            &w.style_ctx, w.default_ppr.as_ref(), w.default_tab_stop_px, &w.theme_fonts,
+                        )
+                    })?;
+                    bands.push(band);
                 }
             }
 
-            // Endnotes — same layout as footnotes
-            for (idx, &en_id) in page.endnote_ids.iter().enumerate() {
-                if let Some(en_entry) = w.endnotes.get(&en_id) {
-                    if en_id <= 0 { continue; }
-                    let en_num = format!("{}  ", idx + 1);
-                    let fn_content_width = geo.content_width_px();
-                    for block in &en_entry.block_content {
-                        if let BlockContent::P(p) = block {
-                            if let Ok(cache) = layout_paragraph(
-                                &self.font_cache, p, fn_content_width, None,
-                                &w.style_ctx, w.default_ppr.as_ref(),
-                                w.default_tab_stop_px, &w.theme_fonts,
-                                None, &[], &[],
-                                if w.grid_enabled { geo.grid_pitch_px } else { None },
-                                false,
-                                None, // footnote/endnote band re-lays out at paint time (no ParaMeta capture)
-                            ) {
-                                for (li, line) in cache.lines.iter().enumerate() {
-                                    let lh = cache.layout.line_height(
-                                        line.max_font_pt, line.max_ascent + line.max_descent,
-                                        line.max_image_height,
-                                    );
-                                    let mut items = line.items.clone();
-                                    if li == 0 {
-                                        let num_style = RunStyle {
-                                            font_pt: 8.0,
-                                            family: DEFAULT_FONT_FAMILY.to_owned(),
-                                            family_east_asia: DEFAULT_FONT_FAMILY.to_owned(),
-                                            family_complex: DEFAULT_FONT_FAMILY.to_owned(),
-                                            vert_align: VertAlign::Superscript,
-                                            ..Default::default()
-                                        };
-                                        let num_width = pt_to_px(8.0) * 0.5 * en_num.len() as f64;
-                                        items.insert(0, Item {
-                                            text: en_num.clone(),
-                                            style: num_style,
-                                            width: num_width,
-                                            content_width: num_width,
-                                            // Paint-time endnote number, not paragraph text.
-                                            ..Default::default()
-                                        });
-                                    }
-                                    fn_lines.push(PagedLine {
-                                        segments: PagedLine::single(items, 0.0),
-                                        para: PARA_SENTINEL, // footnote/endnote band — non-captured stream
-                                        baseline_y: 0.0,
-                                        para_shading: None,
-                                        line_height: lh,
-                                        content_left: geo.margin_left_px,
-                                        content_right: geo.width_px - geo.margin_right_px,
-                                        border_top: None,
-                                        border_bottom: None,
-                                        border_left: None,
-                                        border_right: None,
-                                        // Bar tabs (§17.18.84) in the footnote/endnote band:
-                                        // documented floor — the band re-synthesizes its lines
-                                        // without the paragraph cache in scope, so bar rules are
-                                        // not painted here.
-                                        bar_tabs: Vec::new(),
-                                        is_first_line: false,
-                                        is_last_line: false,
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if !fn_lines.is_empty() {
-                let total_fn_height: f64 = fn_lines.iter().map(|l| l.line_height).sum();
+            if !bands.is_empty() {
+                let total: f64 = bands.iter().map(|b| b.total_height).sum();
                 let separator_gap = 6.0;
-                let fn_start_y = content_bottom - total_fn_height - separator_gap;
+                let start_y = band_bottom - total - separator_gap;
 
-                // Separator line
-                p.set_stroke_style_str("#7d8590");
+                // The separator: a 144pt rule in the automatic (black) colour,
+                // as Word's default separator note draws. Declared: a custom
+                // separator note's own content is not drawn.
+                p.set_stroke_style_str("#000000");
                 p.set_line_width(0.5);
                 p.begin_path();
-                p.move_to(geo.margin_left_px, fn_start_y);
-                p.line_to(geo.margin_left_px + geo.content_width_px() * 0.33, fn_start_y);
+                p.move_to(geo.margin_left_px, start_y);
+                p.line_to(geo.margin_left_px + pt_to_px(144.0).min(content_width), start_y);
                 p.stroke();
 
-                // Render footnote/endnote lines
-                let mut y = fn_start_y + separator_gap;
-                for fn_line in &mut fn_lines {
-                    fn_line.baseline_y = y + fn_line.line_height * 0.8;
-                    if let Some(seg) = fn_line.segments.first_mut() {
-                        seg.x_start = geo.margin_left_px;
+                let mut y = start_y + separator_gap;
+                for band in &bands {
+                    let (lines, rows) = position_hdr_ftr_lines(
+                        band, y, geo.width_px, geo.margin_left_px, geo.margin_right_px,
+                    );
+                    for line in &lines {
+                        render_line(p, line, &bitmaps, &charts, ul_trail_space)?;
                     }
-                    render_line(p, fn_line, &bitmaps, &charts, ul_trail_space)?;
-                    y += fn_line.line_height;
+                    for row in &rows {
+                        render_table_row(p, row, &bitmaps, &charts, ul_trail_space)?;
+                    }
+                    y += band.total_height;
                 }
             }
         }
@@ -9159,7 +9061,7 @@ impl RunStyle {
         let glyph_features = GlyphFeatures { kerning, ligatures };
 
         let font_pt = if vert_align != VertAlign::Baseline {
-            font_pt * 0.583
+            font_pt * SCRIPT_SCALE
         } else {
             font_pt
         };
@@ -9343,6 +9245,10 @@ pub(crate) fn on_off(v: &str) -> bool {
 pub(crate) fn check_toggle(field: &Option<Box<ooxml_wml::types::OnOffElement>>) -> Option<bool> {
     field.as_ref().map(|ct| ct.value.as_deref().is_none_or(on_off))
 }
+
+/// The size of raised or lowered text (§17.3.2.42 `vertAlign`) as a share of
+/// the run's own size.
+pub(crate) const SCRIPT_SCALE: f64 = 0.583;
 
 /// Resolve a toggle (bold, italic, etc.) through the full OOXML cascade
 /// per §17.7.3.

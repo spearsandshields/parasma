@@ -1204,6 +1204,14 @@ pub(crate) fn extract_range_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Number `para`'s note references as a load would, so `collect_items`
+    /// writes their marks.
+    fn publish_note_marks(para: &ooxml_wml::types::Paragraph) {
+        use crate::wml::notes::{publish, NoteMarks, SectionNotes};
+        let blocks = vec![ooxml_wml::types::BlockContent::P(Box::new(para.clone()))];
+        publish(&NoteMarks::number([(blocks.as_slice(), SectionNotes::from_settings(None))]));
+    }
     use crate::engine::fonts::{ShapedGlyph, ShapedRun};
     use crate::engine::paint::RunStyle;
 
@@ -1506,6 +1514,7 @@ mod tests {
         let font_cache = FontCache::new();
         let style_ctx = StyleContext::default();
         let theme_fonts = ThemeFonts::empty();
+        publish_note_marks(&para);
         let (items, _, _, footnote_ids, _) =
             collect_items(&font_cache, &para, &style_ctx, &theme_fonts, &[])
                 .expect("collect_items");
@@ -2067,6 +2076,7 @@ mod tests {
             ],
             ..Default::default()
         };
+        publish_note_marks(&para);
         let (items, _, _, _, _) =
             collect_items(&FontCache::new(), &para, &StyleContext::default(), &ThemeFonts::empty(), &[])
                 .expect("collect_items");

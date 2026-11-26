@@ -1,6 +1,6 @@
 y0 b1 i0 pt16.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#000000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 y1 b0 i0 pt11.00 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#000000" u=none st0 ds0 va=base hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
-y2 b0 i0 pt7.15 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#000000" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
+y2 b0 i0 pt6.41 fam"Arimo" ea"arimo" cs"Arimo" rcx0 col"#000000" u=none st0 ds0 va=sup hl- rs- csp0.00 caps0 smcaps0 vanish0 outline0 shadow0 emboss0 imprint0 bshift0.00 kern=off liga0
 == page 0 num1 sect1
 A rel"rId10" behind0 anchorSome(1)
 FN [1, 2]
@@ -121,7 +121,7 @@ L9 p1 f0 l1 segs1
     i6 y1 w42.40 cw38.32 c524+7 "single " sh7g adv42.40 r0 s1
     i7 y1 w36.70 cw32.63 c531+5 "page " sh5g adv36.70 r0 s1
     i8 y1 w45.64 cw41.57 c536+8 "exists. " sh8g adv45.64 r0 s1
-    i9 y2 w4.77 cw4.77 c- "1" fn1
+    i9 y2 w4.76 cw4.76 c- "1" sh1g adv4.76 r0 s1 fn1
 L10 p2 f1 l0 segs1
   S0 n9
     i0 y1 w79.90 cw75.83 c0+11 "Paragraphs " sh11g adv79.90 r0 s1
@@ -668,7 +668,7 @@ L64 p11 f0 l1 segs1
     i2 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i3 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
     i4 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
-    i5 y2 w4.77 cw4.77 c- "1" fn2
+    i5 y2 w4.76 cw4.76 c- "2" sh1g adv4.76 r0 s1 fn2
 L65 p12 f1 l0 segs1
   S0 n6
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1
@@ -2652,7 +2652,7 @@ L18 p45 f0 l1 segs1
     i12 y1 w12.23 cw8.16 c253+2 "a " sh2g adv12.23 r0 s1
     i13 y1 w34.24 cw30.16 c255+6 "pixel " sh6g adv34.24 r0 s1
     i14 y1 w39.94 cw35.86 c261+7 "early. " sh7g adv39.94 r0 s1
-    i15 y2 w4.77 cw4.77 c- "1" fn3
+    i15 y2 w4.76 cw4.76 c- "3" sh1g adv4.76 r0 s1 fn3
 L19 p46 f1 l0 segs1
   S0 n14
     i0 y1 w29.35 cw25.27 c0+4 "The " sh4g adv29.35 r0 s1

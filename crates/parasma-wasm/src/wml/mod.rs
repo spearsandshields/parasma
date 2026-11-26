@@ -27,6 +27,7 @@ pub(crate) mod linebreak;
 pub(crate) mod loader;
 pub(crate) mod markup_compat;
 pub(crate) mod math;
+pub(crate) mod notes;
 pub(crate) mod numbering;
 pub(crate) mod page;
 pub(crate) mod paragraph;
