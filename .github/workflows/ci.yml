@@ -30,6 +30,11 @@ env:
   WASM_GZIP_BUDGET: 1900000
 
 jobs:
+  # The two jobs run in parallel. The gate needs the wasm bindings (the
+  # TypeScript checks read them), not the shipped binary: a dev-profile build
+  # yields the same public types in about a tenth of the time (the only
+  # difference is the order of the raw export list in InitOutput). The
+  # release job builds what ships and checks it.
   gate:
     name: bun run ci
     runs-on: ubuntu-latest
@@ -48,6 +53,8 @@ jobs:
 
       - name: Cache cargo registry, git index, binaries and target
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: gate
 
       - name: Install Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -57,14 +64,14 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack --version 0.15.0 --locked
 
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
       # Fonts are fetched at runtime in the browser, so layout pins depend on
       # exact metrics. The script sha256-pins them into the gitignored
       # crates/parasma-wasm/test-fonts/ directory; no font binaries in git.
       - name: Fetch pinned test fonts
         run: ./scripts/fetch-test-fonts.sh
-
-      - name: Install JS dependencies
-        run: bun install --frozen-lockfile
 
       # Seven native tests read documents under the gitignored fixtures/
       # directory: the parser fork's fixtures plus the ones
@@ -73,13 +80,46 @@ jobs:
       - name: Fetch and generate fixtures
         run: bun run scripts/fetch-fixtures.ts
 
-      # The TypeScript type-checks read the wasm-pack output, so the shipped
-      # feature set has to be built before the gate runs.
-      - name: Build wasm (sml, pml, emf)
-        run: bun run build:wasm:full
+      - name: Build wasm bindings (dev profile)
+        run: bun run build:wasm:bindings
 
       - name: Gate
         run: bun run ci
+
+  release:
+    name: shipped wasm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # rust-toolchain.toml pins the same version; the action makes the
+      # install explicit so the cache key is stable.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 2026-10-16
+        with:
+          toolchain: 1.95.0
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - name: Cache cargo registry, git index, binaries and target
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.15.0 --locked
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build wasm (sml, pml, emf)
+        run: bun run build:wasm:full
 
       # Called directly, not through `bun run`: a nested `bun pm pack`
       # deadlocks on bun's process lock. Packs the publishable packages and

@@ -8,6 +8,7 @@
   "scripts": {
     "build:wasm": "./scripts/build-wasm.sh",
     "build:wasm:full": "./scripts/build-wasm.sh -- --features sml,pml,emf",
+    "build:wasm:bindings": "./scripts/build-wasm.sh --dev -- --features sml,pml,emf",
     "dev": "bun run build:wasm:dev && bun run --filter @parasma/snippet dev",
     "build": "bun run build:wasm && bun run --filter '*' build",
     "build:wasm:dev": "./scripts/build-wasm.sh -- --features sml,pml,emf,debug-probe",

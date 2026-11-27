@@ -36,12 +36,13 @@ ok()    { printf '\033[32m  ✓ %s\033[0m\n' "$*"; }
 bad()   { printf '\033[31m  ✗ %s\033[0m\n' "$*"; FAILED+=("$1"); }
 note()  { printf '\033[33m  ! %s\033[0m\n' "$*"; }
 
-run() { # run <label> <cmd...>
+run() { # run <label> <cmd...>   (each check prints its own duration)
   local label="$1"; shift
+  local t0=$SECONDS
   if "$@" >/tmp/ci-local.$$ 2>&1; then
-    ok "$label"
+    ok "$label ($((SECONDS - t0))s)"
   else
-    bad "$label"
+    bad "$label ($((SECONDS - t0))s)"
     printf '\033[2m'; tail -25 /tmp/ci-local.$$ | sed 's/^/      /'; printf '\033[0m'
   fi
   rm -f /tmp/ci-local.$$
