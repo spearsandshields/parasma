@@ -31,7 +31,7 @@ use crate::wml::float::{
     build_active_float, clear_below_floats, pack_lines_around_floats, ActiveFloat, WRAP_EPS,
 };
 use crate::wml::float_resolve::{resolve_anchor_position, FrameCtx};
-use crate::wml::page::{PagedLine, PARA_SENTINEL};
+use crate::wml::page::{PagedLine, PagedTableCell, PagedTableRow, PARA_SENTINEL};
 use crate::wml::loader::DEFAULT_TABLE_STYLE_KEY;
 use crate::wml::paragraph::{gap_prev, paragraph_gap, style_chain, ParagraphLayout};
 use crate::wml::render::layout_text_box;
@@ -45,6 +45,10 @@ pub(crate) struct TableCache {
     pub(crate) has_borders: bool,
     pub(crate) alignment: STJcTable,
     pub(crate) indent_px: f64,
+    /// §17.4.49 tblHeader: how many leading rows are drawn again at the top
+    /// of every page and column the table continues onto. 0 when the first
+    /// row is not marked, or when every row is.
+    pub(crate) header_rows: usize,
 }
 
 pub(crate) struct TableRowCache {
@@ -142,6 +146,74 @@ impl TableCache {
             _ => self.indent_px,
         }
     }
+
+    /// One whole row as it is drawn with its top at `row_y_top` and the
+    /// table's left edge at `table_x`: every cell's lines through the shared
+    /// cell walk, placed by the cell's top margin and vertical alignment.
+    /// Declared: a float hosted in a cell is not drawn here; the body's
+    /// whole-row path does that itself.
+    pub(crate) fn whole_row(&self, row: &TableRowCache, table_x: f64, row_y_top: f64) -> PagedTableRow {
+        let cells = row.cells.iter().map(|cell| {
+            let cell_x = table_x + cell.x_px;
+            let spare = || (row.height_px - cell.mar_top - cell.mar_bottom - cell.content_height(0.0)).max(0.0);
+            let v_offset = match cell.v_align {
+                CellVAlign::Center => spare() / 2.0,
+                CellVAlign::Bottom => spare(),
+                CellVAlign::Top => 0.0,
+            };
+            let content_top = row_y_top + cell.mar_top + v_offset;
+            PagedTableCell {
+                lines: flatten_cell_lines(cell, cell_x).into_iter().map(|proto| {
+                    let mut line = proto.line;
+                    line.baseline_y += content_top;
+                    line
+                }).collect(),
+                x: cell_x,
+                width_px: cell.width_px,
+                fill_color: cell.fill_color.clone(),
+                v_merged_away: cell.v_merged_away,
+                border_top: cell.border_top.clone(),
+                border_bottom: cell.border_bottom.clone(),
+                border_left: cell.border_left.clone(),
+                border_right: cell.border_right.clone(),
+                diagonals: cell.diagonals.clone(),
+            }
+        }).collect();
+        PagedTableRow {
+            cells,
+            y_top: row_y_top,
+            height_px: row.height_px,
+            border_color: self.border_color.clone(),
+            has_borders: self.has_borders,
+        }
+    }
+
+    /// The header rows as they are drawn again where the table continues,
+    /// starting at `y_top`. A repeat is display only: its lines belong to no
+    /// paragraph, so selection, copy and search see the header once.
+    pub(crate) fn repeated_header_rows(&self, table_x: f64, y_top: f64) -> Vec<PagedTableRow> {
+        let mut y = y_top;
+        self.rows[..self.header_rows].iter().map(|row| {
+            let mut paged = self.whole_row(row, table_x, y);
+            for line in paged.cells.iter_mut().flat_map(|c| c.lines.iter_mut()) {
+                line.para = PARA_SENTINEL;
+            }
+            y += row.height_px;
+            paged
+        }).collect()
+    }
+
+    pub(crate) fn header_height(&self) -> f64 {
+        self.rows[..self.header_rows].iter().map(|r| r.height_px).sum()
+    }
+}
+
+/// §17.4.49 tblHeader: the rows marked "repeat as header row" in the run
+/// that starts at the first row.
+fn leading_header_rows(rows: &[&ooxml_wml::types::CTRow]) -> usize {
+    rows.iter()
+        .take_while(|r| r.row_properties.as_ref().and_then(|p| crate::check_toggle(&p.tbl_header)).unwrap_or(false))
+        .count()
 }
 
 impl TableCellCache {
@@ -1010,7 +1082,10 @@ pub(crate) fn layout_table(
     }
     resolve_border_conflicts(&mut rows, &direct_edges);
 
-    Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px })
+    // Declared: tblHeader is read from the rows themselves, not from a style's
+    // trPr.
+    let header_rows = Some(leading_header_rows(&table_rows)).filter(|n| *n < rows.len()).unwrap_or(0);
+    Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px, header_rows })
 }
 
 /// One place a table style formats a cell from: a tblStylePr region, or
@@ -1186,11 +1261,8 @@ impl TableRegions {
         rows: &[&ooxml_wml::types::CTRow],
     ) -> Self {
         use ooxml_wml::types::STTblStyleOverrideType as R;
-        // §17.4.49 tblHeader: the run of header rows starts at the first row.
-        let header_rows = rows.iter()
-            .take_while(|r| r.row_properties.as_ref().and_then(|p| crate::check_toggle(&p.tbl_header)).unwrap_or(false))
-            .count()
-            .max(1);
+        // The first row is a header row whether or not it is marked.
+        let header_rows = leading_header_rows(rows).max(1);
         let formats = |region: R| style.chain.iter().any(|s| s.tbl_style_pr.iter().any(|o| o.r#type == region));
         // The nearest band size: the table's own, else its style hierarchy's.
         let size = |direct: &Option<Box<ooxml_wml::types::CTDecimalNumber>>, of: fn(&ooxml_wml::types::CTTblPrBase) -> &Option<Box<ooxml_wml::types::CTDecimalNumber>>| {
@@ -1769,6 +1841,7 @@ mod tests {
             has_borders: true,
             alignment: STJcTable::Start,
             indent_px: 0.0,
+            header_rows: 0,
         };
 
         let meta = build_table_meta(&cache);

@@ -12174,3 +12174,124 @@ fn a_table_style_keeps_rows_from_splitting() {
     let direct = row_fragments(&layout(styled_tall_row_docx(&style, r#"<w:tblStyle w:val="S"/>"#, r#"<w:cantSplit w:val="0"/>"#, &lead)));
     assert_eq!(direct[0].0, 0, "the row's own setting overrides the style's");
 }
+
+// ── Header rows repeat on every page (§17.4.49 tblHeader) ───────────────────
+
+/// A one-column table of `header_rows` red "repeat as header row" rows and
+/// then `body_rows` plain rows; `mark` names the 0-based rows that carry
+/// tblHeader. The third body row is `tall` paragraphs high.
+fn header_table_docx_with(mark: &[usize], header_rows: usize, body_rows: usize, tall: usize) -> Vec<u8> {
+    let row = |i: usize| {
+        let tr_pr = if mark.contains(&i) { "<w:trPr><w:tblHeader/></w:trPr>" } else { "" };
+        let shd = if i < header_rows { r#"<w:shd w:val="clear" w:fill="FF0000"/>"# } else { "" };
+        let n = if i == header_rows + 2 { tall } else { 1 };
+        let paras: String = (0..n).map(|k| p("", &r("", &format!("r{i} l{k}")))).collect();
+        format!(r#"<w:tr>{tr_pr}<w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/>{shd}</w:tcPr>{paras}</w:tc></w:tr>"#)
+    };
+    let rows: String = (0..header_rows + body_rows).map(row).collect();
+    let body = format!(r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#);
+    numbering_docx("", "", &body)
+}
+
+/// Each page's rows as `H` (a red header row) or `b` (a body row or a
+/// fragment of one).
+fn row_kinds(v: &Viewer) -> Vec<String> {
+    v.pages.borrow().iter().map(|page| {
+        page.elements.iter().filter_map(|e| match e {
+            PageElement::TableRow(r) => Some(if r.cells[0].fill_color.is_some() { 'H' } else { 'b' }),
+            _ => None,
+        }).collect()
+    }).collect()
+}
+
+/// The header rows are drawn again at the top of every page the table
+/// continues onto, and nowhere else; the body rows are each placed once.
+#[test]
+fn header_rows_repeat_on_every_page() {
+    let v = layout(header_table_docx_with(&[0, 1], 2, 120, 1));
+    let kinds = row_kinds(&v);
+    assert!(kinds.len() >= 3, "the table runs over three pages: {kinds:?}");
+    for page in &kinds {
+        assert!(page.starts_with("HHb"), "each page opens with both header rows: {page}");
+        assert_eq!(page.matches('H').count(), 2, "and has them once: {page}");
+    }
+    assert_eq!(kinds.concat().matches('b').count(), 120, "every body row once");
+    // A repeated row is drawn where the page's text starts, and the rows
+    // under it follow without a gap or an overlap.
+    let pages = v.pages.borrow();
+    let rows: Vec<&PagedTableRow> = pages[1].elements.iter().filter_map(|e| match e {
+        PageElement::TableRow(r) => Some(r),
+        _ => None,
+    }).collect();
+    assert_px(rows[0].y_top, 96.0, "the first repeated row");
+    for pair in rows.windows(2) {
+        assert_px(pair[1].y_top, pair[0].y_top + pair[0].height_px, "rows stack");
+    }
+    assert!(rows.last().is_some_and(|r| r.y_top + r.height_px <= TEXT_BOTTOM_PX + 0.5), "the page still ends inside the text area");
+}
+
+/// Only the run of marked rows that starts at the first row repeats.
+#[test]
+fn only_leading_header_rows_repeat() {
+    let later = row_kinds(&layout(header_table_docx_with(&[1], 2, 120, 1)));
+    assert_eq!(later[1].matches('H').count(), 0, "a marked row under an unmarked one does not repeat: {}", later[1]);
+    let first_only = row_kinds(&layout(header_table_docx_with(&[0], 2, 120, 1)));
+    assert!(first_only[1].starts_with("Hb"), "only the marked first row repeats: {}", first_only[1]);
+    let none = row_kinds(&layout(header_table_docx_with(&[], 2, 120, 1)));
+    assert_eq!(none[1].matches('H').count(), 0);
+}
+
+/// The header repeats above the rest of a row that splits across the page.
+#[test]
+fn header_rows_repeat_above_a_split_row() {
+    let v = layout(header_table_docx_with(&[0], 1, 4, 70));
+    let kinds = row_kinds(&v);
+    assert_eq!(kinds[0], "Hbbb", "the header, two rows and the start of the tall row");
+    assert!(kinds[1].starts_with("Hb"), "the header, then the rest of the tall row: {}", kinds[1]);
+    let lines: usize = v.pages.borrow().iter().flat_map(|pg| pg.elements.iter()).map(|e| match e {
+        PageElement::TableRow(r) if r.cells[0].fill_color.is_none() => r.cells[0].lines.len(),
+        _ => 0,
+    }).sum();
+    assert_eq!(lines, 70 + 3, "every body line once");
+}
+
+/// A repeated header is display only: its lines belong to no paragraph, so
+/// selection and copy see the header once.
+#[test]
+fn repeated_header_rows_are_not_selectable() {
+    let v = layout(header_table_docx_with(&[0], 1, 120, 1));
+    let pages = v.pages.borrow();
+    let header_para = |page: usize| pages[page].elements.iter().find_map(|e| match e {
+        PageElement::TableRow(r) => Some(r.cells[0].lines[0].para),
+        _ => None,
+    }).unwrap();
+    assert_ne!(header_para(0), crate::wml::page::PARA_SENTINEL, "the header itself");
+    assert_eq!(header_para(1), crate::wml::page::PARA_SENTINEL, "its repeat");
+}
+
+#[test]
+fn restart_repeated_header_rows() {
+    let (log, skipped) = assert_restartable("restart_repeated_header_whole", header_table_docx_with(&[0, 1], 2, 120, 1));
+    assert_eq!(skipped, 0);
+    assert!(log_has(&log, |r| matches!(r, super::ResumeAt::RowWhole { .. })));
+    let (log, skipped) = assert_restartable("restart_repeated_header_split", header_table_docx_with(&[0], 1, 4, 70));
+    assert_eq!(skipped, 0);
+    assert!(log_has(&log, |r| matches!(r, super::ResumeAt::RowSplit { .. })));
+}
+
+/// A table in balanced columns keeps its cells' vertical alignment.
+#[test]
+fn a_balanced_table_keeps_cell_vertical_alignment() {
+    let cell = |v_align: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{v_align}</w:tcPr>{}</w:tc>"#, p("", &r("", "x")));
+    let table = format!(
+        r#"<w:tbl><w:tblPr><w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="1500"/></w:trPr>{}{}</w:tr></w:tbl>"#,
+        cell(""), cell(r#"<w:vAlign w:val="bottom"/>"#),
+    );
+    let sect = r#"<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:cols w:num="2" w:space="720"/></w:sectPr>"#;
+    let body = format!(r#"{table}<w:p><w:pPr>{sect}</w:pPr></w:p>{}"#, para("After"));
+    let docx = unzip_replace(numbering_docx("", "", &body), "word/document.xml", "<w:sectPr>\n  <w:pgSz", r#"<w:sectPr><w:type w:val="continuous"/><w:pgSz"#);
+    let v = layout(docx);
+    let row = table_rows_of(&v).remove(0);
+    let (top, bottom) = (row.cells[0].lines[0].baseline_y, row.cells[1].lines[0].baseline_y);
+    assert!(bottom > top + 50.0, "the bottom-aligned cell's text sits lower: {top} vs {bottom}");
+}

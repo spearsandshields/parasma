@@ -21,10 +21,10 @@ use crate::engine::fonts::{FontCache, ThemeFonts};
 use crate::wml::linebreak::{justify_line, with_page_fields, BreakAfter, Item, PageFields};
 use crate::wml::loader::SectionHdrFtr;
 use crate::wml::page::{
-    HdrFtrCache, HfBlock, PagedLine, PagedTableCell, PagedTableRow, PARA_SENTINEL,
+    HdrFtrCache, HfBlock, PagedLine, PagedTableRow, PARA_SENTINEL,
 };
 use crate::wml::paragraph::layout_paragraph;
-use crate::wml::table::{layout_table, CellVAlign, TableCache};
+use crate::wml::table::{layout_table, TableCache};
 
 // ─── Per-page layout (the streaming output) ──────────────────────────────────
 
@@ -287,8 +287,7 @@ pub(crate) fn position_hdr_ftr_lines(
 }
 
 /// Lay a header/footer table's rows out as `PagedTableRow`s at the running band
-/// `y`. Mirrors the body's whole-row placement (§17.4): table alignment offset,
-/// per-cell margins, vertical alignment, and cell text lines. No page break —
+/// `y`, through the shared whole-row emitter (§17.4). No page break —
 /// the band is shallow and a header table is small; if a row would overrun, it
 /// simply renders clipped (clamps gracefully).
 fn position_hf_table(
@@ -301,51 +300,7 @@ fn position_hf_table(
     let cell_x_start = band_left + table.offset_in(band_width);
 
     for row in &table.rows {
-        let row_y_top = *y;
-        let mut paged_cells = Vec::with_capacity(row.cells.len());
-        for cell in &row.cells {
-            let cell_x = cell_x_start + cell.x_px;
-            let mut cell_lines = Vec::new();
-            let cell_vmar = cell.mar_top + cell.mar_bottom;
-            let v_offset = match cell.v_align {
-                CellVAlign::Center => {
-                    let ch = cell.content_height(0.0);
-                    ((row.height_px - cell_vmar) - ch).max(0.0) / 2.0
-                }
-                CellVAlign::Bottom => {
-                    let ch = cell.content_height(0.0);
-                    ((row.height_px - cell_vmar) - ch).max(0.0)
-                }
-                CellVAlign::Top => 0.0,
-            };
-            // The shared cell walk (`flatten_cell_lines`), at the cell's
-            // content top.
-            let content_top = row_y_top + cell.mar_top + v_offset;
-            cell_lines.extend(crate::wml::table::flatten_cell_lines(cell, cell_x).into_iter().map(|proto| {
-                let mut line = proto.line;
-                line.baseline_y += content_top;
-                line
-            }));
-            paged_cells.push(PagedTableCell {
-                lines: cell_lines,
-                x: cell_x,
-                width_px: cell.width_px,
-                fill_color: cell.fill_color.clone(),
-                v_merged_away: cell.v_merged_away,
-                border_top: cell.border_top.clone(),
-                border_bottom: cell.border_bottom.clone(),
-                border_left: cell.border_left.clone(),
-                border_right: cell.border_right.clone(),
-                                diagonals: cell.diagonals.clone(),
-            });
-        }
-        rows.push(PagedTableRow {
-            cells: paged_cells,
-            y_top: row_y_top,
-            height_px: row.height_px,
-            border_color: table.border_color.clone(),
-            has_borders: table.has_borders,
-        });
+        rows.push(table.whole_row(row, cell_x_start, *y));
         *y += row.height_px;
     }
 }

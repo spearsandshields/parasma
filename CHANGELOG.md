@@ -292,6 +292,11 @@ are held stable regardless.
   now applies: fill, vertical alignment, padding and borders on all cells,
   the table's alignment and indent, and rows kept from breaking across
   pages. A table centred or indented by its style is no longer flush left.
+- Tables: rows marked "Repeat as header row" are drawn again at the top of
+  every page and column a long table continues onto, also above a row that
+  splits across the break. A repeated header is display only: selecting and
+  copying see the header once.
+- Tables: a table in balanced columns keeps its cells' vertical alignment.
 
 ### Changed
 

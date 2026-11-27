@@ -3985,6 +3985,28 @@ impl Viewer {
                 }};
             }
 
+            // §17.4.49 tblHeader: draw a table's header rows again where it
+            // continues on a new page or column, above body row `$row_idx`.
+            // Nothing is drawn while the header rows themselves are being
+            // placed. Declared: the header is not repeated where it would take
+            // more than half of the space left, so a table with an oversized
+            // header still makes progress; nor in the column-balancing pass.
+            macro_rules! repeat_header_rows {
+                ($table:expr, $row_idx:expr, $table_x:expr) => {{
+                    let table = $table;
+                    if table.header_rows > 0 && $row_idx >= table.header_rows {
+                        let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
+                        let avail = effective_content_height(&laid_out_hf, geo, section_page_idx) - y_in_page;
+                        if table.header_height() <= avail / 2.0 {
+                            for header in table.repeated_header_rows($table_x, margin_top + y_in_page) {
+                                y_in_page += header.height_px;
+                                current.push(PageElement::TableRow(header));
+                            }
+                        }
+                    }
+                }};
+            }
+
             // Split a table row that is taller than the page remainder across the
             // page break (§17.4.6 — splitting at line granularity; a cantSplit
             // row reaches here only when it fits on no page).
@@ -4045,6 +4067,11 @@ impl Viewer {
                     let mut cursors: Vec<usize> = $cursors;
 
                     while consumed + 0.01 < row_content_bottom {
+                        // Past its first fragment the row continues on a new
+                        // page or column, which opens with the header rows.
+                        if consumed > 0.0 {
+                            repeat_header_rows!(table, $row_idx, cell_x_start);
+                        }
                         let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                         let content_height_now = effective_content_height(&laid_out_hf, geo, section_page_idx);
                         let avail = content_height_now - y_in_page;
@@ -5187,6 +5214,9 @@ impl Viewer {
                             // overflow test were decided PRE-advance on the
                             // original run — emit the row verbatim.
                             let resume_whole = whole_resume == Some(row_idx);
+                            // Whether this row opens a page or column the
+                            // table continues onto.
+                            let mut continues = resume_whole;
                             // What the split path can carry: a row needs two
                             // lines to leave a remainder (a single-line row
                             // whole-pushes), and a cell-hosted float is laid out
@@ -5233,7 +5263,12 @@ impl Viewer {
                                 // Whole-row push: row `row_idx` opens the new page.
                                 overflow_col!('relay, block_idx,
                                     ResumeAt::RowWhole { block: block_idx, next_row: row_idx });
+                                continues = true;
                             }
+                            }
+                            if continues {
+                                let col = &geo.columns[col_idx];
+                                repeat_header_rows!(table, row_idx, col.x_offset_px + table.offset_in(col.width_px));
                             }
                             // A row that still does not fit where it now stands —
                             // it opens its page, or was just pushed to a fresh
@@ -5504,31 +5539,7 @@ impl Viewer {
                                     let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                                     let row_y_top = margin_top + balance_band_offset + y_in_page;
                                     let cell_x_start = col_ml + table.offset_in(col_cw);
-                                    // Rebuild paged cells at the new column position.
-                                    let mut paged_cells = Vec::new();
-                                    for cell in &row.cells {
-                                        let cell_x = cell_x_start + cell.x_px;
-                                        // The shared cell walk, at the cell's content top.
-                                        // Declared: vertical alignment is not applied here.
-                                        let cell_lines: Vec<PagedLine> = flatten_cell_lines(cell, cell_x).into_iter()
-                                            .map(|proto| {
-                                                let mut line = proto.line;
-                                                line.baseline_y += row_y_top + cell.mar_top;
-                                                line
-                                            })
-                                            .collect();
-                                        paged_cells.push(PagedTableCell {
-                                            lines: cell_lines, x: cell_x,
-                                            width_px: cell.width_px, fill_color: cell.fill_color.clone(),
-                                            v_merged_away: cell.v_merged_away,
-                                            border_top: cell.border_top.clone(), border_bottom: cell.border_bottom.clone(),
-                                            border_left: cell.border_left.clone(), border_right: cell.border_right.clone(), diagonals: cell.diagonals.clone(),
-                                        });
-                                    }
-                                    current.push(PageElement::TableRow(PagedTableRow {
-                                        cells: paged_cells, y_top: row_y_top, height_px: row.height_px,
-                                        border_color: table.border_color.clone(), has_borders: table.has_borders,
-                                    }));
+                                    current.push(PageElement::TableRow(table.whole_row(row, cell_x_start, row_y_top)));
                                     y_in_page += row.height_px;
                                 }
                             }
