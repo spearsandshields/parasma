@@ -1,6 +1,6 @@
 //! Images, for every format: the media part types, the placeholder drawn for
-//! an image not yet decoded, and how a picture draws: its crop and outline,
-//! and the paint that draws them.
+//! an image not yet decoded, and how a picture draws: its crop, opacity and
+//! outline, and the paint that draws them.
 
 use wasm_bindgen::JsValue;
 
@@ -97,41 +97,62 @@ pub(crate) struct ImageCrop {
 /// A rectangle as `(x, y, width, height)`.
 pub(crate) type Xywh = (f64, f64, f64, f64);
 
-/// How a picture is drawn beyond its whole bitmap stretched over its frame:
-/// its crop, read from its fill (`a:blipFill`, §20.1.8.14), and its outline,
-/// read from its shape properties. One value for every format, carried whole
-/// from the markup to the paint by every picture carrier, which holds `None`
-/// for a picture that sets neither.
+/// How a picture is drawn other than as its whole bitmap, opaque, stretched
+/// over its frame: its crop and opacity, read from its fill (`a:blipFill`,
+/// §20.1.8.14), and its outline, read from its shape properties. One value
+/// for every format, carried whole from the markup to the paint by every
+/// picture carrier, which holds `None` for a picture that sets none of them.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct PictureStyle {
     /// The outline (`a:ln`, §20.1.2.2.24), drawn over the picture.
     pub(crate) outline: Option<Edge>,
     /// The crop, `None` when it is all zero.
     pub(crate) crop: Option<ImageCrop>,
+    /// The opacity the bitmap draws at, from 0 (invisible) to 1 (opaque).
+    /// The outline draws at its own colour's opacity instead.
+    pub(crate) alpha: f64,
 }
 
 impl PictureStyle {
-    /// The style of a picture cropped by `crop` whose line (`a:ln`,
+    /// The style of a picture cropped by `crop`, whose blip (`a:blip`,
+    /// §20.1.8.13) carries an alpha modulate fixed effect (`a:alphaModFix`,
+    /// §20.1.8.6) with each `amt` of `alpha_mod_fix`, and whose line (`a:ln`,
     /// §20.1.2.2.24) draws in `line_color` (`None` for no line, a `noFill`
     /// line, or a fill not drawn here) and is `line_width_emu` (`@w`) wide.
-    /// `None` when it draws neither, as most pictures do.
+    /// `None` when it draws none of them, as most pictures do.
+    ///
+    /// Each effect multiplies the bitmap's opacity by its `amt`, 100 % when
+    /// absent (the schema default) or unreadable, the result kept within 0
+    /// to 100 % after each.
     ///
     /// Deviations, declared: a line without `@w` is drawn 9525 EMU (1px)
     /// wide, where the spec reads an absent width as 0; not measured in
     /// Office. A line of zero width draws nothing. The dash, compound line,
     /// pen alignment, caps and joins are not read: the outline is a solid
-    /// single stroke.
-    pub(crate) fn of(crop: ImageCrop, line_color: Option<String>, line_width_emu: Option<i64>) -> Option<Box<Self>> {
+    /// single stroke. The opacity applies to the whole bitmap at once, so an
+    /// `amt` above 100 % cannot raise a translucent pixel of the bitmap
+    /// itself and draws it as it is. The blip's other effects are not read.
+    pub(crate) fn of<'a>(
+        crop: ImageCrop,
+        alpha_mod_fix: impl IntoIterator<Item = Option<&'a str>>,
+        line_color: Option<String>,
+        line_width_emu: Option<i64>,
+    ) -> Option<Box<Self>> {
         let width_px = emu_to_px(line_width_emu.unwrap_or(9_525));
         let outline = line_color
             .filter(|_| width_px > 0.0)
             .map(|color| Edge { color, width_px, dash: None, style: LineStyle::Single });
         let crop = (crop != ImageCrop::default()).then_some(crop);
-        (outline.is_some() || crop.is_some()).then(|| Box::new(PictureStyle { outline, crop }))
+        let alpha = alpha_mod_fix
+            .into_iter()
+            .map(|amt| amt.and_then(parse_dml_pct).unwrap_or(1.0))
+            .fold(1.0, |alpha, amt| (alpha * amt).clamp(0.0, 1.0));
+        (outline.is_some() || crop.is_some() || alpha < 1.0).then(|| Box::new(PictureStyle { outline, crop, alpha }))
     }
 }
 
-/// Draw picture `key`'s bitmap into its frame, then its outline over it.
+/// Draw picture `key`'s bitmap into its frame at its opacity, then its
+/// outline over it.
 ///
 /// A cropped picture draws the part of its bitmap the crop keeps, where
 /// [`crop_draw`] places it, and nothing when it keeps none; an uncropped one
@@ -142,14 +163,22 @@ impl PictureStyle {
 /// so half of it lies outside the picture. It takes no space in the layout.
 pub(crate) fn draw_picture(p: &dyn Painter, key: &str, frame: Xywh, style: Option<&PictureStyle>) -> Result<(), JsValue> {
     let (x, y, w, h) = frame;
-    match style.and_then(|s| s.crop.as_ref()) {
-        None => p.draw_image(key, x, y, w, h)?,
-        Some(crop) => {
-            if let Some(((sx, sy, sw, sh), (dx, dy, dw, dh))) = crop_draw(frame, crop) {
-                p.draw_image_crop(key, sx, sy, sw, sh, dx, dy, dw, dh)?;
-            }
-        }
+    let alpha = style.map_or(1.0, |s| s.alpha);
+    if alpha < 1.0 {
+        p.save();
+        p.set_global_alpha(alpha);
     }
+    let drawn = match style.and_then(|s| s.crop.as_ref()) {
+        None => p.draw_image(key, x, y, w, h),
+        Some(crop) => match crop_draw(frame, crop) {
+            Some(((sx, sy, sw, sh), (dx, dy, dw, dh))) => p.draw_image_crop(key, sx, sy, sw, sh, dx, dy, dw, dh),
+            None => Ok(()),
+        },
+    };
+    if alpha < 1.0 {
+        p.restore();
+    }
+    drawn?;
     if let Some(line) = style.and_then(|s| s.outline.as_ref()) {
         p.set_stroke_style_str(&line.color);
         p.set_line_width(line.width_px);
@@ -210,9 +239,31 @@ fn crop_span(
 
 #[cfg(test)]
 mod tests {
-    use super::{crop_draw, ImageCrop, RelativeRect, Xywh};
+    use super::{crop_draw, ImageCrop, PictureStyle, RelativeRect, Xywh};
 
     const FRAME: Xywh = (10.0, 20.0, 200.0, 100.0);
+
+    /// The opacity of an otherwise plain picture whose blip carries an
+    /// `a:alphaModFix` with each of `amts`, 1 for one with no style.
+    fn opacity(amts: &[Option<&str>]) -> f64 {
+        PictureStyle::of(ImageCrop::default(), amts.iter().copied(), None, None).map_or(1.0, |s| s.alpha)
+    }
+
+    /// §20.1.8.6: each effect multiplies the opacity by its `amt`, 100 % when
+    /// absent or unreadable, kept within 0 to 100 % after each step.
+    #[test]
+    fn alpha_mod_fix_multiplies_the_opacity() {
+        assert_eq!(opacity(&[Some("40000")]), 0.4);
+        assert_eq!(opacity(&[Some("40%")]), 0.4);
+        assert_eq!(opacity(&[Some("50000"), Some("50000")]), 0.25);
+        assert_eq!(opacity(&[Some("-10000")]), 0.0);
+        // Above 100 % the opaque bitmap stays opaque, so a later 50 % halves it.
+        assert_eq!(opacity(&[Some("200000"), Some("50000")]), 0.5);
+        let opaque: [&[Option<&str>]; 5] = [&[], &[None], &[Some("100000")], &[Some("200000")], &[Some("x")]];
+        for opaque in opaque {
+            assert!(PictureStyle::of(ImageCrop::default(), opaque.iter().copied(), None, None).is_none(), "{opaque:?} is no style");
+        }
+    }
 
     /// A crop from its source and fill edges, each `(l, t, r, b)`.
     fn crop(src: (f64, f64, f64, f64), fill: (f64, f64, f64, f64)) -> ImageCrop {

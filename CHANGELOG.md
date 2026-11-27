@@ -63,6 +63,9 @@ are held stable regardless.
   show only the part kept by the crop, and a picture border is drawn around
   the picture in its colour and width, as in documents. Dashed and double
   borders are drawn as a plain line for now.
+- Documents, presentations and spreadsheets: a picture made see-through with
+  Picture Transparency is drawn faded, so what lies behind it shows through,
+  where it used to be drawn fully opaque. Its border stays solid.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.

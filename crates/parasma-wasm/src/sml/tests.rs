@@ -2450,9 +2450,9 @@ mod drawing_tests {
         (images, frames)
     }
 
-    /// What a sheet holding `drawing` draws for its picture: on the grid (the
-    /// default view), and on its first print page.
-    fn sheet_picture_ops(drawing: &str) -> [PictureOps; 2] {
+    /// Everything a sheet holding `drawing` records: on the grid (the default
+    /// view), and on its first print page.
+    fn sheet_cmds(drawing: &str) -> [Vec<DrawCmd>; 2] {
         let fc = calibri_font_cache();
         let r = super::SmlRenderer::from_xlsx(xlsx_with_drawing(drawing)).expect("from_xlsx");
         let grid = RecordingPainter::new();
@@ -2462,7 +2462,13 @@ mod drawing_tests {
         let print = RecordingPainter::new();
         render::paint_sheet_page(&print, &pages[0], 24.0, 24.0, 816.0, 1056.0, r.normal_font(), &fc, &HashMap::new(), &HashMap::new(), None)
             .expect("the print page paints");
-        [picture_ops(grid.take()), picture_ops(print.take())]
+        [grid.take(), print.take()]
+    }
+
+    /// What a sheet holding `drawing` draws for its picture, in each view of
+    /// [`sheet_cmds`].
+    fn sheet_picture_ops(drawing: &str) -> [PictureOps; 2] {
+        sheet_cmds(drawing).map(picture_ops)
     }
 
     /// The rectangle each view draws an unstyled picture over: its frame.
@@ -2506,6 +2512,45 @@ mod drawing_tests {
         for ((x, y, w, h), (images, frames)) in views {
             assert_eq!(images, [DrawCmd::DrawImage { key: "sml::0::rId1".into(), dx: x, dy: y, dw: w, dh: h }]);
             assert_eq!(frames, [("#ff0000".to_owned(), 2.0, (x, y, w, h))], "one red 1.5 pt frame on the picture's edge");
+        }
+    }
+
+    // ─── picture transparency (`a:blip/a:alphaModFix`, §20.1.8.6)
+
+    /// [`styled_drawing`] with `effects` inside its blip.
+    fn translucent_drawing(effects: &str, src_rect: &str, ln: &str) -> String {
+        let blip = r#"r:embed="rId1"/>"#;
+        let s = styled_drawing(src_rect, ln);
+        assert!(s.contains(blip), "the picture's blip is empty");
+        s.replace(blip, &format!(r#"r:embed="rId1">{effects}</a:blip>"#))
+    }
+
+    /// `a:alphaModFix amt="40000"` draws the picture at 40 % opacity, and
+    /// only the picture: its outline, drawn next, is opaque. Cropped or
+    /// whole, on the grid and on a print page.
+    #[test]
+    fn a_translucent_picture_draws_at_its_opacity() {
+        use crate::engine::displaylist::alpha_at_each_draw;
+        for src_rect in ["", r#"<a:srcRect l="25000" r="25000"/>"#] {
+            for (view, cmds) in ["grid", "print"].into_iter().zip(sheet_cmds(&translucent_drawing(r#"<a:alphaModFix amt="40000"/>"#, src_rect, RED_LINE))) {
+                let draws = alpha_at_each_draw(&cmds);
+                let at = draws
+                    .iter()
+                    .position(|(c, _)| matches!(c, DrawCmd::DrawImage { .. } | DrawCmd::DrawImageCrop { .. }))
+                    .expect("the picture is drawn");
+                assert_eq!((draws[at].1, draws.get(at + 1).map(|(_, a)| *a)), (0.4, Some(1.0)), "{view}, crop {src_rect:?}");
+            }
+        }
+    }
+
+    /// A picture at full opacity (an `a:alphaModFix` at 100 %, or one
+    /// without `amt`, which defaults to 100 %) draws exactly what a picture
+    /// without one draws.
+    #[test]
+    fn an_opaque_picture_draws_as_before() {
+        let plain = sheet_cmds(&styled_drawing("", RED_LINE));
+        for opaque in [r#"<a:alphaModFix amt="100000"/>"#, "<a:alphaModFix/>"] {
+            assert_eq!(sheet_cmds(&translucent_drawing(opaque, "", RED_LINE)), plain, "{opaque}");
         }
     }
 }

@@ -98,6 +98,31 @@ pub(crate) enum DrawCmd {
 /// An ordered list of draw commands for one render (page / window / grid slice).
 pub(crate) type DisplayList = Vec<DrawCmd>;
 
+/// Each command in `cmds` that marks the canvas, with the global alpha it
+/// marks at: `SetGlobalAlpha` sets it, and `Restore` returns it to what it
+/// was at the matching `Save`, as on a canvas.
+#[cfg(test)]
+pub(crate) fn alpha_at_each_draw(cmds: &[DrawCmd]) -> Vec<(&DrawCmd, f64)> {
+    let (mut alpha, mut saved, mut draws) = (1.0, Vec::new(), Vec::new());
+    for c in cmds {
+        match c {
+            DrawCmd::Save => saved.push(alpha),
+            DrawCmd::Restore => alpha = saved.pop().unwrap_or(alpha),
+            DrawCmd::SetGlobalAlpha(a) => alpha = *a,
+            DrawCmd::Fill
+            | DrawCmd::Stroke
+            | DrawCmd::FillRect { .. }
+            | DrawCmd::StrokeRect { .. }
+            | DrawCmd::FillText { .. }
+            | DrawCmd::StrokeText { .. }
+            | DrawCmd::DrawImage { .. }
+            | DrawCmd::DrawImageCrop { .. } => draws.push((c, alpha)),
+            _ => {}
+        }
+    }
+    draws
+}
+
 // ── Flat wire encoding (Rust encoder ↔ TS decoder CONTRACT) ─────────────────-
 //
 // A `DisplayList` crosses wasm→JS as TWO arrays: a flat `Vec<f64>` opcode stream

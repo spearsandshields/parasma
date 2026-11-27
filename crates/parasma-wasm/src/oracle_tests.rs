@@ -12564,3 +12564,63 @@ fn a_crop_moves_nothing_and_keeps_the_outline_on_the_frame() {
         }
     }
 }
+
+// ── Picture transparency (`a:blip/a:alphaModFix`, §20.1.8.6) ───────────────
+
+/// Word's Picture Transparency at 60 %: the bitmap at 40 % opacity.
+const ALPHA_40: &str = r#"<a:alphaModFix amt="40000"/>"#;
+
+/// `body` with `effects` inside the picture's `a:blip`.
+fn with_blip_effects(body: String, effects: &str) -> String {
+    let blip = r#"<a:blip r:embed="rId40"/>"#;
+    assert!(body.contains(blip), "the picture's blip is empty");
+    body.replace(blip, &format!(r#"<a:blip r:embed="rId40">{effects}</a:blip>"#))
+}
+
+/// Everything page 0 of `body` records.
+fn page_cmds(body: &str) -> Vec<crate::engine::displaylist::DrawCmd> {
+    let v = layout(picture_docx(body));
+    let rec = crate::engine::displaylist::RecordingPainter::new();
+    v.paint_wml_page(0, &rec, None).expect("paint page 0");
+    rec.take()
+}
+
+/// The global alpha page 0 draws its picture at, and the alpha of the next
+/// thing it draws.
+fn picture_alpha(body: &str) -> (f64, Option<f64>) {
+    use crate::engine::displaylist::{alpha_at_each_draw, DrawCmd};
+    let cmds = page_cmds(body);
+    let draws = alpha_at_each_draw(&cmds);
+    let at = draws
+        .iter()
+        .position(|(c, _)| matches!(c, DrawCmd::DrawImage { key, .. } | DrawCmd::DrawImageCrop { key, .. } if key == "rId40"))
+        .expect("the picture is drawn");
+    (draws[at].1, draws.get(at + 1).map(|(_, alpha)| *alpha))
+}
+
+/// `a:alphaModFix amt="40000"` draws the picture at 40 % opacity, and only
+/// the picture: its outline, drawn next, is opaque. Cropped or whole, inline,
+/// floating, and floating in a table cell.
+#[test]
+fn a_translucent_picture_draws_at_its_opacity() {
+    for (what, body) in picture_bodies(RED_LINE) {
+        for crop in ["", SIDE_CROP] {
+            let body = with_blip_effects(with_blip_fill(body.clone(), crop), ALPHA_40);
+            assert_eq!(picture_alpha(&body), (0.4, Some(1.0)), "{what}, crop {crop:?}");
+        }
+    }
+}
+
+/// Transparency moves nothing, and a picture at full opacity (no
+/// `a:alphaModFix`, one at 100 %, or one without `amt`, which defaults to
+/// 100 %) draws exactly what a picture without one draws.
+#[test]
+fn transparency_moves_nothing_and_an_opaque_picture_draws_as_before() {
+    for (what, plain) in picture_bodies(RED_LINE) {
+        let translucent = with_blip_effects(plain.clone(), ALPHA_40);
+        assert_eq!(geometry_dump(&layout(picture_docx(&translucent))), geometry_dump(&layout(picture_docx(&plain))), "{what}");
+        for opaque in [r#"<a:alphaModFix amt="100000"/>"#, "<a:alphaModFix/>"] {
+            assert_eq!(page_cmds(&with_blip_effects(plain.clone(), opaque)), page_cmds(&plain), "{what}, {opaque}");
+        }
+    }
+}

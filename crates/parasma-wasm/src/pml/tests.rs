@@ -37,6 +37,22 @@ fn build_pptx(parts: &[(&str, &str)]) -> Vec<u8> {
     zw.finish().expect("zip finish").into_inner()
 }
 
+/// A deck whose one slide is `slide`, on the base master and layout.
+fn one_slide_deck(slide: &str) -> Vec<u8> {
+    build_pptx(&[
+        ("[Content_Types].xml", CONTENT_TYPES),
+        ("_rels/.rels", ROOT_RELS),
+        ("ppt/presentation.xml", PRESENTATION),
+        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
+        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
+        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
+        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
+        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
+        ("ppt/slides/slide1.xml", slide),
+        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
+    ])
+}
+
 const CONTENT_TYPES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
@@ -239,18 +255,7 @@ const CXN_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"
 
 /// Build a one-slide deck whose slide is the [`CXN_SLIDE`] connector fixture.
 fn connectors_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", CXN_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(CXN_SLIDE)
 }
 
 // ─── Group-shape fixture ────────────────────────────────────────────────────
@@ -320,18 +325,7 @@ const GRP_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"
 
 /// Build a one-slide deck whose slide is the [`GRP_SLIDE`] group-shape fixture.
 fn groups_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", GRP_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(GRP_SLIDE)
 }
 
 /// A minimal valid 1×1 red PNG (deterministic; produced by zlib-deflating a
@@ -438,34 +432,12 @@ fn picture_object_hit_key_round_trips_through_the_image_store() {
 
 /// Build the fills/colours/outline/alignment/bullets deck.
 fn fills_colors_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", FC_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(FC_SLIDE)
 }
 
 /// Build the parser-minimal one-slide deck.
 pub(crate) fn minimal_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(SLIDE)
 }
 
 // ─── tests ─────────────────────────────────────────────────────────────────
@@ -961,35 +933,46 @@ fn picture_without_xfrm_or_embed_is_dropped() {
 /// A red line 1.5 pt (19 050 EMU, 2 px) wide.
 const RED_LINE: &str = r#"<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>"#;
 
+/// The picture deck of [`styled_picture_slide`].
+fn styled_picture_deck(src_rect: &str, ln: &str) -> Vec<u8> {
+    picture_deck(&styled_picture_slide(src_rect, ln))
+}
+
 /// [`PIC_SLIDE`] with `src_rect` after its blip and `ln` at the end of its
 /// `p:spPr`.
-fn styled_picture_deck(src_rect: &str, ln: &str) -> Vec<u8> {
+fn styled_picture_slide(src_rect: &str, ln: &str) -> String {
     let slide = PIC_SLIDE
         .replace(r#"<a:blip r:embed="rId2"/>"#, &format!(r#"<a:blip r:embed="rId2"/>{src_rect}"#))
         .replace("</p:spPr>", &format!("{ln}</p:spPr>"));
     assert_eq!(slide.len(), PIC_SLIDE.len() + src_rect.len() + ln.len(), "both insertions take");
-    picture_deck(&slide)
+    slide
 }
 
 /// What the slide draws for its picture: each image op, and each rectangle
 /// stroked after the first one with the stroke colour and width in force.
 type PictureOps = (Vec<crate::engine::displaylist::DrawCmd>, Vec<(String, f64, (f64, f64, f64, f64))>);
 
-fn picture_ops(deck: Vec<u8>) -> PictureOps {
-    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+/// Everything the first slide of `deck` records.
+fn slide_cmds(deck: Vec<u8>) -> Vec<crate::engine::displaylist::DrawCmd> {
+    use crate::engine::displaylist::RecordingPainter;
     use crate::engine::fonts::FontCache;
     use std::cell::RefCell;
     use std::collections::HashMap;
-    let renderer = PmlRenderer::from_pptx(deck).expect("picture pptx loads");
+    let renderer = PmlRenderer::from_pptx(deck).expect("pptx loads");
     let fc = FontCache::new();
     let pages = RefCell::new(renderer.build_pages_for_test(&fc));
     let rec = RecordingPainter::new();
     renderer
         .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, None, None, None, None)
         .expect("the slide paints");
+    rec.take()
+}
+
+fn picture_ops(deck: Vec<u8>) -> PictureOps {
+    use crate::engine::displaylist::DrawCmd;
     let (mut images, mut frames) = (Vec::new(), Vec::new());
     let (mut color, mut width) = (String::new(), 1.0);
-    for c in rec.take() {
+    for c in slide_cmds(deck) {
         match c {
             DrawCmd::DrawImage { .. } | DrawCmd::DrawImageCrop { .. } => images.push(c),
             DrawCmd::SetStrokeStyle(s) => color = s.to_ascii_lowercase(),
@@ -1039,6 +1022,133 @@ fn a_picture_draws_its_outline() {
     let (images, frames) = picture_ops(styled_picture_deck("", RED_LINE));
     assert_eq!(images, [DrawCmd::DrawImage { key: "pml::0::rId2".into(), dx: x, dy: y, dw: w, dh: h }]);
     assert_eq!(frames, [("#ff0000".to_owned(), 2.0, (x, y, w, h))], "one red 1.5 pt frame on the picture's edge");
+}
+
+// ─── Picture transparency (`a:blip/a:alphaModFix`, §20.1.8.6) ───────────────
+
+/// [`styled_picture_deck`] with `effects` inside its blip.
+fn translucent_picture_deck(effects: &str, src_rect: &str, ln: &str) -> Vec<u8> {
+    let blip = r#"<a:blip r:embed="rId2"/>"#;
+    let slide = styled_picture_slide(src_rect, ln);
+    assert!(slide.contains(blip), "the picture's blip is empty");
+    picture_deck(&slide.replace(blip, &format!(r#"<a:blip r:embed="rId2">{effects}</a:blip>"#)))
+}
+
+/// `a:alphaModFix amt="40000"` draws the picture at 40 % opacity, and only
+/// the picture: its outline, drawn next, is opaque. Cropped or whole.
+#[test]
+fn a_translucent_picture_draws_at_its_opacity() {
+    use crate::engine::displaylist::{alpha_at_each_draw, DrawCmd};
+    for src_rect in ["", r#"<a:srcRect l="25000" r="25000"/>"#] {
+        let cmds = slide_cmds(translucent_picture_deck(r#"<a:alphaModFix amt="40000"/>"#, src_rect, RED_LINE));
+        let draws = alpha_at_each_draw(&cmds);
+        let at = draws
+            .iter()
+            .position(|(c, _)| matches!(c, DrawCmd::DrawImage { .. } | DrawCmd::DrawImageCrop { .. }))
+            .expect("the picture is drawn");
+        assert_eq!((draws[at].1, draws.get(at + 1).map(|(_, a)| *a)), (0.4, Some(1.0)), "crop {src_rect:?}");
+    }
+}
+
+/// A picture at full opacity (an `a:alphaModFix` at 100 %, or one without
+/// `amt`, which defaults to 100 %) draws exactly what a picture without one
+/// draws.
+#[test]
+fn an_opaque_picture_draws_as_before() {
+    let plain = slide_cmds(styled_picture_deck("", RED_LINE));
+    for opaque in [r#"<a:alphaModFix amt="100000"/>"#, "<a:alphaModFix/>"] {
+        assert_eq!(slide_cmds(translucent_picture_deck(opaque, "", RED_LINE)), plain, "{opaque}");
+    }
+}
+
+// ─── Colour transparency (`a:alpha`, `a:alphaMod`, `a:alphaOff`, §20.1.2.3.1-3) ─
+
+/// A deck whose one slide holds one 1-inch rectangle with `sp_pr` (its fill
+/// and line) in its shape properties.
+fn one_shape_deck(sp_pr: &str) -> Vec<u8> {
+    one_slide_deck(&format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
+    <p:sp>
+      <p:nvSpPr><p:cNvPr id="2" name="Box"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+      <p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>{sp_pr}</p:spPr>
+    </p:sp>
+  </p:spTree></p:cSld>
+</p:sld>"#
+    ))
+}
+
+/// The paint style in force each time the first slide of `deck` fills
+/// (`fill`) or strokes: the command that set it, following save and restore.
+fn styles_drawn(deck: Vec<u8>, fill: bool) -> Vec<crate::engine::displaylist::DrawCmd> {
+    use crate::engine::displaylist::DrawCmd as C;
+    let (mut style, mut saved, mut drawn) = (None, Vec::new(), Vec::new());
+    for c in slide_cmds(deck) {
+        match &c {
+            C::Save => saved.push(style.clone()),
+            C::Restore => style = saved.pop().unwrap_or(style),
+            C::SetFillStyle(_) | C::SetLinearGradient { .. } | C::SetRadialGradient { .. } | C::SetPatternFill { .. } if fill => style = Some(c),
+            C::SetStrokeStyle(_) if !fill => style = Some(c),
+            C::Fill | C::FillRect { .. } if fill => drawn.extend(style.clone()),
+            C::Stroke | C::StrokeRect { .. } if !fill => drawn.extend(style.clone()),
+            _ => {}
+        }
+    }
+    drawn
+}
+
+/// A translucent colour fills and outlines a shape translucent, as
+/// `rgba()`: `a:alpha` sets the opacity, `a:alphaMod` scales it and
+/// `a:alphaOff` shifts it. An opaque colour stays `#rrggbb`.
+#[test]
+fn a_translucent_colour_paints_translucent() {
+    use crate::engine::displaylist::DrawCmd;
+    // The fill colours drawn, in lower case: CSS colours ignore case.
+    let filled = |clr: &str| -> Vec<String> {
+        let drawn = styles_drawn(one_shape_deck(&format!("<a:solidFill>{clr}</a:solidFill>")), true);
+        drawn.iter().filter_map(|c| match c { DrawCmd::SetFillStyle(s) => Some(s.to_ascii_lowercase()), _ => None }).collect()
+    };
+    for (clr, want) in [
+        (r#"<a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr>"#, "rgba(255,0,0,0.500)"),
+        (r#"<a:srgbClr val="FF0000"><a:alpha val="80000"/><a:alphaMod val="50000"/></a:srgbClr>"#, "rgba(255,0,0,0.400)"),
+        (r#"<a:srgbClr val="FF0000"><a:alpha val="75000"/><a:alphaOff val="-25000"/></a:srgbClr>"#, "rgba(255,0,0,0.500)"),
+        (r#"<a:srgbClr val="FF0000"/>"#, "#ff0000"),
+        (r#"<a:srgbClr val="FF0000"><a:alpha val="100000"/></a:srgbClr>"#, "#ff0000"),
+    ] {
+        let drawn = filled(clr);
+        assert!(drawn.iter().any(|s| s == want), "{clr}: {drawn:?}");
+    }
+    let outlined = styles_drawn(
+        one_shape_deck(r#"<a:noFill/><a:ln w="12700"><a:solidFill><a:srgbClr val="00FF00"><a:alpha val="25000"/></a:srgbClr></a:solidFill></a:ln>"#),
+        false,
+    );
+    assert!(outlined.contains(&DrawCmd::SetStrokeStyle("rgba(0,255,0,0.250)".into())), "{outlined:?}");
+}
+
+/// A gradient stop keeps its colour's transparency.
+#[test]
+fn a_gradient_stop_keeps_its_transparency() {
+    use crate::engine::displaylist::DrawCmd;
+    let drawn = styles_drawn(
+        one_shape_deck(r#"<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"><a:alpha val="50000"/></a:srgbClr></a:gs><a:gs pos="100000"><a:srgbClr val="0000FF"/></a:gs></a:gsLst><a:lin ang="0"/></a:gradFill>"#),
+        true,
+    );
+    let lower = |stops: &[(f64, String)]| stops.iter().map(|(at, c)| (*at, c.to_ascii_lowercase())).collect::<Vec<_>>();
+    let want = [(0.0, "rgba(255,0,0,0.500)".to_owned()), (1.0, "#0000ff".to_owned())];
+    assert!(drawn.iter().any(|c| matches!(c, DrawCmd::SetLinearGradient { stops, .. } if lower(stops) == want)), "{drawn:?}");
+}
+
+/// A table cell's translucent fill paints translucent.
+#[test]
+fn a_translucent_table_cell_fill_paints_translucent() {
+    use crate::engine::displaylist::DrawCmd;
+    let opaque = r#"<a:solidFill><a:srgbClr val="DDEEFF"/></a:solidFill>"#;
+    assert!(TABLE_SLIDE.contains(opaque));
+    let slide = TABLE_SLIDE.replace(opaque, r#"<a:solidFill><a:srgbClr val="DDEEFF"><a:alpha val="40000"/></a:srgbClr></a:solidFill>"#);
+    let drawn = styles_drawn(one_slide_deck(&slide), true);
+    assert!(drawn.contains(&DrawCmd::SetFillStyle("rgba(221,238,255,0.400)".into())), "{drawn:?}");
 }
 
 // ─── Slide tables (DML a:tbl in a p:graphicFrame) ───────────────────────────
@@ -1101,18 +1211,7 @@ const TABLE_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="ye
 /// Build the table deck: base master/layout/presentation + the table
 /// slide. The slide rels are the base layout-only rels (no media/charts).
 fn table_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", TABLE_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(TABLE_SLIDE)
 }
 
 #[test]
@@ -2471,18 +2570,7 @@ const GEOM_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes
 </p:sld>"#;
 
 fn geom_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", GEOM_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(GEOM_SLIDE)
 }
 
 /// Preset geometry end-to-end: the fork-parsed `prstGeom` (preset + avLst) flows through
@@ -2979,18 +3067,7 @@ const CUSTGEOM_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone=
 </p:sld>"#;
 
 fn custgeom_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", CUSTGEOM_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(CUSTGEOM_SLIDE)
 }
 
 #[test]
@@ -3292,18 +3369,7 @@ const ANCHOR_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="y
 </p:sld>"#;
 
 fn anchor_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", ANCHOR_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(ANCHOR_SLIDE)
 }
 
 #[test]
@@ -3793,18 +3859,7 @@ const OPS_TEXT_SLIDE: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone=
 </p:sld>"#;
 
 fn ops_text_pptx() -> Vec<u8> {
-    build_pptx(&[
-        ("[Content_Types].xml", CONTENT_TYPES),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", OPS_TEXT_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", SLIDE_RELS),
-    ])
+    one_slide_deck(OPS_TEXT_SLIDE)
 }
 
 /// A FontCache with the Arimo test face under "Calibri" — the family the deck's

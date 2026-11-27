@@ -567,9 +567,10 @@ fn line_width_emu(ln: &ooxml_xml::RawXmlElement) -> Option<i64> {
 
 /// The style of the picture a drawing holds (`wp:inline` or `wp:anchor` →
 /// `a:graphic` → `a:graphicData` → `pic:pic`, §20.4.2.8, §20.4.2.3,
-/// §20.2.2.5): the crop of its fill (`pic:blipFill`, §20.2.2.1) and the
-/// outline of its shape properties (`pic:spPr`, §20.2.2.6), read by
-/// [`PictureStyle::of`]. `None` when it sets nothing drawn here.
+/// §20.2.2.5): the crop and opacity of its fill (`pic:blipFill`, §20.2.2.1:
+/// the `a:alphaModFix` effects of its `a:blip`) and the outline of its shape
+/// properties (`pic:spPr`, §20.2.2.6), read by [`PictureStyle::of`]. `None`
+/// when it sets nothing drawn here.
 ///
 /// Deviations, declared: a picture's style reference (`pic:style`) is not
 /// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
@@ -581,8 +582,13 @@ pub(crate) fn picture_style(drawing: &ooxml_wml::types::CTDrawing, theme: &Theme
     })?;
     let pic = ["graphic", "graphicData", "pic"].iter().try_fold(frame, |e, name| child(e, name))?;
     let ln = child(pic, "spPr").and_then(|sp_pr| child(sp_pr, "ln"));
-    let crop = child(pic, "blipFill").map_or_else(ImageCrop::default, blip_crop);
-    PictureStyle::of(crop, ln.and_then(|ln| line_color(ln, theme, None)), ln.and_then(line_width_emu))
+    let blip_fill = child(pic, "blipFill");
+    let crop = blip_fill.map_or_else(ImageCrop::default, blip_crop);
+    let alpha_mod_fix = blip_fill.and_then(|f| child(f, "blip")).into_iter().flat_map(|blip| &blip.children).filter_map(|c| match c {
+        ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == "alphaModFix" => Some(vml_attr(e, "amt")),
+        _ => None,
+    });
+    PictureStyle::of(crop, alpha_mod_fix, ln.and_then(|ln| line_color(ln, theme, None)), ln.and_then(line_width_emu))
 }
 
 /// The crop of a picture's fill (`pic:blipFill`, §20.2.2.1): its `a:srcRect`

@@ -90,8 +90,8 @@ pub(crate) struct PageImage {
     pub(crate) w: f64,
     pub(crate) h: f64,
     pub(crate) key: String,
-    /// A picture's crop and outline, `None` for one with neither (and for a
-    /// chart).
+    /// A picture's crop, opacity and outline, `None` for one with none of
+    /// them (and for a chart).
     pub(crate) style: Option<Box<PictureStyle>>,
 }
 

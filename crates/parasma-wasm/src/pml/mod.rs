@@ -677,7 +677,7 @@ impl PmlRenderer {
         p.set_text_baseline("alphabetic");
 
         // Pictures first (behind the placeholder shapes, §19.3.1.37 `p:pic`),
-        // cropped and outlined by their style. The painter resolves the
+        // cropped, faded and outlined by their style. The painter resolves the
         // slide-namespaced image key: a decoded `ImageBitmap` draws at the
         // picture's box, a miss draws the shared grey placeholder (the canvas
         // backend does the lookup; the recorder records the key + the

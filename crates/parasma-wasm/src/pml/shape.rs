@@ -217,7 +217,7 @@ pub(crate) struct SlidePicture {
     /// the renderer stored the picture's media bytes under (rel ids restart per
     /// slide, so the bare rel id would collide across slides).
     pub image_key: String,
-    /// Its crop and outline, `None` for a picture with neither.
+    /// Its crop, opacity and outline, `None` for a picture with none of them.
     pub style: Option<Box<PictureStyle>>,
 }
 
@@ -1088,9 +1088,10 @@ pub(crate) fn slide_picture_items(
     out
 }
 
-/// The style of a slide picture (`p:pic`, §19.3.1.37): the crop of its fill
-/// (`p:blipFill`, §19.3.1.4: `a:srcRect` and `a:stretch/a:fillRect`) and the
-/// outline of its shape properties (`p:spPr`, §19.3.1.44: `a:ln`), read by
+/// The style of a slide picture (`p:pic`, §19.3.1.37): the crop and opacity
+/// of its fill (`p:blipFill`, §19.3.1.4: `a:srcRect`, `a:stretch/a:fillRect`
+/// and the `a:alphaModFix` effects of its `a:blip`) and the outline of its
+/// shape properties (`p:spPr`, §19.3.1.44: `a:ln`), read by
 /// [`PictureStyle::of`]. The line draws in its solid fill's colour, or its
 /// gradient's first stop's, through the slide theme.
 ///
@@ -1117,6 +1118,7 @@ fn picture_style(pic: &ooxml_pml::types::Picture, theme: &SlideTheme) -> Option<
         _ => None,
     };
     let crop = ImageCrop { src: rect(pic.blip_fill.src_rect.as_deref()), fill: rect(fill) };
+    let alpha_mod_fix = pic.blip_fill.blip.iter().flat_map(|b| &b.alpha_mod_fix).map(|e| e.amt.as_deref());
     let ln = pic.shape_properties.line.as_deref();
     let color = match ln.and_then(|l| l.line_fill_properties.as_deref()) {
         Some(LF::SolidFill(f)) => color_choice_css(f.color_choice.as_deref(), theme),
@@ -1126,7 +1128,7 @@ fn picture_style(pic: &ooxml_pml::types::Picture, theme: &SlideTheme) -> Option<
         }
         _ => None,
     };
-    PictureStyle::of(crop, color, ln.and_then(|l| l.width).map(i64::from))
+    PictureStyle::of(crop, alpha_mod_fix, color, ln.and_then(|l| l.width).map(i64::from))
 }
 
 /// The slide-namespaced image key for a picture's embed rel id. Rel ids restart

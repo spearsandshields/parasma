@@ -169,7 +169,7 @@ fn substitute_item_text(line: &mut PagedLine, font_cache: &FontCache, text_of: i
 
 /// Paint one picture, inline or floating, into its frame: an EMF picture's
 /// raster, a chart, or a bitmap, the raster and the bitmap through
-/// [`draw_picture`] with their crop and outline.
+/// [`draw_picture`] with their crop, opacity and outline.
 ///
 /// An `image/x-emf` rel draws under the synthetic `emf-pic:{rel}` key and
 /// logs the drawn footprint; the TS adapter rasterizes it off the hot path and

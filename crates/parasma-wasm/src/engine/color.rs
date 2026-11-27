@@ -401,7 +401,8 @@ pub(crate) fn mix_hex(base: &str, top: &str, share: f64) -> String {
 ///
 /// Declared: the cutoff is not measured against Word, whose scripting cannot
 /// export a rendering on the machine used; 50 % grey (`808080`) and darker
-/// count as dark.
+/// count as dark. A translucent fill (an `rgba()` text-box fill) is not read,
+/// so it counts as light whatever shows through it.
 pub(crate) fn is_dark_background(hex: &str) -> bool {
     hex_to_rgb(hex).is_some_and(|(r, g, b)| (0.299 * r + 0.587 * g + 0.114 * b) / 255.0 <= 0.61)
 }

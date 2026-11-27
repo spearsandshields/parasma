@@ -9,8 +9,8 @@
 //! `engine/vml.rs` raw-scan precedent): reading through the load's shared
 //! `engine::opc::OpcPackage` (one archive open per load), it walks
 //! `xl/worksheets/_rels/sheetN.xml.rels` → `xl/drawings/drawingN.xml`, scans
-//! the anchors for `a:blip r:embed` and each picture's crop and outline, and
-//! resolves each embed through the drawing part's own rels to the
+//! the anchors for `a:blip r:embed` and each picture's crop, opacity and
+//! outline, and resolves each embed through the drawing part's own rels to the
 //! `xl/media/*` bytes. Anchor → pixel conversion happens later in
 //! [`super::grid::paginate`] on the EXISTING grid col/row rails (EMU/9525 =
 //! px, `engine::units::EMU_PER_PX`).
@@ -46,8 +46,8 @@ pub(crate) struct SheetDrawing {
     /// `images` / `image_bitmaps` maps key on this (the PML `image_key`
     /// precedent, `pml::shape::image_key`).
     pub(crate) image_key: String,
-    /// The picture's crop and outline, `None` for one with neither (and for
-    /// a chart).
+    /// The picture's crop, opacity and outline, `None` for one with none of
+    /// them (and for a chart).
     pub(crate) style: Option<Box<PictureStyle>>,
 }
 
@@ -274,15 +274,17 @@ fn scan_anchors(xml: &str, colors: &ColorCtx) -> Vec<(SheetDrawing, String)> {
 }
 
 /// The style of an anchored picture (`xdr:pic`, §20.5.2.25, its content
-/// here): the crop of its fill (`xdr:blipFill`, §20.5.2.2: `a:srcRect` and
-/// `a:stretch/a:fillRect`) and the outline of its shape properties
-/// (`xdr:spPr`, §20.5.2.30: `a:ln`), read by [`PictureStyle::of`]. The line
-/// draws in its solid fill's colour, or its gradient's first stop's, a
-/// `schemeClr` through the workbook theme.
+/// here): the crop and opacity of its fill (`xdr:blipFill`, §20.5.2.2:
+/// `a:srcRect`, `a:stretch/a:fillRect` and the `a:alphaModFix` effects of its
+/// `a:blip`) and the outline of its shape properties (`xdr:spPr`,
+/// §20.5.2.30: `a:ln`), read by [`PictureStyle::of`]. The line draws in its
+/// solid fill's colour, or its gradient's first stop's, a `schemeClr` through
+/// the workbook theme.
 ///
 /// Deviations, declared: a picture's style reference (`xdr:style`) is not
 /// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
-/// drawn stretched.
+/// drawn stretched. The scan finds an `a:alphaModFix` at any depth in the
+/// blip, so one inside another effect's container counts as the blip's own.
 fn picture_style(pic: &str, colors: &ColorCtx) -> Option<Box<PictureStyle>> {
     let first = |xml, local| element_blocks(xml, local).into_iter().next();
     let first_tag = |xml, local| element_open_tags(xml, local).into_iter().next();
@@ -292,13 +294,15 @@ fn picture_style(pic: &str, colors: &ColorCtx) -> Option<Box<PictureStyle>> {
         src: rect(first_tag(blip_fill, "srcRect")),
         fill: rect(first(blip_fill, "stretch").and_then(|s| first_tag(s, "fillRect"))),
     };
+    let blip = first(blip_fill, "blip").unwrap_or_default();
+    let alpha_mod_fix = element_open_tags(blip, "alphaModFix").into_iter().map(|tag| attr_value(tag, "amt"));
     let sp_pr = first(pic, "spPr").unwrap_or_default();
     let color = first(sp_pr, "ln")
         .and_then(|ln| first(ln, "solidFill").or_else(|| first(ln, "gs")))
         .and_then(|fill| resolve_dml_color_xml(fill, |name| colors.scheme_color(name)))
         .map(|(hex, alpha)| css_color(&hex, alpha));
     let width = first_tag(sp_pr, "ln").and_then(|tag| attr_value(tag, "w")).and_then(|w| w.trim().parse().ok());
-    PictureStyle::of(crop, color, width)
+    PictureStyle::of(crop, alpha_mod_fix, color, width)
 }
 
 /// Raw-scan an `xdr:wsDr` drawing for CHART anchors: every `twoCellAnchor` /
