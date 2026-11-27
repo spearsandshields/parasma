@@ -12624,3 +12624,304 @@ fn transparency_moves_nothing_and_an_opaque_picture_draws_as_before() {
         }
     }
 }
+
+// ── Turned pictures (`pic:spPr/a:xfrm`: `rot`, `flipH`, `flipV`, §20.1.7.6) ─
+
+/// A quarter turn clockwise, and an eighth.
+const QUARTER_TURN: &str = r#"rot="5400000""#;
+const EIGHTH_TURN: &str = r#"rot="2700000""#;
+
+/// `body` with `attrs` on its picture's `a:xfrm`.
+fn with_xfrm(body: &str, attrs: &str) -> String {
+    assert_eq!(body.matches("<a:xfrm>").count(), 1, "one picture transform");
+    body.replace("<a:xfrm>", &format!("<a:xfrm {attrs}>"))
+}
+
+/// Where the corners of `frame` (top-left, top-right, bottom-right,
+/// bottom-left) land a quarter turn clockwise about its centre.
+fn quarter_turned((x, y, w, h): (f64, f64, f64, f64)) -> [(f64, f64); 4] {
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    [(cx + h / 2.0, cy - w / 2.0), (cx + h / 2.0, cy + w / 2.0), (cx - h / 2.0, cy + w / 2.0), (cx - h / 2.0, cy - w / 2.0)]
+}
+
+fn assert_corners(got: &[(f64, f64); 4], want: &[(f64, f64); 4], what: &str) {
+    let near = got.iter().zip(want).all(|(g, w)| (g.0 - w.0).abs() < 1e-6 && (g.1 - w.1).abs() < 1e-6);
+    assert!(near, "{what}: corners land at {got:?}, want {want:?}");
+}
+
+/// The rect a draw records, before any transform.
+fn recorded_rect(cmd: &crate::engine::displaylist::DrawCmd) -> (f64, f64, f64, f64) {
+    use crate::engine::displaylist::DrawCmd;
+    match *cmd {
+        DrawCmd::DrawImage { dx, dy, dw, dh, .. } | DrawCmd::DrawImageCrop { dx, dy, dw, dh, .. } => (dx, dy, dw, dh),
+        DrawCmd::FillRect { x, y, w, h } | DrawCmd::StrokeRect { x, y, w, h } => (x, y, w, h),
+        _ => panic!("not a rect: {cmd:?}"),
+    }
+}
+
+/// Each rect in `cmds` that `keep` keeps, as recorded and with where its
+/// corners land on the page.
+fn rects_where(
+    cmds: &[crate::engine::displaylist::DrawCmd],
+    keep: impl Fn(&crate::engine::displaylist::DrawCmd) -> bool,
+) -> Vec<((f64, f64, f64, f64), [(f64, f64); 4])> {
+    crate::engine::displaylist::corners_of_each_rect(cmds)
+        .into_iter()
+        .filter(|(c, _)| keep(c))
+        .map(|(c, corners)| (recorded_rect(c), corners))
+        .collect()
+}
+
+/// Page 0 of `body`'s draw of picture `rId40`, and the outline stroked
+/// right after it, each as recorded and with where its corners land.
+fn picture_rects(body: &str) -> Vec<((f64, f64, f64, f64), [(f64, f64); 4])> {
+    use crate::engine::displaylist::{corners_of_each_rect, DrawCmd};
+    let cmds = page_cmds(body);
+    let rects = corners_of_each_rect(&cmds);
+    let at = rects
+        .iter()
+        .position(|(c, _)| matches!(c, DrawCmd::DrawImage { key, .. } if key == "rId40"))
+        .expect("the picture is drawn");
+    let outline = rects.get(at + 1).filter(|(c, _)| matches!(c, DrawCmd::StrokeRect { .. }));
+    std::iter::once(&rects[at]).chain(outline).map(|(c, corners)| (recorded_rect(c), *corners)).collect()
+}
+
+/// `rot="5400000"` turns the picture a quarter clockwise about its frame's
+/// centre, the bitmap and its outline alike: inline, floating, and floating
+/// in a table cell. A floating picture's frame stays where it was; an inline
+/// one's is centred in the 50 px wide box it now takes in its line.
+#[test]
+fn a_quarter_turned_picture_draws_turned_about_its_centre() {
+    for (what, plain) in picture_bodies(RED_LINE) {
+        let upright = picture_rects(&plain)[0].0;
+        let turned = picture_rects(&with_xfrm(&plain, QUARTER_TURN));
+        assert_eq!(turned.len(), 2, "{what}: the bitmap and its outline");
+        let frame = turned[0].0;
+        assert_eq!((frame.2, frame.3), (upright.2, upright.3), "{what}: the frame's size");
+        for (rect, corners) in &turned {
+            assert_eq!(*rect, frame, "{what}: the outline is on the frame");
+            assert_corners(corners, &quarter_turned(frame), what);
+        }
+        if what == "inline" {
+            assert_px(frame.0 + frame.2 / 2.0, upright.0 + 25.0, "inline: the frame's centre");
+        } else {
+            assert_eq!(frame, upright, "{what}: the frame stays");
+        }
+    }
+}
+
+/// `flipH="1"` mirrors the picture left to right in its frame, its left edge
+/// drawn on the frame's right, and `flipV="1"` top to bottom; nothing moves.
+#[test]
+fn a_flipped_picture_draws_mirrored_in_its_frame() {
+    for (what, plain) in picture_bodies(RED_LINE) {
+        let frame = picture_rects(&plain)[0].0;
+        let (x, y, w, h) = frame;
+        for (flip, want) in [
+            (r#"flipH="1""#, [(x + w, y), (x, y), (x, y + h), (x + w, y + h)]),
+            (r#"flipV="true""#, [(x, y + h), (x + w, y + h), (x + w, y), (x, y)]),
+        ] {
+            let body = with_xfrm(&plain, flip);
+            assert_eq!(geometry_dump(&layout(picture_docx(&body))), geometry_dump(&layout(picture_docx(&plain))), "{what}, {flip}");
+            let drawn = picture_rects(&body);
+            assert_eq!(drawn.len(), 2, "{what}, {flip}: the bitmap and its outline");
+            for (rect, corners) in drawn {
+                assert_eq!(rect, frame, "{what}, {flip}");
+                assert_corners(&corners, &want, &format!("{what}, {flip}"));
+            }
+        }
+    }
+}
+
+/// A picture that does not turn (`rot="0"`, a whole turn, flips set off)
+/// records exactly what one without a rotation records, and lays out alike;
+/// and an upright picture moves the canvas nowhere, as before pictures could
+/// turn.
+#[test]
+fn an_upright_picture_records_what_it_did_before() {
+    for ln in ["", RED_LINE] {
+        for (what, plain) in picture_bodies(ln) {
+            assert!(!crate::engine::displaylist::moves_the_canvas(&page_cmds(&plain)), "{what}, ln {ln:?}");
+            for attrs in [r#"rot="0""#, r#"rot="21600000""#, r#"flipH="0" flipV="false""#] {
+                let body = with_xfrm(&plain, attrs);
+                assert_eq!(page_cmds(&body), page_cmds(&plain), "{what}, ln {ln:?}, {attrs}");
+                assert_eq!(geometry_dump(&layout(picture_docx(&body))), geometry_dump(&layout(picture_docx(&plain))), "{what}, {attrs}");
+            }
+        }
+    }
+}
+
+/// A paragraph holding a `w`×`h` px picture turned by `xfrm`: inline, or
+/// floating with square wrap at `(x, y)` px from the column and the
+/// paragraph, then text enough to wrap well past it.
+fn sized_picture_body(anchored: bool, (w, h): (i64, i64), (x, y): (i64, i64), xfrm: &str) -> String {
+    let at = r#"<wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>"#;
+    let text = "Text beside the picture ".repeat(60);
+    let body = picture_body(anchored, "")
+        .replace(r#"cx="952500" cy="476250""#, &format!(r#"cx="{}" cy="{}""#, w * 9525, h * 9525))
+        .replace(at, &format!(r#"<wp:positionH relativeFrom="column"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV>"#, x * 9525, y * 9525))
+        .replace("Text beside the picture", text.trim_end());
+    if xfrm.is_empty() { body } else { with_xfrm(&body, xfrm) }
+}
+
+/// `paragraph` alone in a one-cell table, then an empty paragraph.
+fn in_one_cell(paragraph: &str) -> String {
+    format!(r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr>{paragraph}</w:tc></w:tr></w:tbl><w:p/>"#)
+}
+
+/// The line and row geometry of `body`'s pages, without the floating
+/// pictures' frames.
+fn text_geometry(body: &str) -> String {
+    geometry_dump(&layout(picture_docx(body))).lines().filter(|l| !l.starts_with("A ")).collect::<Vec<_>>().join("\n")
+}
+
+/// A turned picture keeps text out of the upright box its turned frame
+/// covers, and takes that box in its line: a 200×50 px picture turned a
+/// quarter wraps and holds text exactly as an upright 50×200 px one standing
+/// where it lands. Inline, floating (its frame at (0, 100), so the box it
+/// covers stands at (75, 25)), and floating in a table cell.
+#[test]
+fn a_turned_picture_wraps_text_around_the_box_it_covers() {
+    let cases = [
+        ("inline", false, (0, 0), (0, 0)),
+        ("anchored", true, (0, 100), (75, 25)),
+    ];
+    for (what, anchored, at, standing_at) in cases {
+        let turned = sized_picture_body(anchored, (200, 50), at, QUARTER_TURN);
+        let standing = sized_picture_body(anchored, (50, 200), standing_at, "");
+        let lying = sized_picture_body(anchored, (200, 50), at, "");
+        assert_ne!(text_geometry(&lying), text_geometry(&standing), "{what}: the turn matters");
+        assert_eq!(text_geometry(&turned), text_geometry(&standing), "{what}");
+        if anchored {
+            let (turned, standing) = (in_one_cell(&turned), in_one_cell(&standing));
+            assert_eq!(text_geometry(&turned), text_geometry(&standing), "in a cell");
+        }
+    }
+    // The inline picture's line is as tall as the turned picture.
+    let lines = body_lines(&layout(picture_docx(&sized_picture_body(false, (200, 50), (0, 0), QUARTER_TURN))));
+    assert!(lines[0].line_height >= 200.0, "the picture's line is {} tall", lines[0].line_height);
+}
+
+/// A click on a turned picture hits it, and the hit's box is the upright box
+/// it covers; a click in a corner of that box the picture leaves bare, or in
+/// a corner of its unturned frame, misses. Inline and floating.
+#[test]
+fn a_turned_picture_is_hit_only_where_it_draws() {
+    use crate::wml::select::hit_test_object_impl;
+    for (what, plain) in [("inline", picture_body(false, "")), ("anchored", picture_body(true, ""))] {
+        let body = with_xfrm(&plain, EIGHTH_TURN);
+        let (x, y, w, h) = picture_rects(&body)[0].0;
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        // Half the side of the square a 100×50 frame turned 45° stands in.
+        let half = (w + h) / 2f64.sqrt() / 2.0;
+        let v = layout(picture_docx(&body));
+        let pages = v.pages.borrow();
+        let hit = |px: f64, py: f64| hit_test_object_impl(&pages[0], px, py, &|r: &str| r == "rId40", &|_: &str| false);
+        let got = hit(cx, cy).unwrap_or_else(|| panic!("{what}: the centre hits"));
+        for (g, want) in [(got.rect.x, cx - half), (got.rect.y, cy - half), (got.rect.w, 2.0 * half), (got.rect.h, 2.0 * half)] {
+            assert_px(g, want, &format!("{what}: the hit box"));
+        }
+        assert!(hit(cx, y - 5.0).is_some(), "{what}: above the unturned frame, on the turned picture");
+        assert!(hit(x + 1.0, y + 1.0).is_none(), "{what}: the unturned frame's corner");
+        assert!(hit(cx - half + 1.0, cy - half + 1.0).is_none(), "{what}: the box's corner");
+    }
+}
+
+/// A selected turned picture is tinted and outlined along the picture, under
+/// its turn: inline (the text selection's tint) and floating (the anchored
+/// tint), with the selected-object outline of each. The selection rects the
+/// viewer reports keep the upright box the picture covers.
+#[test]
+fn a_selected_turned_picture_is_tinted_and_outlined_turned() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    use crate::wml::select::{selection_rects_impl, TextPos};
+    for (what, plain) in [("inline", picture_body(false, "")), ("anchored", picture_body(true, ""))] {
+        let v = layout(picture_docx(&with_xfrm(&plain, QUARTER_TURN)));
+        let (start, end) = (TextPos::new(0, 0), TextPos::new(0, 4));
+        v.selection.set(Some((start, end)));
+        *v.selected_object.borrow_mut() = Some("rId40".into());
+        let rec = RecordingPainter::new();
+        v.paint_wml_page(0, &rec, None).expect("paint page 0");
+        let cmds = rec.take();
+        let frame = rects_where(&cmds, |c| matches!(c, DrawCmd::DrawImage { key, .. } if key == "rId40"))[0].0;
+        let tint = rects_where(&cmds, |c| matches!(c, DrawCmd::FillRect { .. }) && recorded_rect(c) == frame);
+        let outline = rects_where(&cmds, |c| matches!(c, DrawCmd::StrokeRect { .. }) && recorded_rect(c) == frame);
+        assert_eq!((tint.len(), outline.len()), (1, 1), "{what}: one tint and one outline on the frame");
+        for (_, corners) in tint.iter().chain(&outline) {
+            assert_corners(corners, &quarter_turned(frame), what);
+        }
+        if what == "inline" {
+            let (cx, cy) = (frame.0 + 50.0, frame.1 + 25.0);
+            let rects = selection_rects_impl(&v.pages.borrow()[0], start, end);
+            let upright = rects.iter().any(|r| (r.x - (cx - 25.0)).abs() < 1e-6 && (r.y - (cy - 50.0)).abs() < 1e-6 && (r.w - 50.0).abs() < 1e-6 && (r.h - 100.0).abs() < 1e-6);
+            assert!(upright, "inline: the reported rect is the upright box: {rects:?}");
+        }
+    }
+}
+
+/// A windowed paint draws a turned picture whose turned box reaches into the
+/// window although its unturned frame does not: a 100×50 floating picture
+/// turned a quarter stands 25 px above and below its frame.
+#[test]
+fn a_window_over_a_turned_picture_draws_it() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let body = with_xfrm(&picture_body(true, ""), QUARTER_TURN);
+    let (x, y, w, h) = picture_rects(&body)[0].0;
+    let v = layout(picture_docx(&body));
+    let window = crate::cull::Rect { x0: x + w / 2.0 - 5.0, y0: y + h + 5.0, x1: x + w / 2.0 + 5.0, y1: y + h + 15.0 };
+    let rec = RecordingPainter::new();
+    v.paint_wml_page(0, &rec, Some(&window)).expect("paint the window");
+    assert!(rec.take().iter().any(|c| matches!(c, DrawCmd::DrawImage { key, .. } if key == "rId40")), "the picture is drawn");
+}
+
+/// A copy carries no turn: a turned picture, inline or floating, is copied
+/// at its frame's size, 100×50, not the 50×100 box it covers.
+#[test]
+fn a_copied_turned_picture_keeps_its_frame_size() {
+    use crate::engine::fragment::Block;
+    use crate::wml::select::{extract_range_impl, TextPos};
+    for (what, plain) in [("inline", picture_body(false, "")), ("anchored", picture_body(true, ""))] {
+        let v = layout(picture_docx(&with_xfrm(&plain, QUARTER_TURN)));
+        let frag = extract_range_impl(&v.para_meta.borrow(), &v.table_meta.borrow(), TextPos::new(0, 0), TextPos::new(0, 4));
+        let images: Vec<_> = frag
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::Para(p) => Some(p),
+                _ => None,
+            })
+            .flat_map(|p| p.runs.iter().filter_map(|r| r.image.as_ref()))
+            .map(|i| (i.w_px, i.h_px))
+            .collect();
+        assert_eq!(images.len(), 1, "{what}: the picture is copied");
+        assert_px(images[0].0, 100.0, what);
+        assert_px(images[0].1, 50.0, what);
+    }
+}
+
+/// A turned floating picture whose box runs off the page bottom moves to the
+/// top of the next page as the box it covers: a 200×50 px picture turned a
+/// quarter lands and wraps exactly as an upright 50×200 px one standing where
+/// it lands, its box's top at the top of the page.
+#[test]
+fn a_turned_picture_deferred_to_the_next_page_lands_by_its_box() {
+    let filler = "<w:p><w:r><w:t>Filler line</w:t></w:r></w:p>".repeat(44);
+    let turned = format!("{filler}{}", sized_picture_body(true, (200, 50), (0, 0), QUARTER_TURN));
+    let standing = format!("{filler}{}", sized_picture_body(true, (50, 200), (75, -75), ""));
+    assert_eq!(text_geometry(&turned), text_geometry(&standing));
+    let frame_on = |body: &str| {
+        let v = layout(picture_docx(body));
+        let pages = v.pages.borrow();
+        let (page, ai) = pages
+            .iter()
+            .enumerate()
+            .find_map(|(i, p)| p.anchored_images.first().map(|ai| (i, ai.transform().bounds(ai.frame()))))
+            .expect("the picture is placed");
+        (page, ai, v.page_size.margin_top_px)
+    };
+    let ((page, (x, y, w, h), top), (standing_page, standing_box, _)) = (frame_on(&turned), frame_on(&standing));
+    assert_eq!((page, standing_page), (1, 1), "deferred to the second page");
+    for (got, want) in [(x, standing_box.0), (y, standing_box.1), (w, 50.0), (h, 200.0), (y, top)] {
+        assert_px(got, want, "the box the turned picture covers");
+    }
+}

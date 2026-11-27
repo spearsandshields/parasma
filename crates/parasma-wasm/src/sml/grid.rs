@@ -14,7 +14,7 @@
 //!  - §18.3.1.73  row@ht in POINTS → px via `engine::units::pt_to_px`.
 //!  - §18.3.1.81  sheetFormatPr defaults.
 
-use crate::engine::images::PictureStyle;
+use crate::engine::images::{PictureStyle, Transform, Xywh};
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use super::drawings::SheetDrawing;
@@ -90,9 +90,53 @@ pub(crate) struct PageImage {
     pub(crate) w: f64,
     pub(crate) h: f64,
     pub(crate) key: String,
-    /// A picture's crop, opacity and outline, `None` for one with none of
-    /// them (and for a chart).
+    /// A picture's crop, opacity, outline and transform, `None` for one with
+    /// none of them (and for a chart).
     pub(crate) style: Option<Box<PictureStyle>>,
+}
+
+impl PageImage {
+    /// Where drawing `d` lies on the sheet, given the leading edge of each
+    /// 1-based column (`col_left`) and row (`row_top`). xdr anchors are
+    /// 0-based, so `from.col + 1` is the 1-based column the picture starts
+    /// in. twoCellAnchor size comes from the to-rail (from→to span);
+    /// oneCellAnchor (and a degenerate to-rail) uses the EMU extent.
+    ///
+    /// The picture's frame is that anchor box, unless the picture turns
+    /// between 45° and 135°, or 225° and 315°: the anchor then holds the
+    /// frame turned a quarter, so the frame is the anchor box stood on end
+    /// about its centre. Declared, not measured: no file in the corpus holds
+    /// a turned Excel picture, and the quarter-turned anchor is Office's
+    /// convention for shapes turned near a quarter, assumed for pictures.
+    pub(crate) fn anchored(d: &SheetDrawing, col_left: impl Fn(u32) -> f64, row_top: impl Fn(u32) -> f64) -> Option<Self> {
+        let x0 = col_left(d.from.col + 1) + emu_to_px(d.from.col_off_emu);
+        let y0 = row_top(d.from.row + 1) + emu_to_px(d.from.row_off_emu);
+        let from_to = d.to.map(|t| {
+            (
+                col_left(t.col + 1) + emu_to_px(t.col_off_emu) - x0,
+                row_top(t.row + 1) + emu_to_px(t.row_off_emu) - y0,
+            )
+        });
+        let (w, h) = match from_to {
+            Some((w, h)) if w > 0.0 && h > 0.0 => (w, h),
+            _ => {
+                let (cx, cy) = d.ext_emu?;
+                (emu_to_px(cx), emu_to_px(cy))
+            }
+        };
+        // The angle in whole 60000ths of a degree, so the range edges compare
+        // exactly.
+        let rot = (Transform::of_style(d.style.as_deref()).rot.to_degrees() * 60_000.0).round() as i64;
+        let on_end = (2_700_000..8_100_000).contains(&rot) || (13_500_000..18_900_000).contains(&rot);
+        let (x, y, w, h) = if on_end { (x0 + (w - h) / 2.0, y0 + (h - w) / 2.0, h, w) } else { (x0, y0, w, h) };
+        Some(PageImage { x, y, w, h, key: d.image_key.clone(), style: d.style.clone() })
+    }
+
+    /// The upright box the picture covers once it turns: its frame when it
+    /// does not.
+    pub(crate) fn bounds(&self) -> Xywh {
+        Transform::of_style(self.style.as_deref()).bounds((self.x, self.y, self.w, self.h))
+    }
 }
 
 /// One print page of a sheet: the gridline column-x and row-y rails (page-local)
@@ -430,27 +474,7 @@ pub(crate) fn plan_pages(input: PlanInput, page: PageBox) -> SheetPlan {
             -(r..min_row).map(|rr| row_h.get(&rr).copied().unwrap_or(default_row_px)).sum::<f64>()
         }
     };
-    // xdr anchors are 0-based, so `from.col + 1` is the 1-based column the
-    // picture starts in. twoCellAnchor size comes from the to-rail (from→to
-    // span); oneCellAnchor (and a degenerate to-rail) uses the EMU extent.
-    let to_box = |d: &SheetDrawing| -> Option<PageImage> {
-        let x0 = col_left(d.from.col + 1) + emu_to_px(d.from.col_off_emu);
-        let y0 = row_top(d.from.row + 1) + emu_to_px(d.from.row_off_emu);
-        let from_to = d.to.map(|t| {
-            (
-                col_left(t.col + 1) + emu_to_px(t.col_off_emu) - x0,
-                row_top(t.row + 1) + emu_to_px(t.row_off_emu) - y0,
-            )
-        });
-        let (w, h) = match from_to {
-            Some((w, h)) if w > 0.0 && h > 0.0 => (w, h),
-            _ => {
-                let (cx, cy) = d.ext_emu?;
-                (emu_to_px(cx), emu_to_px(cy))
-            }
-        };
-        Some(PageImage { x: x0, y: y0, w, h, key: d.image_key.clone(), style: d.style.clone() })
-    };
+    let to_box = |d: &SheetDrawing| PageImage::anchored(d, col_left, row_top);
     let abs_images: Vec<PageImage> = input.drawings.iter().filter_map(to_box).collect();
     // Anchored charts: the SAME box math (embedded charts share the picture
     // anchor geometry); kept separate so pages route them to the chart painter.
@@ -463,7 +487,7 @@ pub(crate) fn plan_pages(input: PlanInput, page: PageBox) -> SheetPlan {
         let mut right = col_left(max_col + 1);
         let mut bottom = row_top(max_row + 1);
         for im in abs_images.iter().chain(abs_charts.iter()) {
-            let (x, y, w, h) = (im.x, im.y, im.w, im.h);
+            let (x, y, w, h) = im.bounds();
             while right < x + w - 0.01 && max_col < 16_384 {
                 max_col += 1;
                 right += col_px(max_col);
@@ -688,7 +712,8 @@ pub(crate) fn fill_plan_page<'a>(
     let clip_to_page = |abs: &[PageImage]| -> Vec<PageImage> {
         let mut out: Vec<PageImage> = Vec::new();
         for im in abs {
-            if im.x < band_x1 && im.x + im.w > band.x0 && im.y < page_y1 && im.y + im.h > page_y0 {
+            let (x, y, w, h) = im.bounds();
+            if x < band_x1 && x + w > band.x0 && y < page_y1 && y + h > page_y0 {
                 out.push(PageImage {
                     x: im.x - band.x0,
                     y: im.y - page_y0,

@@ -1268,7 +1268,11 @@ fn apply_pending_floats(pending: &mut Vec<DeferredFloat>, scope: &mut FloatScope
     let mut keep = Vec::new();
     for df in std::mem::take(pending) {
         if df.target <= section_page_idx {
-            if let Some(af) = build_active_float(&df.wrap, df.fx, ct, df.width_px, df.height_px, col_ml, geo.width_px - col_mr) {
+            // The box the picture covers, turned or not, starts at the top.
+            let turn = engine::images::Transform::of_style(df.style.as_deref());
+            let y = ct - turn.bounds((df.fx, 0.0, df.width_px, df.height_px)).1;
+            let (bx, by, bw, bh) = turn.bounds((df.fx, y, df.width_px, df.height_px));
+            if let Some(af) = build_active_float(&df.wrap, bx, by, bw, bh, col_ml, geo.width_px - col_mr) {
                 scope.column_floats.push(af);
                 // Carry the deferral-time id
                 // (Copy — read before df.rel_id moves below),
@@ -1311,7 +1315,7 @@ fn apply_pending_floats(pending: &mut Vec<DeferredFloat>, scope: &mut FloatScope
                 scope.column_ids.push(df.id);
             }
             current.anchored_images.push(AnchoredImageLayout {
-                rel_id: df.rel_id, x: df.fx, y: ct,
+                rel_id: df.rel_id, x: df.fx, y,
                 width_px: df.width_px, height_px: df.height_px, behind_text: df.behind_text,
                 anchor_para: df.anchor_para, style: df.style,
             });
@@ -4566,9 +4570,10 @@ impl Viewer {
                                 // (the over-tall single-page deferral is
                                 // orthogonal to the cross-column fixpoint).
                                 let page_bottom = eff_margin_top + content_height;
-                                if fy + ai.height_px > page_bottom
-                                    && ai.height_px <= content_height
-                                    && fy > eff_margin_top + 1.0
+                                let (bx, by, bw, bh) = ai.wrap_box(fx, fy);
+                                if by + bh > page_bottom
+                                    && bh <= content_height
+                                    && by > eff_margin_top + 1.0
                                 {
                                     pending_floats.push(DeferredFloat {
                                         rel_id: ai.rel_id.clone(), fx,
@@ -4592,7 +4597,7 @@ impl Viewer {
                                         style: ai.style.clone(),
                                     };
                                     if let Some(af) = build_active_float(
-                                        &ai.wrap, fx, fy, ai.width_px, ai.height_px, dom_left, dom_right,
+                                        &ai.wrap, bx, by, bw, bh, dom_left, dom_right,
                                     ) {
                                         if independent {
                                             // STRICT FREEZE: first resolution wins.
@@ -6723,15 +6728,16 @@ impl Viewer {
         // CULL FIRST: the text watermark calls `p.measure_text_width`, a
         // SYNC browser round-trip on the canvas backend, so it must NOT run when
         // the page-centred box is off-screen. The box is centred at (w/2, h/2) sized width×height,
-        // possibly rotated — cull by the rotation-safe AABB (half-diagonal
-        // radius about the centre), so any rotation still keeps when visible.
-        let watermark_visible = |bw: f64, bh: f64| -> bool {
-            let r = 0.5 * (bw * bw + bh * bh).sqrt();
-            cull::keep(clip, w / 2.0 - r, h / 2.0 - r, w / 2.0 + r, h / 2.0 + r)
+        // possibly rotated about that centre — cull by the upright box it then
+        // covers.
+        let watermark_visible = |bw: f64, bh: f64, rotation_deg: f64| -> bool {
+            let turn = engine::images::Transform { rot: rotation_deg.to_radians(), ..Default::default() };
+            let (x, y, bw, bh) = turn.bounds((w / 2.0 - bw / 2.0, h / 2.0 - bh / 2.0, bw, bh));
+            cull::keep(clip, x, y, x + bw, y + bh)
         };
         if let Some(wm) = wml.and_then(|w| w.watermark.as_ref()).filter(|wm| match wm {
-            Watermark::Text(t) => watermark_visible(t.width_px, t.height_px),
-            Watermark::Image(im) => watermark_visible(im.width_px, im.height_px),
+            Watermark::Text(t) => watermark_visible(t.width_px, t.height_px, t.rotation_deg),
+            Watermark::Image(im) => watermark_visible(im.width_px, im.height_px, im.rotation_deg),
         }) {
             match wm {
                 Watermark::Text(t) => {
@@ -6794,7 +6800,8 @@ impl Viewer {
         // A line's band is [baseline - line_height, baseline + 0.3·line_height]
         // (descenders/underline sit below the baseline) × [content_left,
         // content_right]; a table row spans [y_top, y_top + height] across its
-        // cells; an anchored image / text box is its own x/y/w/h box.
+        // cells; an anchored image is the upright box its frame covers once
+        // turned, a text box its own x/y/w/h box.
         let keep_line = |l: &PagedLine| {
             cull::keep(
                 clip,
@@ -6813,15 +6820,15 @@ impl Viewer {
             cull::keep(clip, x0, row.y_top, x1, row.y_top + row.height_px)
         };
         let keep_ai = |ai: &AnchoredImageLayout| {
-            cull::keep(clip, ai.x, ai.y, ai.x + ai.width_px, ai.y + ai.height_px)
+            let (x, y, w, h) = ai.transform().bounds(ai.frame());
+            cull::keep(clip, x, y, x + w, y + h)
         };
         let keep_tb = |tb: &PositionedTextBox| {
             cull::keep(clip, tb.x, tb.y, tb.x + tb.width_px, tb.y + tb.height_px)
         };
 
         let paint_anchored = |ai: &AnchoredImageLayout| {
-            let rect = (ai.x, ai.y, ai.width_px, ai.height_px);
-            let _ = crate::wml::render::paint_picture(p, &ai.rel_id, rect, ai.style.as_deref(), &charts);
+            let _ = crate::wml::render::paint_picture(p, &ai.rel_id, ai.frame(), ai.style.as_deref(), &charts);
         };
 
         // Render behind-text anchored images and text boxes

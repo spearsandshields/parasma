@@ -677,17 +677,18 @@ impl PmlRenderer {
         p.set_text_baseline("alphabetic");
 
         // Pictures first (behind the placeholder shapes, §19.3.1.37 `p:pic`),
-        // cropped, faded and outlined by their style. The painter resolves the
+        // cropped, faded, outlined and turned by their style, and culled by the
+        // upright box they cover once turned. The painter resolves the
         // slide-namespaced image key: a decoded `ImageBitmap` draws at the
         // picture's box, a miss draws the shared grey placeholder (the canvas
         // backend does the lookup; the recorder records the key + the
         // main-thread replay resolves it).
         for pic in &page.pictures {
-            if !crate::cull::keep(clip, pic.x, pic.y, pic.x + pic.w, pic.y + pic.h) {
+            let (x, y, w, h) = pic.transform().bounds(pic.frame());
+            if !crate::cull::keep(clip, x, y, x + w, y + h) {
                 continue;
             }
-            let frame = (pic.x, pic.y, pic.w, pic.h);
-            let _ = crate::engine::images::draw_picture(p, &pic.image_key, frame, pic.style.as_deref());
+            let _ = crate::engine::images::draw_picture(p, &pic.image_key, pic.frame(), pic.style.as_deref());
         }
         p.set_text_baseline("alphabetic");
 

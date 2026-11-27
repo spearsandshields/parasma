@@ -14,7 +14,7 @@
 
 use crate::engine::color::{apply_color_transforms, css_color, dml_base_color, vml_color_to_css, DmlTransform, DML_COLOR_MODELS};
 use crate::engine::fonts::ThemeFonts;
-use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
+use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect, Transform};
 use crate::engine::units::{css_length_to_px, emu_to_px};
 use crate::engine::vml::{vml_attr, vml_find_descendant, xml_local_name};
 use crate::wml::float::{AnchorAlign, AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
@@ -221,7 +221,9 @@ pub(crate) fn inline_dist_px(drawing: &ooxml_wml::types::CTDrawing) -> (f64, f64
 /// does not set.
 ///
 /// Declared: `wp:effectExtent` (§20.4.2.6, room for shadows and glows) is not
-/// added to the wrap area.
+/// added to the wrap area. The growth of a turned picture, which Word also
+/// writes there, is computed from its rotation instead
+/// (`AnchoredImageInfo::wrap_box`).
 fn parse_wrap_child(
     elem: &ooxml_xml::RawXmlElement,
     obj_w_px: f64,
@@ -568,9 +570,10 @@ fn line_width_emu(ln: &ooxml_xml::RawXmlElement) -> Option<i64> {
 /// The style of the picture a drawing holds (`wp:inline` or `wp:anchor` →
 /// `a:graphic` → `a:graphicData` → `pic:pic`, §20.4.2.8, §20.4.2.3,
 /// §20.2.2.5): the crop and opacity of its fill (`pic:blipFill`, §20.2.2.1:
-/// the `a:alphaModFix` effects of its `a:blip`) and the outline of its shape
-/// properties (`pic:spPr`, §20.2.2.6), read by [`PictureStyle::of`]. `None`
-/// when it sets nothing drawn here.
+/// the `a:alphaModFix` effects of its `a:blip`) and the outline and
+/// transform of its shape properties (`pic:spPr`, §20.2.2.6: `a:ln` and
+/// `a:xfrm`), read by [`PictureStyle::of`]. `None` when it sets nothing drawn
+/// here.
 ///
 /// Deviations, declared: a picture's style reference (`pic:style`) is not
 /// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
@@ -581,14 +584,17 @@ pub(crate) fn picture_style(drawing: &ooxml_wml::types::CTDrawing, theme: &Theme
         _ => None,
     })?;
     let pic = ["graphic", "graphicData", "pic"].iter().try_fold(frame, |e, name| child(e, name))?;
-    let ln = child(pic, "spPr").and_then(|sp_pr| child(sp_pr, "ln"));
+    let sp_pr = child(pic, "spPr");
+    let ln = sp_pr.and_then(|sp_pr| child(sp_pr, "ln"));
+    let xfrm = sp_pr.and_then(|sp_pr| child(sp_pr, "xfrm"));
+    let transform = Transform::from_attrs(|name| xfrm.and_then(|x| vml_attr(x, name)));
     let blip_fill = child(pic, "blipFill");
     let crop = blip_fill.map_or_else(ImageCrop::default, blip_crop);
     let alpha_mod_fix = blip_fill.and_then(|f| child(f, "blip")).into_iter().flat_map(|blip| &blip.children).filter_map(|c| match c {
         ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == "alphaModFix" => Some(vml_attr(e, "amt")),
         _ => None,
     });
-    PictureStyle::of(crop, alpha_mod_fix, ln.and_then(|ln| line_color(ln, theme, None)), ln.and_then(line_width_emu))
+    PictureStyle::of(crop, alpha_mod_fix, ln.and_then(|ln| line_color(ln, theme, None)), ln.and_then(line_width_emu), transform)
 }
 
 /// The crop of a picture's fill (`pic:blipFill`, §20.2.2.1): its `a:srcRect`

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use super::model::{ColorCtx, MAX_ADDRESSABLE_COL, MAX_ADDRESSABLE_ROW};
 use crate::engine::color::{css_color, resolve_dml_color_xml};
-use crate::engine::images::{ImageBytes, ImageCrop, PictureStyle, RelativeRect};
+use crate::engine::images::{ImageBytes, ImageCrop, PictureStyle, RelativeRect, Transform};
 use crate::engine::opc;
 
 /// One xdr anchor point (§20.5.2.15/.16/.32/.33): a 0-based column/row index
@@ -46,8 +46,8 @@ pub(crate) struct SheetDrawing {
     /// `images` / `image_bitmaps` maps key on this (the PML `image_key`
     /// precedent, `pml::shape::image_key`).
     pub(crate) image_key: String,
-    /// The picture's crop, opacity and outline, `None` for one with none of
-    /// them (and for a chart).
+    /// The picture's crop, opacity, outline and transform, `None` for one
+    /// with none of them (and for a chart).
     pub(crate) style: Option<Box<PictureStyle>>,
 }
 
@@ -276,8 +276,9 @@ fn scan_anchors(xml: &str, colors: &ColorCtx) -> Vec<(SheetDrawing, String)> {
 /// The style of an anchored picture (`xdr:pic`, §20.5.2.25, its content
 /// here): the crop and opacity of its fill (`xdr:blipFill`, §20.5.2.2:
 /// `a:srcRect`, `a:stretch/a:fillRect` and the `a:alphaModFix` effects of its
-/// `a:blip`) and the outline of its shape properties (`xdr:spPr`,
-/// §20.5.2.30: `a:ln`), read by [`PictureStyle::of`]. The line draws in its
+/// `a:blip`) and the outline and transform of its shape properties
+/// (`xdr:spPr`, §20.5.2.30: `a:ln` and `a:xfrm`), read by
+/// [`PictureStyle::of`]. The line draws in its
 /// solid fill's colour, or its gradient's first stop's, a `schemeClr` through
 /// the workbook theme.
 ///
@@ -302,7 +303,9 @@ fn picture_style(pic: &str, colors: &ColorCtx) -> Option<Box<PictureStyle>> {
         .and_then(|fill| resolve_dml_color_xml(fill, |name| colors.scheme_color(name)))
         .map(|(hex, alpha)| css_color(&hex, alpha));
     let width = first_tag(sp_pr, "ln").and_then(|tag| attr_value(tag, "w")).and_then(|w| w.trim().parse().ok());
-    PictureStyle::of(crop, alpha_mod_fix, color, width)
+    let xfrm = first_tag(sp_pr, "xfrm");
+    let transform = Transform::from_attrs(|name| attr_value(xfrm?, name));
+    PictureStyle::of(crop, alpha_mod_fix, color, width, transform)
 }
 
 /// Raw-scan an `xdr:wsDr` drawing for CHART anchors: every `twoCellAnchor` /

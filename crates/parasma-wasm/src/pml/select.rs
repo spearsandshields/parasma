@@ -440,35 +440,20 @@ fn safe_slice(s: &str, lo: usize, hi: usize) -> String {
 
 // ─── Object (picture) hit-test + outline ────────────────────────────────────
 
-/// A picture object hit: the slide-namespaced image key + its page-absolute box.
+/// A picture object hit: the slide-namespaced image key + its page-absolute
+/// box, the upright box the picture covers, turned or not.
 pub(crate) struct PmlObjectHit {
     pub(crate) key: String,
     pub(crate) rect: SelRect,
 }
 
-/// Topmost picture under `(x, y)` (pictures paint behind shapes; reverse
-/// insertion so a later-drawn overlapping picture wins). A NEW READ. `None` when
-/// no picture is hit.
+/// Topmost picture under `(x, y)`, where it draws, turned or not (pictures
+/// paint behind shapes; reverse insertion so a later-drawn overlapping picture
+/// wins). A NEW READ. `None` when no picture is hit.
 pub(crate) fn hit_test_object(page: &SlidePage, x: f64, y: f64) -> Option<PmlObjectHit> {
-    for pic in page.pictures.iter().rev() {
-        if in_box((pic.x, pic.y, pic.w, pic.h), x, y) {
-            return Some(PmlObjectHit {
-                key: pic.image_key.clone(),
-                rect: SelRect { x: pic.x, y: pic.y, w: pic.w, h: pic.h },
-            });
-        }
-    }
-    None
-}
-
-/// Every painted box for `key` on this slide (a picture reused under several
-/// placements outlines each).
-fn object_outline_rects(page: &SlidePage, key: &str) -> Vec<SelRect> {
-    page.pictures
-        .iter()
-        .filter(|p| p.image_key == key)
-        .map(|p| SelRect { x: p.x, y: p.y, w: p.w, h: p.h })
-        .collect()
+    let pic = page.pictures.iter().rev().find(|pic| pic.transform().contains(pic.frame(), x, y))?;
+    let (x, y, w, h) = pic.transform().bounds(pic.frame());
+    Some(PmlObjectHit { key: pic.image_key.clone(), rect: SelRect { x, y, w, h } })
 }
 
 // ─── Additive paint passes (fire only when a selection is set) ───────────────
@@ -520,15 +505,21 @@ pub(crate) fn paint_object_outline_pass(
     if *sel_slide != slide {
         return;
     }
-    let rects = object_outline_rects(page, key);
-    if rects.is_empty() {
+    // Every placement of `key` on this slide (a picture reused under several
+    // placements outlines each), stroked on its frame, turned with it.
+    let mut pictures = page.pictures.iter().filter(|pic| pic.image_key == *key).peekable();
+    if pictures.peek().is_none() {
         return;
     }
     p.save();
     p.set_stroke_style_str(OBJECT_OUTLINE_COLOR);
     p.set_line_width(OBJECT_OUTLINE_WIDTH_PX);
-    for r in &rects {
-        p.stroke_rect(r.x, r.y, r.w, r.h);
+    for pic in pictures {
+        let (x, y, w, h) = pic.frame();
+        let _ = pic.transform().paint(p, pic.frame(), || {
+            p.stroke_rect(x, y, w, h);
+            Ok(())
+        });
     }
     p.restore();
 }

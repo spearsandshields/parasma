@@ -66,6 +66,10 @@ are held stable regardless.
 - Documents, presentations and spreadsheets: a picture made see-through with
   Picture Transparency is drawn faded, so what lies behind it shows through,
   where it used to be drawn fully opaque. Its border stays solid.
+- Documents, presentations and spreadsheets: a rotated or flipped picture is
+  drawn rotated or mirrored, with its border, where it used to be drawn
+  upright. Clicking it, its selection highlight and, in documents, the text
+  wrapping around it follow the rotated picture.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.

@@ -1061,6 +1061,147 @@ fn an_opaque_picture_draws_as_before() {
     }
 }
 
+// ─── Turned pictures (`p:spPr/a:xfrm`: `rot`, `flipH`, `flipV`, §20.1.7.6) ───
+
+/// The picture deck of [`styled_picture_slide`] with `ln`, `attrs` on its
+/// `a:xfrm`.
+fn turned_picture_deck(attrs: &str, ln: &str) -> Vec<u8> {
+    let slide = styled_picture_slide("", ln);
+    assert_eq!(slide.matches("<a:xfrm>").count(), 1, "one picture transform");
+    picture_deck(&slide.replace("<a:xfrm>", &format!("<a:xfrm {attrs}>")))
+}
+
+/// Each rect the slide records that `keep` keeps, as recorded and with where
+/// its corners land on the slide, with picture `pml::0::rId2` selected when
+/// `selected` and only what meets `clip` painted.
+fn slide_rects(
+    deck: Vec<u8>,
+    selected: bool,
+    clip: Option<&crate::cull::Rect>,
+    keep: impl Fn(&crate::engine::displaylist::DrawCmd) -> bool,
+) -> Vec<((f64, f64, f64, f64), [(f64, f64); 4])> {
+    use crate::engine::displaylist::{corners_of_each_rect, DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let renderer = PmlRenderer::from_pptx(deck).expect("pptx loads");
+    let fc = FontCache::new();
+    let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+    let rec = RecordingPainter::new();
+    let object = (0, "pml::0::rId2".to_owned());
+    renderer
+        .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, clip, None, None, selected.then_some(&object))
+        .expect("the slide paints");
+    let cmds = rec.take();
+    corners_of_each_rect(&cmds)
+        .into_iter()
+        .filter(|(c, _)| keep(c))
+        .map(|(c, corners)| {
+            let rect = match *c {
+                DrawCmd::DrawImage { dx, dy, dw, dh, .. } | DrawCmd::DrawImageCrop { dx, dy, dw, dh, .. } => (dx, dy, dw, dh),
+                DrawCmd::FillRect { x, y, w, h } | DrawCmd::StrokeRect { x, y, w, h } => (x, y, w, h),
+                _ => unreachable!("a rect"),
+            };
+            (rect, corners)
+        })
+        .collect()
+}
+
+fn is_picture_rect(c: &crate::engine::displaylist::DrawCmd) -> bool {
+    use crate::engine::displaylist::DrawCmd;
+    matches!(c, DrawCmd::DrawImage { .. } | DrawCmd::StrokeRect { .. })
+}
+
+fn assert_corners(got: &[(f64, f64); 4], want: &[(f64, f64); 4], what: &str) {
+    let near = got.iter().zip(want).all(|(g, w)| (g.0 - w.0).abs() < 1e-6 && (g.1 - w.1).abs() < 1e-6);
+    assert!(near, "{what}: corners land at {got:?}, want {want:?}");
+}
+
+/// Where the corners of `frame` (top-left, top-right, bottom-right,
+/// bottom-left) land a quarter turn clockwise about its centre.
+fn quarter_turned((x, y, w, h): (f64, f64, f64, f64)) -> [(f64, f64); 4] {
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    [(cx + h / 2.0, cy - w / 2.0), (cx + h / 2.0, cy + w / 2.0), (cx - h / 2.0, cy + w / 2.0), (cx - h / 2.0, cy - w / 2.0)]
+}
+
+/// `rot="5400000"` turns the picture a quarter clockwise about its frame's
+/// centre, the bitmap and its outline alike, and `flipH="1"` mirrors it left
+/// to right in its frame; the frame stays where its `a:xfrm` puts it.
+#[test]
+fn a_turned_or_flipped_picture_draws_turned_in_its_frame() {
+    let frame = picture_frame();
+    let (x, y, w, h) = frame;
+    for (attrs, want) in [
+        (r#"rot="5400000""#, quarter_turned(frame)),
+        (r#"flipH="1""#, [(x + w, y), (x, y), (x, y + h), (x + w, y + h)]),
+    ] {
+        let drawn = slide_rects(turned_picture_deck(attrs, RED_LINE), false, None, is_picture_rect);
+        assert_eq!(drawn.len(), 2, "{attrs}: the bitmap and its outline");
+        for (rect, corners) in drawn {
+            assert_eq!(rect, frame, "{attrs}");
+            assert_corners(&corners, &want, attrs);
+        }
+    }
+}
+
+/// A picture that does not turn (`rot="0"`, a whole turn, flips set off)
+/// records exactly what one without a rotation records; and an upright
+/// picture moves the canvas nowhere, as before pictures could turn.
+#[test]
+fn an_upright_picture_records_what_it_did_before() {
+    for ln in ["", RED_LINE] {
+        let plain = slide_cmds(styled_picture_deck("", ln));
+        assert!(!crate::engine::displaylist::moves_the_canvas(&plain), "ln {ln:?}");
+        for attrs in [r#"rot="0""#, r#"rot="21600000""#, r#"flipH="0" flipV="0""#] {
+            assert_eq!(slide_cmds(turned_picture_deck(attrs, ln)), plain, "ln {ln:?}, {attrs}");
+        }
+    }
+}
+
+/// A click on a picture turned 45° hits it, with the upright box it covers as
+/// the hit's box; a click in a corner of that box, or of its unturned frame,
+/// misses.
+#[test]
+fn a_turned_picture_is_hit_only_where_it_draws() {
+    let renderer = PmlRenderer::from_pptx(turned_picture_deck(r#"rot="2700000""#, "")).expect("pptx loads");
+    let pages = renderer.build_pages_for_test(&crate::engine::fonts::FontCache::new());
+    let (x, y, w, h) = picture_frame();
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    let half = (w + h) / 2f64.sqrt() / 2.0;
+    let hit = |px: f64, py: f64| crate::pml::select::hit_test_object(&pages[0], px, py);
+    let got = hit(cx, cy).expect("the centre hits");
+    let r = got.rect;
+    for (g, want) in [(r.x, cx - half), (r.y, cy - half), (r.w, 2.0 * half), (r.h, 2.0 * half)] {
+        assert!((g - want).abs() < 1e-6, "the hit box: got {g}, want {want}");
+    }
+    assert!(hit(cx, y - 5.0).is_some(), "above the unturned frame, on the turned picture");
+    assert!(hit(x + 1.0, y + 1.0).is_none(), "the unturned frame's corner");
+    assert!(hit(cx - half + 1.0, cy - half + 1.0).is_none(), "the box's corner");
+}
+
+/// A selected turned picture is outlined along the picture, under its turn.
+#[test]
+fn a_selected_turned_picture_is_outlined_turned() {
+    use crate::engine::displaylist::DrawCmd;
+    let frame = picture_frame();
+    let outline = slide_rects(turned_picture_deck(r#"rot="5400000""#, ""), true, None, |c| matches!(c, DrawCmd::StrokeRect { .. }));
+    assert_eq!(outline.len(), 1, "one outline");
+    assert_eq!(outline[0].0, frame);
+    assert_corners(&outline[0].1, &quarter_turned(frame), "the outline");
+}
+
+/// A windowed paint draws a turned picture whose turned box reaches into the
+/// window although its unturned frame does not.
+#[test]
+fn a_window_over_a_turned_picture_draws_it() {
+    use crate::engine::displaylist::DrawCmd;
+    let (x, y, w, h) = picture_frame();
+    // A 384×288 frame turned a quarter stands 48 px above and below it.
+    let window = crate::cull::Rect { x0: x + w / 2.0 - 5.0, y0: y + h + 10.0, x1: x + w / 2.0 + 5.0, y1: y + h + 20.0 };
+    let drawn = slide_rects(turned_picture_deck(r#"rot="5400000""#, ""), false, Some(&window), |c| matches!(c, DrawCmd::DrawImage { .. }));
+    assert_eq!(drawn.len(), 1, "the picture is drawn");
+}
+
 // ─── Colour transparency (`a:alpha`, `a:alphaMod`, `a:alphaOff`, §20.1.2.3.1-3) ─
 
 /// A deck whose one slide holds one 1-inch rectangle with `sp_pr` (its fill

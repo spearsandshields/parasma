@@ -222,22 +222,23 @@ mod tests {
     }
 
     #[test]
-    fn watermark_rotation_safe_box_keeps_when_visible() {
-        // The watermark cull box is the half-diagonal radius about the page
-        // centre (rotation-safe). A page-centred watermark is visible from a
-        // centre window and culled from a far-corner tiny window.
+    fn watermark_rotated_box_keeps_when_visible() {
+        // The watermark cull box is the upright box its page-centred box
+        // covers once rotated about the page centre (the standard 315°). A
+        // page-centred watermark is visible from a centre window and culled
+        // from a far-corner tiny window.
         let (pw, ph) = (816.0_f64, 1056.0_f64);
         let (bw, bh) = (600.0_f64, 120.0_f64);
-        let r = 0.5 * (bw * bw + bh * bh).sqrt();
-        let cx = pw / 2.0;
-        let cy = ph / 2.0;
+        let turn = crate::engine::images::Transform { rot: 315f64.to_radians(), ..Default::default() };
+        let (x, y, w, h) = turn.bounds((pw / 2.0 - bw / 2.0, ph / 2.0 - bh / 2.0, bw, bh));
+        let (cx, cy) = (pw / 2.0, ph / 2.0);
 
         let centre = Rect { x0: cx - 20.0, y0: cy - 20.0, x1: cx + 20.0, y1: cy + 20.0 };
-        assert!(keep(Some(&centre), cx - r, cy - r, cx + r, cy + r));
+        assert!(keep(Some(&centre), x, y, x + w, y + h));
 
-        // A 10×10 window in the very top-left corner — outside the radius box.
+        // A 10×10 window in the very top-left corner — outside the box.
         let corner = Rect { x0: 0.0, y0: 0.0, x1: 10.0, y1: 10.0 };
-        assert!(!keep(Some(&corner), cx - r, cy - r, cx + r, cy + r));
+        assert!(!keep(Some(&corner), x, y, x + w, y + h));
     }
 
     #[test]

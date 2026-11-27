@@ -24,14 +24,14 @@ use crate::engine::fonts::{
     font_metrics, font_slot_class, resolve_font_slot, FaceCache, FontCache, FontSlot, ShapedRun,
     ThemeFonts, DEFAULT_FONT_PT,
 };
-use crate::engine::images::PictureStyle;
+use crate::engine::images::{PictureStyle, Transform, Xywh};
 use crate::engine::paint::{RunStyle, Underline, VertAlign};
 use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::bidi::bidi_reorder_line;
 use crate::wml::drawing::{
     extract_drawing_text_box, extract_pict_text_box, extract_vml_dimensions, inline_dist_px,
     drawing_is_hidden, is_layout_control, parse_anchor_position, pict_is_hidden, picture_style, TextBoxFrame,
-    WrapInfo,
+    WrapInfo, WrapMode,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
 use crate::wml::content_walk::{self, Revision, Visit};
@@ -78,6 +78,22 @@ pub(crate) struct AnchoredImageInfo {
     pub(crate) behind_text: bool,
     pub(crate) wrap: WrapInfo,
     pub(crate) style: Option<Box<PictureStyle>>,
+}
+
+impl AnchoredImageInfo {
+    /// The box this picture keeps text out of with its frame's top-left at
+    /// `(x, y)`, before its wrap distances: its frame, or the upright box its
+    /// frame covers once it turns (`a:xfrm@rot`, §20.1.7.6).
+    ///
+    /// Word writes the same growth into `wp:effectExtent` (§20.4.2.6), which
+    /// is not read: the box is computed from the frame and the rotation.
+    ///
+    /// Deviation, declared: a turned picture aligned on its reference
+    /// (`wp:align`, §20.4.2.1, §20.4.2.2) is aligned by its frame, not by this
+    /// box; not measured in Word.
+    pub(crate) fn wrap_box(&self, x: f64, y: f64) -> Xywh {
+        Transform::of_style(self.style.as_deref()).bounds((x, y, self.width_px, self.height_px))
+    }
 }
 
 /// One run queued for the item-emit pass: the run plus its (field tag, hyperlink
@@ -710,7 +726,7 @@ pub(crate) fn collect_items(
                         style: style.clone(),
                         width: box_width,
                         content_width: box_width,
-                        image: Some(ImageItem { rel_id: key, height_px: dh, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style: None }),
+                        image: Some(ImageItem { rel_id: key, width_px: dw, height_px: dh, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style: None }),
                         ..Default::default()
                     });
                 }
@@ -726,24 +742,27 @@ pub(crate) fn collect_items(
                 // §20.4.3.6): the text-distance padding Word maintains around
                 // an inline image. distL+distR widen the item box so adjacent
                 // text keeps its horizontal gap; distT/distB grow the line's
-                // vertical extent (added below in `push`). Default 0.
+                // vertical extent (added below in `push`). Default 0. The box
+                // between them is the picture's extent, turned if it turns.
                 let (dist_l_px, dist_t_px, dist_r_px, dist_b_px) = inline_dist_px(drawing);
-                let box_width = width_px + dist_l_px + dist_r_px;
                 let picture = picture_style(drawing, theme_fonts);
                 for rel_id in inline_rel_ids {
+                    let image = ImageItem {
+                        rel_id: rel_id.to_string(),
+                        width_px,
+                        height_px,
+                        dist_l_px,
+                        dist_t_px,
+                        dist_r_px,
+                        dist_b_px,
+                        style: picture.clone(),
+                    };
+                    let box_width = image.extent().0 + dist_l_px + dist_r_px;
                     items.push(Item {
                         style: style.clone(),
                         width: box_width,
                         content_width: box_width,
-                        image: Some(ImageItem {
-                            rel_id: rel_id.to_string(),
-                            height_px,
-                            dist_l_px,
-                            dist_t_px,
-                            dist_r_px,
-                            dist_b_px,
-                            style: picture.clone(),
-                        }),
+                        image: Some(image),
                         // Not born of paragraph text — sentinel.
                         ..Default::default()
                     });
@@ -781,6 +800,7 @@ pub(crate) fn collect_items(
                     content_width: cw,
                     image: Some(ImageItem {
                         rel_id: fallback_key,
+                        width_px: cw,
                         height_px: ch,
                         dist_l_px: 0.0,
                         dist_t_px: 0.0,
@@ -799,8 +819,15 @@ pub(crate) fn collect_items(
                     Some((cx, cy)) => (emu_to_px(cx), emu_to_px(cy)),
                     None => (200.0, 150.0),
                 };
-                let (h_pos, v_pos, h_rel, v_rel, behind, wrap) = parse_anchor_position(drawing, aw, ah);
+                let (h_pos, v_pos, h_rel, v_rel, behind, mut wrap) = parse_anchor_position(drawing, aw, ah);
                 let picture = picture_style(drawing, theme_fonts);
+                // Deviation, declared: a turned picture with tight or through
+                // wrapping (§20.4.2.19, §20.4.2.18) wraps the upright box it
+                // covers, as with square wrapping; its wrap polygon is not
+                // turned with it, as whether Word turns it is not measured.
+                if Transform::of_style(picture.as_deref()).rotates() && matches!(wrap.mode, WrapMode::Polygon { .. }) {
+                    wrap.mode = WrapMode::Square;
+                }
                 for rel_id in anchor_rel_ids {
                     anchored_images.push(AnchoredImageInfo {
                         rel_id: rel_id.to_string(),
@@ -1560,9 +1587,9 @@ pub(crate) fn accumulate_item_metrics(
     } else if let Some(img) = &item.image {
         // §20.4.2.8: distT/distB pad the image vertically — the line's extent
         // must grow by distT+distB so the lines above/below keep their gap. The
-        // bitmap is still drawn at its intrinsic height_px, lifted distB above
-        // the baseline (see render.rs).
-        let vextent = img.height_px + img.dist_t_px + img.dist_b_px;
+        // picture still takes its extent's height (its frame's, or the box a
+        // turned frame covers), lifted distB above the baseline (see render.rs).
+        let vextent = img.extent().1 + img.dist_t_px + img.dist_b_px;
         *asc = asc.max(vextent);
         *imgh = imgh.max(vextent);
     } else if let Some(font) = font_cache.resolve(
@@ -1820,13 +1847,14 @@ impl Item {
         // text-box inset, say) cannot reach the painter while staying
         // invisible to this stream. Every field of both affects what is drawn.
         if let Some(ImageItem {
-            rel_id, height_px, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style,
+            rel_id, width_px, height_px, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style,
         }) = image {
             let _ = write!(out, " img{rel_id:?} h{height_px:.2} dist{dist_l_px:.2},{dist_t_px:.2},{dist_r_px:.2},{dist_b_px:.2}");
             // Written only when set, so pictures without one dump as before.
-            let (outline, crop, alpha) = style
-                .as_deref()
-                .map_or((None, None, 1.0), |PictureStyle { outline, crop, alpha }| (outline.as_ref(), crop.as_ref(), *alpha));
+            let (outline, crop, alpha, transform) = style.as_deref().map_or(
+                (None, None, 1.0, Transform::default()),
+                |PictureStyle { outline, crop, alpha, transform }| (outline.as_ref(), crop.as_ref(), *alpha, *transform),
+            );
             if let Some(crate::engine::border::Edge { color, width_px, dash, style }) = outline {
                 let _ = write!(out, " ln{color}/{width_px:.2}/{style:?}/{dash:?}");
             }
@@ -1836,6 +1864,12 @@ impl Item {
             }
             if alpha < 1.0 {
                 let _ = write!(out, " alpha{alpha:.4}");
+            }
+            // The frame's width is drawn only by a turned picture: an
+            // upright one is drawn as wide as its item less its padding.
+            if transform != Transform::default() {
+                let Transform { rot, flip_h, flip_v } = transform;
+                let _ = write!(out, " turn{rot:.4}/{}/{} w{width_px:.2}", u8::from(flip_h), u8::from(flip_v));
             }
         }
         if let Some(f) = field {
@@ -2411,10 +2445,12 @@ fn resolve_field_code(instr: &str) -> Option<FieldCode> {
 #[derive(Clone)]
 pub(crate) struct ImageItem {
     pub(crate) rel_id: String,
-    /// Intrinsic display height in CSS pixels (from `<wp:extent cy="...">`),
-    /// i.e. the height the bitmap is actually drawn at — NOT including the
-    /// distT/distB text-distance padding (§20.4.2.8). The padding is added
-    /// separately to the line's vertical extent so adjacent lines keep clear.
+    /// The picture's frame in CSS pixels (from `<wp:extent cx cy>`), i.e. the
+    /// size the bitmap is drawn at before it turns — NOT including the
+    /// distL/distT/distR/distB text-distance padding (§20.4.2.8). The padding
+    /// is added separately to the item's width and the line's vertical extent
+    /// so adjacent text keeps clear.
+    pub(crate) width_px: f64,
     pub(crate) height_px: f64,
     /// Text-distance padding in CSS pixels (§20.4.2.8 distL/distT/distR/distB,
     /// type ST_WrapDistance §20.4.3.6). distL/distR widen the item box so
@@ -2428,18 +2464,33 @@ pub(crate) struct ImageItem {
 }
 
 impl ImageItem {
-    /// The painted bitmap box `(x, y, w, h)` for this inline image, given its
+    /// The `(width, height)` the picture takes in its line before its
+    /// padding: its frame, or the upright box its frame covers once it turns
+    /// (`a:xfrm@rot`, §20.1.7.6).
+    ///
+    /// Word writes the same growth into `wp:effectExtent` (§20.4.2.6), which
+    /// is not read: the box is computed from the frame and the rotation.
+    pub(crate) fn extent(&self) -> (f64, f64) {
+        let (_, _, w, h) = Transform::of_style(self.style.as_deref()).bounds((0.0, 0.0, self.width_px, self.height_px));
+        (w, h)
+    }
+
+    /// The painted frame `(x, y, w, h)` for this inline image, given its
     /// item's left edge `x_left`, the item box width `item_width`, and the line
-    /// `baseline_y` (§20.4.2.8): inset distL from the left, intrinsic width (box
-    /// minus L/R padding), lifted distB + height above the baseline. Single source
-    /// for the renderer's draw box and `select.rs`'s hit/outline rect.
-    pub(crate) fn painted_box(&self, x_left: f64, item_width: f64, baseline_y: f64) -> (f64, f64, f64, f64) {
-        (
+    /// `baseline_y` (§20.4.2.8). The picture takes the box inset distL from
+    /// the left, as wide as the item box less its L/R padding, lifted distB +
+    /// its [`extent`](Self::extent)'s height above the baseline; its frame is
+    /// that box, or a turned picture's frame centred in it. Single source for
+    /// the renderer's draw box and `select.rs`'s hit/outline rect.
+    pub(crate) fn painted_box(&self, x_left: f64, item_width: f64, baseline_y: f64) -> Xywh {
+        let (_, height) = self.extent();
+        let held = (
             x_left + self.dist_l_px,
-            baseline_y - self.dist_b_px - self.height_px,
+            baseline_y - self.dist_b_px - height,
             item_width - self.dist_l_px - self.dist_r_px,
-            self.height_px,
-        )
+            height,
+        );
+        Transform::of_style(self.style.as_deref()).frame_within(held, (self.width_px, self.height_px))
     }
 }
 

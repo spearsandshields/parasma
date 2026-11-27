@@ -20,6 +20,7 @@ use crate::engine::fragment::{
     Block, DocFragment, FragBorder, FragCell, FragList, FragPara, FragRow, FragRun, FragTable,
     ImageRef, SelRect,
 };
+use crate::engine::images::{Transform, Xywh};
 use crate::engine::paint::{Painter, RunStyle, Underline, VertAlign};
 use crate::wml::linebreak::{Item, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::NumberingMarker;
@@ -282,7 +283,13 @@ pub(crate) fn build_para_runs(items: &[Item]) -> Vec<RunMeta> {
                 link: it.link.clone(),
                 image: Some(ImageRef {
                     rel_id: img.rel_id.clone(),
-                    w_px: it.width,
+                    // A copy carries no turn, so a turned picture travels at
+                    // its frame's width, not the box it takes in its line.
+                    w_px: if Transform::of_style(img.style.as_deref()).rotates() {
+                        img.width_px + img.dist_l_px + img.dist_r_px
+                    } else {
+                        it.width
+                    },
                     h_px: img.height_px,
                 }),
                 footnote_mark: None,
@@ -546,16 +553,22 @@ pub(crate) fn hit_test_impl(page: &PageLayout, x: f64, y: f64) -> Option<TextPos
     Some(resolve_x_on_line(line, x))
 }
 
-/// The `selectionRects` core. Normalizes `start ≤ end` (lexicographic), then
+/// The `selectionRects` core: the upright box each tint of
+/// [`selection_tints`] covers.
+pub(crate) fn selection_rects_impl(page: &PageLayout, start: TextPos, end: TextPos) -> Vec<SelRect> {
+    selection_tints(page, start, end).iter().map(Placed::bounds).collect()
+}
+
+/// What a selection tints. Normalizes `start ≤ end` (lexicographic), then
 /// per selectable line intersects each item's LOGICAL span `[char_start,
 /// char_start+char_len)` (never the painted `text.len()`) with the
-/// covered window, emitting DISJOINT visual rects. No line-contiguity
-/// assumption: covered x-intervals are merged by geometric overlap, so a
-/// permuted bidi/float line yields correct disjoint rects with zero special
-/// casing.
-pub(crate) fn selection_rects_impl(page: &PageLayout, start: TextPos, end: TextPos) -> Vec<SelRect> {
+/// covered window, emitting DISJOINT visual rects, each an inline object's
+/// box turned as it draws. No line-contiguity assumption: covered x-intervals
+/// are merged by geometric overlap, so a permuted bidi/float line yields
+/// correct disjoint rects with zero special casing.
+fn selection_tints(page: &PageLayout, start: TextPos, end: TextPos) -> Vec<Placed> {
     let (start, end) = if end < start { (end, start) } else { (start, end) };
-    let mut rects: Vec<SelRect> = Vec::new();
+    let mut rects: Vec<Placed> = Vec::new();
     for_each_body_line(page, |line| {
         let para = line.para;
         if para == PARA_SENTINEL || para < start.para || para > end.para {
@@ -574,14 +587,14 @@ pub(crate) fn selection_rects_impl(page: &PageLayout, start: TextPos, end: TextP
                     if lo == 0 && hi > 0 {
                         // Highlight-hug fix — an INLINE
                         // OBJECT item (image or chart) highlights with its OBJECT
-                        // BOX (`inline_image_rect`, the painted bitmap box), not
-                        // the line-metrics band: on a tall object line the band
-                        // paints an "offset square" beside/around the object.
-                        // Emitted as its OWN rect (never merged into the text
-                        // intervals, whose band stays the line box). Text-only
-                        // lines are byte-identical.
+                        // BOX (`inline_image_box`, the painted bitmap box, turned
+                        // with it), not the line-metrics band: on a tall object
+                        // line the band paints an "offset square" beside/around
+                        // the object. Emitted as its OWN rect (never merged into
+                        // the text intervals, whose band stays the line box).
+                        // Text-only lines are byte-identical.
                         if it.image.is_some() {
-                            if let Some(r) = inline_image_rect(line, left, it) {
+                            if let Some(r) = inline_image_box(line, left, it) {
                                 rects.push(r);
                             }
                             continue;
@@ -627,11 +640,11 @@ pub(crate) fn selection_rects_impl(page: &PageLayout, start: TextPos, end: TextP
             if l <= cur.1 + 0.5 {
                 cur.1 = cur.1.max(r);
             } else {
-                rects.push(SelRect { x: cur.0, y: top, w: cur.1 - cur.0, h });
+                rects.push(Placed::upright((cur.0, top, cur.1 - cur.0, h)));
                 cur = (l, r);
             }
         }
-        rects.push(SelRect { x: cur.0, y: top, w: cur.1 - cur.0, h });
+        rects.push(Placed::upright((cur.0, top, cur.1 - cur.0, h)));
     });
     rects
 }
@@ -667,18 +680,15 @@ pub(crate) fn paint_selection_pass(
 ) {
     let Some((start, end)) = sel else { return };
     let (start, end) = if end < start { (end, start) } else { (start, end) };
-    let rects = selection_rects_impl(page, start, end);
+    let rects = selection_tints(page, start, end);
     if rects.is_empty() {
         return; // collapsed caret / no covered line ⇒ byte-identical no-op.
     }
     p.save();
     p.set_global_alpha(SELECTION_FILL_ALPHA);
     p.set_fill_style_str(SELECTION_FILL_COLOR);
-    for r in &rects {
-        if !cull::keep(clip, r.x, r.y, r.x + r.w, r.y + r.h) {
-            continue;
-        }
-        p.fill_rect(r.x, r.y, r.w, r.h);
+    for r in rects.iter().filter(|r| r.kept(clip)) {
+        r.fill(p);
     }
     p.restore();
 }
@@ -704,12 +714,12 @@ pub(crate) fn paint_anchored_selection_tint(
     if start >= end {
         return; // collapsed caret ⇒ nothing swept in.
     }
-    let rects: Vec<SelRect> = page
+    let rects: Vec<Placed> = page
         .anchored_images
         .iter()
         .filter_map(|ai| {
             let ap = ai.anchor_para?;
-            (ap >= start.para && ap <= end.para).then(|| anchored_rect(ai))
+            (ap >= start.para && ap <= end.para).then(|| anchored_box(ai))
         })
         .collect();
     if rects.is_empty() {
@@ -718,11 +728,8 @@ pub(crate) fn paint_anchored_selection_tint(
     p.save();
     p.set_global_alpha(SELECTION_FILL_ALPHA);
     p.set_fill_style_str(SELECTION_FILL_COLOR);
-    for r in &rects {
-        if !cull::keep(clip, r.x, r.y, r.x + r.w, r.y + r.h) {
-            continue;
-        }
-        p.fill_rect(r.x, r.y, r.w, r.h);
+    for r in rects.iter().filter(|r| r.kept(clip)) {
+        r.fill(p);
     }
     p.restore();
 }
@@ -730,7 +737,8 @@ pub(crate) fn paint_anchored_selection_tint(
 // ─── Object hit-test + outline ──────────────────────────────────────────────
 
 /// An image object hit result: the topmost image object
-/// under a point, in object-first z-order. `rect` is page-absolute display px.
+/// under a point, in object-first z-order. `rect` is page-absolute display px:
+/// the upright box the object covers, turned or not.
 /// Charts — `kind: "chart"` marks an inline CHART hit (a distinct
 /// kind so TS routes it to the chart flavors, never the image-bytes paths).
 pub(crate) struct ObjectHit {
@@ -739,21 +747,67 @@ pub(crate) struct ObjectHit {
     pub(crate) rect: SelRect,
 }
 
-fn anchored_rect(ai: &AnchoredImageLayout) -> SelRect {
-    SelRect { x: ai.x, y: ai.y, w: ai.width_px, h: ai.height_px }
+/// A rectangle as the page draws it: its frame, and how it turns on the frame
+/// (a picture's `a:xfrm`, §20.1.7.6; text and upright pictures do not turn).
+/// Hit-tested, tinted and outlined where it draws; reported to the viewer as
+/// the upright box it covers.
+#[derive(Clone, Copy, Debug)]
+struct Placed {
+    frame: Xywh,
+    turn: Transform,
+}
+
+impl Placed {
+    fn upright(frame: Xywh) -> Self {
+        Placed { frame, turn: Transform::default() }
+    }
+
+    /// The upright box it covers: its frame when it does not turn.
+    fn bounds(&self) -> SelRect {
+        let (x, y, w, h) = self.turn.bounds(self.frame);
+        SelRect { x, y, w, h }
+    }
+
+    fn contains(&self, x: f64, y: f64) -> bool {
+        self.turn.contains(self.frame, x, y)
+    }
+
+    /// Whether a windowed paint keeps it: the box it covers meets `clip`.
+    fn kept(&self, clip: Option<&cull::Rect>) -> bool {
+        let r = self.bounds();
+        cull::keep(clip, r.x, r.y, r.x + r.w, r.y + r.h)
+    }
+
+    /// Fill it, turned as it draws, in the fill style in force.
+    fn fill(&self, p: &dyn Painter) {
+        let (x, y, w, h) = self.frame;
+        let _ = self.turn.paint(p, self.frame, || {
+            p.fill_rect(x, y, w, h);
+            Ok(())
+        });
+    }
+
+    /// Stroke it, turned as it draws, in the stroke style in force.
+    fn stroke(&self, p: &dyn Painter) {
+        let (x, y, w, h) = self.frame;
+        let _ = self.turn.paint(p, self.frame, || {
+            p.stroke_rect(x, y, w, h);
+            Ok(())
+        });
+    }
+}
+
+fn anchored_box(ai: &AnchoredImageLayout) -> Placed {
+    Placed { frame: ai.frame(), turn: ai.transform() }
 }
 
 /// Painted bitmap box for one inline-image `Item`, via the shared
-/// `ImageItem::painted_box` (the SAME arithmetic the renderer draws with).
-/// `x_cursor` is the item's left edge.
-fn inline_image_rect(line: &PagedLine, x_cursor: f64, it: &Item) -> Option<SelRect> {
+/// `ImageItem::painted_box` (the SAME arithmetic the renderer draws with),
+/// turned with the picture. `x_cursor` is the item's left edge.
+fn inline_image_box(line: &PagedLine, x_cursor: f64, it: &Item) -> Option<Placed> {
     let img = it.image.as_ref()?;
-    let (x, y, w, h) = img.painted_box(x_cursor, it.width, line.baseline_y);
-    Some(SelRect { x, y, w, h })
-}
-
-fn point_in(r: &SelRect, x: f64, y: f64) -> bool {
-    x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
+    let frame = img.painted_box(x_cursor, it.width, line.baseline_y);
+    Some(Placed { frame, turn: Transform::of_style(img.style.as_deref()) })
 }
 
 /// Object-first z-order: the topmost PAINTED image wins. Paint
@@ -778,9 +832,9 @@ pub(crate) fn hit_test_object_impl(
     // a later-drawn overlapping image wins.
     for ai in page.anchored_images.iter().rev() {
         if !ai.behind_text && is_image(&ai.rel_id) {
-            let r = anchored_rect(ai);
-            if point_in(&r, x, y) {
-                return Some(ObjectHit { rel_id: ai.rel_id.clone(), kind: "anchoredImage", rect: r });
+            let b = anchored_box(ai);
+            if b.contains(x, y) {
+                return Some(ObjectHit { rel_id: ai.rel_id.clone(), kind: "anchoredImage", rect: b.bounds() });
             }
         }
     }
@@ -803,12 +857,12 @@ pub(crate) fn hit_test_object_impl(
                         None
                     };
                     if let Some(kind) = kind {
-                        if let Some(r) = inline_image_rect(line, left, it) {
-                            if point_in(&r, x, y) {
+                        if let Some(b) = inline_image_box(line, left, it) {
+                            if b.contains(x, y) {
                                 hit = Some(ObjectHit {
                                     rel_id: img.rel_id.clone(),
                                     kind,
-                                    rect: r,
+                                    rect: b.bounds(),
                                 });
                                 return;
                             }
@@ -824,9 +878,9 @@ pub(crate) fn hit_test_object_impl(
     // Behind-text anchored images are painted first ⇒ bottommost.
     for ai in page.anchored_images.iter().rev() {
         if ai.behind_text && is_image(&ai.rel_id) {
-            let r = anchored_rect(ai);
-            if point_in(&r, x, y) {
-                return Some(ObjectHit { rel_id: ai.rel_id.clone(), kind: "anchoredImage", rect: r });
+            let b = anchored_box(ai);
+            if b.contains(x, y) {
+                return Some(ObjectHit { rel_id: ai.rel_id.clone(), kind: "anchoredImage", rect: b.bounds() });
             }
         }
     }
@@ -838,24 +892,30 @@ pub(crate) fn hit_test_object_impl(
 const OBJECT_OUTLINE_COLOR: &str = "#3B82F6";
 const OBJECT_OUTLINE_WIDTH_PX: f64 = 2.0;
 
+/// The upright box each placement of `rel_id` on this page covers (see
+/// [`object_boxes`]). `pub(crate)` so `lib.rs` can derive a chart's display
+/// box for the `chartData` export.
+pub(crate) fn object_outline_rects(page: &PageLayout, rel_id: &str) -> Vec<SelRect> {
+    object_boxes(page, rel_id).iter().map(Placed::bounds).collect()
+}
+
 /// Every painted box for `rel_id` on this page (an anchored image can appear
 /// once; an inline image once per placement — outline strokes ALL matching
 /// placements, the `index:0` disambiguation is a v1 deferral). Matches by KEY
 /// only, so a selected inline CHART (`chart::<relId>`) outlines exactly like an
-/// image. `pub(crate)` so `lib.rs` can derive a chart's display
-/// box for the `chartData` export.
-pub(crate) fn object_outline_rects(page: &PageLayout, rel_id: &str) -> Vec<SelRect> {
+/// image.
+fn object_boxes(page: &PageLayout, rel_id: &str) -> Vec<Placed> {
     let mut rects = Vec::new();
     for ai in &page.anchored_images {
         if ai.rel_id == rel_id {
-            rects.push(anchored_rect(ai));
+            rects.push(anchored_box(ai));
         }
     }
     for_each_body_line(page, |line| {
         for seg in &line.segments {
             for (left, it) in items_with_left(seg) {
                 if it.image.as_ref().is_some_and(|i| i.rel_id == rel_id) {
-                    if let Some(r) = inline_image_rect(line, left, it) {
+                    if let Some(r) = inline_image_box(line, left, it) {
                         rects.push(r);
                     }
                 }
@@ -879,18 +939,15 @@ pub(crate) fn paint_object_outline_pass(
     let Some(rel_id) = selected else {
         return;
     };
-    let rects = object_outline_rects(page, rel_id);
+    let rects = object_boxes(page, rel_id);
     if rects.is_empty() {
         return; // unknown/off-page relId ⇒ byte-identical no-op.
     }
     p.save();
     p.set_stroke_style_str(OBJECT_OUTLINE_COLOR);
     p.set_line_width(OBJECT_OUTLINE_WIDTH_PX);
-    for r in &rects {
-        if !cull::keep(clip, r.x, r.y, r.x + r.w, r.y + r.h) {
-            continue;
-        }
-        p.stroke_rect(r.x, r.y, r.w, r.h);
+    for r in rects.iter().filter(|r| r.kept(clip)) {
+        r.stroke(p);
     }
     p.restore();
 }
@@ -2247,6 +2304,7 @@ mod tests {
         it.char_len = 0;
         it.image = Some(ImageItem {
             rel_id: rel_id.to_string(),
+            width_px: width,
             height_px,
             dist_l_px: 0.0,
             dist_t_px: 0.0,
@@ -2356,7 +2414,7 @@ mod tests {
     // covered object item pushed its x-interval into the LINE-band merge, so a
     // tall object line painted one object-height band across the text too (the
     // "offset square" artifact). Post-fix the object emits its OBJECT BOX
-    // (`inline_image_rect`) as its own rect and text keeps the line band.
+    // (`inline_image_box`) as its own rect and text keeps the line band.
 
     /// A SENTINEL inline-object item (the real `collect_items` shape).
     fn mk_sentinel_object_item(rel_id: &str, width: f64, height_px: f64) -> Item {

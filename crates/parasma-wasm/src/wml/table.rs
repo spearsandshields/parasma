@@ -557,10 +557,11 @@ fn build_cell_float_layout(
                 ai.width_px, ai.height_px, &fctx,
             );
             if !matches!(ai.wrap.mode, WrapMode::None) {
-                if let Some(af) = build_active_float(&ai.wrap, fx, fy, ai.width_px, ai.height_px, dom_left, dom_right) {
+                let (bx, by, bw, bh) = ai.wrap_box(fx, fy);
+                if let Some(af) = build_active_float(&ai.wrap, bx, by, bw, bh, dom_left, dom_right) {
                     floats.push(af);
                 }
-                float_bottom = float_bottom.max(fy + ai.height_px);
+                float_bottom = float_bottom.max(by + bh);
             }
             draws.push(CellFloatDraw::Image {
                 rel_id: ai.rel_id.clone(), x: fx, y: fy,

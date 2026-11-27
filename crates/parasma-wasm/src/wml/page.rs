@@ -98,6 +98,18 @@ pub(crate) struct AnchoredImageLayout {
     pub(crate) style: Option<Box<crate::engine::images::PictureStyle>>,
 }
 
+impl AnchoredImageLayout {
+    /// The picture's frame on the page, before it turns.
+    pub(crate) fn frame(&self) -> crate::engine::images::Xywh {
+        (self.x, self.y, self.width_px, self.height_px)
+    }
+
+    /// How the picture turns on its frame.
+    pub(crate) fn transform(&self) -> crate::engine::images::Transform {
+        crate::engine::images::Transform::of_style(self.style.as_deref())
+    }
+}
+
 impl PageLayout {
     pub(crate) fn new() -> Self {
         Self {

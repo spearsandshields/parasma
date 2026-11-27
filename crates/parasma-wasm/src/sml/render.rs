@@ -280,7 +280,10 @@ pub(crate) fn paint_sheet_page_clipped(
             images_windowed = page
                 .images
                 .iter()
-                .filter(|im| visible(im.x, im.y, im.w, im.h))
+                .filter(|im| {
+                    let (x, y, w, h) = im.bounds();
+                    visible(x, y, w, h)
+                })
                 .cloned()
                 .collect();
             &images_windowed
@@ -1233,10 +1236,12 @@ fn paint_grid_region(
 
     // ── Anchored pictures — drawn ABOVE the cells, inside the content
     // clip (so they scroll with the grid and never cover the sticky gutters).
-    // Cull to the visible window; the continuous page is one band, so the
-    // page-local image box + scroll offset is the viewport position directly.
+    // Cull to the visible window by the upright box each covers, turned or
+    // not; the continuous page is one band, so the page-local image box +
+    // scroll offset is the viewport position directly.
     for im in &page.images {
-        if im.y + im.h < win_y0 || im.y > win_y1 || im.x + im.w < win_x0 || im.x > win_x1 {
+        let (x, y, w, h) = im.bounds();
+        if y + h < win_y0 || y > win_y1 || x + w < win_x0 || x > win_x1 {
             continue;
         }
         let frame = (ox + im.x, oy + im.y, im.w, im.h);

@@ -2553,6 +2553,122 @@ mod drawing_tests {
             assert_eq!(sheet_cmds(&translucent_drawing(opaque, "", RED_LINE)), plain, "{opaque}");
         }
     }
+
+    // ─── turned pictures (`xdr:spPr/a:xfrm`: `rot`, `flipH`, `flipV`, §20.1.7.6)
+
+    /// [`styled_drawing`] with `ln`, `attrs` on its picture's `a:xfrm`.
+    fn turned_drawing(attrs: &str, ln: &str) -> String {
+        let s = styled_drawing("", ln);
+        assert_eq!(s.matches("<a:xfrm>").count(), 1, "one picture transform");
+        s.replace("<a:xfrm>", &format!("<a:xfrm {attrs}>"))
+    }
+
+    /// The picture's image draw in `cmds` and the outline stroked right after
+    /// it, each as recorded and with where its corners land.
+    fn picture_rects(cmds: &[DrawCmd]) -> Vec<((f64, f64, f64, f64), [(f64, f64); 4])> {
+        let rects = crate::engine::displaylist::corners_of_each_rect(cmds);
+        let at = rects.iter().position(|(c, _)| matches!(c, DrawCmd::DrawImage { .. })).expect("the picture is drawn");
+        let outline = rects.get(at + 1).filter(|(c, _)| matches!(c, DrawCmd::StrokeRect { .. }));
+        std::iter::once(&rects[at])
+            .chain(outline)
+            .map(|(c, corners)| match **c {
+                DrawCmd::DrawImage { dx, dy, dw, dh, .. } => ((dx, dy, dw, dh), *corners),
+                DrawCmd::StrokeRect { x, y, w, h } => ((x, y, w, h), *corners),
+                _ => unreachable!(),
+            })
+            .collect()
+    }
+
+    /// Where the corners of `frame` (top-left, top-right, bottom-right,
+    /// bottom-left) land turned `deg` degrees clockwise about its centre.
+    fn turned((x, y, w, h): (f64, f64, f64, f64), deg: f64) -> [(f64, f64); 4] {
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        let (sin, cos) = deg.to_radians().sin_cos();
+        [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].map(|(px, py)| {
+            let (dx, dy) = (px - cx, py - cy);
+            (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
+        })
+    }
+
+    fn assert_corners(got: &[(f64, f64); 4], want: &[(f64, f64); 4], what: &str) {
+        let near = got.iter().zip(want).all(|(g, w)| (g.0 - w.0).abs() < 1e-6 && (g.1 - w.1).abs() < 1e-6);
+        assert!(near, "{what}: corners land at {got:?}, want {want:?}");
+    }
+
+    /// A picture turned a quarter covers its anchor box, as Excel anchors a
+    /// picture turned between 45° and 135°: its frame is the anchor box stood
+    /// on end about the same centre, and the bitmap and its outline turn
+    /// onto the anchor box's corners, its top-left onto the box's top-right.
+    /// On the grid and on a print page.
+    #[test]
+    fn a_quarter_turned_picture_covers_its_anchor_box() {
+        let views = picture_frames().into_iter().zip(sheet_cmds(&turned_drawing(r#"rot="5400000""#, RED_LINE)));
+        for ((x, y, w, h), cmds) in views {
+            let drawn = picture_rects(&cmds);
+            assert_eq!(drawn.len(), 2, "the bitmap and its outline");
+            let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+            for ((fx, fy, fw, fh), corners) in drawn {
+                for (got, want) in [(fx, cx - h / 2.0), (fy, cy - w / 2.0), (fw, h), (fh, w)] {
+                    assert!((got - want).abs() < 1e-9, "the frame stands on end: got {got}, want {want}");
+                }
+                assert_corners(&corners, &[(x + w, y), (x + w, y + h), (x, y + h), (x, y)], "a quarter turn");
+            }
+        }
+    }
+
+    /// A picture turned less than 45°, or flipped, lies in its anchor box and
+    /// turns or mirrors in it about its centre.
+    #[test]
+    fn a_picture_turned_less_than_an_eighth_turns_in_its_anchor_box() {
+        for (attrs, deg, flip) in [(r#"rot="1800000""#, 30.0, false), (r#"flipH="1""#, 0.0, true)] {
+            let views = picture_frames().into_iter().zip(sheet_cmds(&turned_drawing(attrs, RED_LINE)));
+            for (frame, cmds) in views {
+                let (x, y, w, h) = frame;
+                let want = if flip { [(x + w, y), (x, y), (x, y + h), (x + w, y + h)] } else { turned(frame, deg) };
+                let drawn = picture_rects(&cmds);
+                assert_eq!(drawn.len(), 2, "{attrs}: the bitmap and its outline");
+                for (rect, corners) in drawn {
+                    assert_eq!(rect, frame, "{attrs}");
+                    assert_corners(&corners, &want, attrs);
+                }
+            }
+        }
+    }
+
+    /// A picture that does not turn (`rot="0"`, a whole turn, flips set off)
+    /// records exactly what one without a rotation records; and an upright
+    /// picture moves the canvas nowhere, as before pictures could turn.
+    #[test]
+    fn an_upright_picture_records_what_it_did_before() {
+        for ln in ["", RED_LINE] {
+            let plain = sheet_cmds(&styled_drawing("", ln));
+            for view in &plain {
+                assert!(!crate::engine::displaylist::moves_the_canvas(view), "ln {ln:?}");
+            }
+            for attrs in [r#"rot="0""#, r#"rot="21600000""#, r#"flipH="0" flipV="0""#] {
+                assert_eq!(sheet_cmds(&turned_drawing(attrs, ln)), plain, "ln {ln:?}, {attrs}");
+            }
+        }
+    }
+
+    /// The grid scrolled just past a picture's anchor box stops drawing an
+    /// upright picture, and still draws one turned 30°, whose corners reach
+    /// below the box.
+    #[test]
+    fn a_grid_scrolled_past_a_turned_pictures_box_still_draws_its_corner() {
+        let fc = calibri_font_cache();
+        let draws_at = |drawing: &str, scroll_y: f64| {
+            let r = super::SmlRenderer::from_xlsx(xlsx_with_drawing(drawing)).expect("from_xlsx");
+            let rec = RecordingPainter::new();
+            r.paint_grid_into(&rec, 0, 0.0, scroll_y, 640.0, 480.0, 1.0, &fc, &HashMap::new(), None, None, None)
+                .expect("the grid paints");
+            rec.take().iter().any(|c| matches!(c, DrawCmd::DrawImage { .. }))
+        };
+        let upright = styled_drawing("", "");
+        let last = (0..200).map(f64::from).take_while(|&s| draws_at(&upright, s)).last().expect("drawn unscrolled");
+        assert!(!draws_at(&upright, last + 5.0), "scrolled past the upright picture");
+        assert!(draws_at(&turned_drawing(r#"rot="1800000""#, ""), last + 5.0), "the turned picture's corner is in view");
+    }
 }
 
 // ─── xlsx embedded charts (grid placement + shared painter + object hit) ─────

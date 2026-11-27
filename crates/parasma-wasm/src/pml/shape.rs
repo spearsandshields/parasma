@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::engine::counter;
 use crate::engine::fonts::{self, font_metrics, DEFAULT_FONT_FAMILY, FontCache};
 use crate::engine::geom::{preset_path, PathCmd};
-use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
+use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect, Transform, Xywh};
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use ooxml_dml::ext::{TextParagraphExt, TextRunExt};
@@ -217,8 +217,21 @@ pub(crate) struct SlidePicture {
     /// the renderer stored the picture's media bytes under (rel ids restart per
     /// slide, so the bare rel id would collide across slides).
     pub image_key: String,
-    /// Its crop, opacity and outline, `None` for a picture with none of them.
+    /// Its crop, opacity, outline and transform, `None` for a picture with
+    /// none of them.
     pub style: Option<Box<PictureStyle>>,
+}
+
+impl SlidePicture {
+    /// The picture's frame on the slide, before it turns.
+    pub(crate) fn frame(&self) -> Xywh {
+        (self.x, self.y, self.w, self.h)
+    }
+
+    /// How the picture turns on its frame.
+    pub(crate) fn transform(&self) -> Transform {
+        Transform::of_style(self.style.as_deref())
+    }
 }
 
 /// One picture's raw geometry + embed rel id, captured from the fork-parsed
@@ -1090,10 +1103,10 @@ pub(crate) fn slide_picture_items(
 
 /// The style of a slide picture (`p:pic`, §19.3.1.37): the crop and opacity
 /// of its fill (`p:blipFill`, §19.3.1.4: `a:srcRect`, `a:stretch/a:fillRect`
-/// and the `a:alphaModFix` effects of its `a:blip`) and the outline of its
-/// shape properties (`p:spPr`, §19.3.1.44: `a:ln`), read by
-/// [`PictureStyle::of`]. The line draws in its solid fill's colour, or its
-/// gradient's first stop's, through the slide theme.
+/// and the `a:alphaModFix` effects of its `a:blip`) and the outline and
+/// transform of its shape properties (`p:spPr`, §19.3.1.44: `a:ln` and
+/// `a:xfrm`), read by [`PictureStyle::of`]. The line draws in its solid
+/// fill's colour, or its gradient's first stop's, through the slide theme.
 ///
 /// Deviations, declared: a picture's style reference (`p:style`) is not
 /// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
@@ -1128,7 +1141,10 @@ fn picture_style(pic: &ooxml_pml::types::Picture, theme: &SlideTheme) -> Option<
         }
         _ => None,
     };
-    PictureStyle::of(crop, alpha_mod_fix, color, ln.and_then(|l| l.width).map(i64::from))
+    let transform = pic.shape_properties.transform.as_deref().map_or_else(Transform::default, |t| {
+        Transform::of(t.rot.map(i64::from), t.flip_h.unwrap_or(false), t.flip_v.unwrap_or(false))
+    });
+    PictureStyle::of(crop, alpha_mod_fix, color, ln.and_then(|l| l.width).map(i64::from), transform)
 }
 
 /// The slide-namespaced image key for a picture's embed rel id. Rel ids restart

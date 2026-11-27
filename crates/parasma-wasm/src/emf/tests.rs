@@ -539,6 +539,7 @@ fn image_line(rel: &str) -> crate::wml::page::PagedLine {
         content_width: 100.0,
         image: Some(ImageItem {
             rel_id: rel.to_string(),
+            width_px: 100.0,
             height_px: 50.0,
             dist_l_px: 0.0,
             dist_t_px: 0.0,
@@ -654,6 +655,7 @@ fn a_cropped_emf_picture_asks_for_its_whole_footprint() {
         outline: None,
         crop: Some(ImageCrop { src: RelativeRect { l: 0.25, t: 0.0, r: 0.25, b: 0.5 }, fill: RelativeRect::default() }),
         alpha: 1.0,
+        transform: crate::engine::images::Transform::default(),
     };
 
     let rec = RecordingPainter::default();

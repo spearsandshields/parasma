@@ -49,7 +49,7 @@ use std::ops::Range;
 use ooxml_sml::ext::{parse_worksheet, ResolvedSheet};
 use ooxml_sml::parsers::ParseError;
 
-use crate::engine::units::{emu_to_px, pt_to_px};
+use crate::engine::units::pt_to_px;
 use crate::repair::xml_scan::find_tag_end;
 
 use super::drawings::SheetDrawing;
@@ -400,33 +400,18 @@ impl SheetIndex {
                     -(c..g.min_col).map(|cc| self.col_px(cc, mdw)).sum::<f64>()
                 }
             };
-            // Absolute anchor boxes (with keys) — mirrors paginate's
-            // `abs_images`; retained on the geom for the windowed painter.
-            let to_box = |g: &IndexGeom, d: &SheetDrawing| -> Option<PageImage> {
-                let x0 = col_left_any(g, d.from.col + 1) + emu_to_px(d.from.col_off_emu);
-                let y0 = g.row_top(d.from.row + 1) + emu_to_px(d.from.row_off_emu);
-                let from_to = d.to.map(|t| {
-                    (
-                        col_left_any(g, t.col + 1) + emu_to_px(t.col_off_emu) - x0,
-                        g.row_top(t.row + 1) + emu_to_px(t.row_off_emu) - y0,
-                    )
-                });
-                let (w, h) = match from_to {
-                    Some((w, h)) if w > 0.0 && h > 0.0 => (w, h),
-                    _ => {
-                        let (cx, cy) = d.ext_emu?;
-                        (emu_to_px(cx), emu_to_px(cy))
-                    }
-                };
-                Some(PageImage { x: x0, y: y0, w, h, key: d.image_key.clone(), style: d.style.clone() })
-            };
+            // Absolute anchor boxes (with keys) — paginate's `abs_images`,
+            // through the same `PageImage::anchored`; retained on the geom for
+            // the windowed painter.
+            let to_box = |g: &IndexGeom, d: &SheetDrawing| PageImage::anchored(d, |c| col_left_any(g, c), |r| g.row_top(r));
             let abs_boxes: Vec<PageImage> =
                 drawings.iter().filter_map(|d| to_box(&geom, d)).collect();
             let abs_charts: Vec<PageImage> =
                 charts.iter().filter_map(|d| to_box(&geom, d)).collect();
             let mut right = col_left_any(&geom, max_col + 1);
             let mut bottom = geom.row_top(max_row + 1);
-            for &PageImage { x, y, w, h, .. } in abs_boxes.iter().chain(abs_charts.iter()) {
+            for im in abs_boxes.iter().chain(abs_charts.iter()) {
+                let (x, y, w, h) = im.bounds();
                 while right < x + w - 0.01 && max_col < 16_384 {
                     max_col += 1;
                     right += self.col_px(max_col, mdw);

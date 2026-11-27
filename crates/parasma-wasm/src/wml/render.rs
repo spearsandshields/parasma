@@ -555,7 +555,8 @@ pub(crate) fn render_line(
             // inset distL from the box's left edge, at its intrinsic width
             // (box width minus the L/R padding), and lift it distB above the
             // baseline so distB of clear space sits below it (distT clears the
-            // line above via the grown ascent).
+            // line above via the grown ascent); a turned picture's frame is
+            // centred in that box and turned there (`painted_box`).
             let (img_x, top, img_w, img_h) = img.painted_box(x, item.width, line.baseline_y);
             paint_picture(p, &img.rel_id, (img_x, top, img_w, img_h), img.style.as_deref(), charts)?;
         } else {
