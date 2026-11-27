@@ -5,7 +5,8 @@ use super::records::{
     LogBrush, LogFont, LogPen, PointL, BLACK_BRUSH, BLACK_PEN, NULL_BRUSH, NULL_PEN, STOCK_FLAG,
     WHITE_BRUSH,
 };
-use super::transform::{Mat, MapState};
+use super::transform::MapState;
+use crate::engine::transform::Mat;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum BkMode {

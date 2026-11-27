@@ -23,7 +23,7 @@
 //! text/html flavors are shared.
 
 use crate::engine::paint::Painter;
-use crate::engine::transform::{Transform, Xywh};
+use crate::engine::transform::Mat;
 
 use super::shape::{ParaAlign, SlidePage};
 use super::{
@@ -140,12 +140,12 @@ fn in_box(bx: (f64, f64, f64, f64), x: f64, y: f64) -> bool {
     x >= bx.0 && x < bx.0 + bx.2 && y >= bx.1 && y < bx.1 + bx.3
 }
 
-/// How a target's text turns on the slide, and the frame it turns in: a
-/// shape's text turn; a table cell's text does not turn.
-fn text_turn(page: &SlidePage, target: PmlTarget) -> (Transform, Xywh) {
+/// Where a target's text, walked upright, lands on the slide: a shape's
+/// text where it lands; a table cell's text does not move.
+fn text_turn(page: &SlidePage, target: PmlTarget) -> Mat {
     match target {
-        PmlTarget::Shape(si) => page.shapes.get(si).map_or_else(Default::default, |sh| (sh.text_transform, sh.frame())),
-        PmlTarget::TableCell { .. } => Default::default(),
+        PmlTarget::Shape(si) => page.shapes.get(si).map_or(Mat::IDENTITY, |sh| sh.text_transform),
+        PmlTarget::TableCell { .. } => Mat::IDENTITY,
     }
 }
 
@@ -245,8 +245,7 @@ pub(crate) fn hit_test(
     let (walks, _, _) = target_walk(page, target, font_cache)?;
     // The text is walked upright: resolve the point where it lies on the
     // upright text.
-    let (turn, frame) = text_turn(page, target);
-    let (x, y) = turn.unmap(frame, (x, y));
+    let (x, y) = text_turn(page, target).inverse().apply(x, y);
     let (para, byte) = resolve_in_target(&walks, x, y, font_cache);
     Some(PmlPos { slide, target, para, byte })
 }
@@ -283,11 +282,11 @@ pub(crate) fn selection_rects(
     sel: &PmlSelection,
     font_cache: &FontCache,
 ) -> Vec<SelRect> {
-    let (turn, frame) = text_turn(page, sel.target);
+    let turn = text_turn(page, sel.target);
     upright_selection_rects(page, sel, font_cache)
         .into_iter()
         .map(|r| {
-            let (x, y, w, h) = turn.bounds_in(frame, (r.x, r.y, r.w, r.h));
+            let (x, y, w, h) = turn.bounds((r.x, r.y, r.w, r.h));
             SelRect { x, y, w, h }
         })
         .collect()
@@ -520,11 +519,10 @@ pub(crate) fn paint_selection_pass(
     if rects.is_empty() {
         return;
     }
-    let (turn, frame) = text_turn(page, sel.target);
     p.save();
     p.set_global_alpha(SELECTION_FILL_ALPHA);
     p.set_fill_style_str(SELECTION_FILL_COLOR);
-    let _ = turn.paint(p, frame, || {
+    let _ = text_turn(page, sel.target).paint(p, || {
         for r in &rects {
             p.fill_rect(r.x, r.y, r.w, r.h);
         }

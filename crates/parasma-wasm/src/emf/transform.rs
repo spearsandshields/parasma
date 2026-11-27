@@ -10,56 +10,7 @@
 //! page→device SECOND, and the placement matrix maps device→page-px LAST.
 
 use super::records::{RectL, XForm};
-
-/// A 2×3 affine in column-vector form:
-///   `x' = a·x + c·y + e`
-///   `y' = b·x + d·y + f`
-/// (matches `CanvasRenderingContext2d.setTransform(a,b,c,d,e,f)`).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Mat {
-    pub a: f64,
-    pub b: f64,
-    pub c: f64,
-    pub d: f64,
-    pub e: f64,
-    pub f: f64,
-}
-
-impl Mat {
-    pub(crate) const IDENTITY: Mat = Mat { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 };
-
-    pub(crate) fn scale_translate(sx: f64, sy: f64, e: f64, f: f64) -> Mat {
-        Mat { a: sx, b: 0.0, c: 0.0, d: sy, e, f }
-    }
-
-    /// `self ∘ other` — the result applies `other` FIRST, then `self`.
-    pub(crate) fn compose(&self, o: &Mat) -> Mat {
-        Mat {
-            a: self.a * o.a + self.c * o.b,
-            b: self.b * o.a + self.d * o.b,
-            c: self.a * o.c + self.c * o.d,
-            d: self.b * o.c + self.d * o.d,
-            e: self.a * o.e + self.c * o.f + self.e,
-            f: self.b * o.e + self.d * o.f + self.f,
-        }
-    }
-
-    /// Transform a point (translation applied).
-    pub(crate) fn apply(&self, x: f64, y: f64) -> (f64, f64) {
-        (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
-    }
-
-    /// Magnitude of the x-basis vector — the per-unit horizontal scale used to
-    /// scale text intercharacter `dx` advances.
-    pub(crate) fn x_scale(&self) -> f64 {
-        self.a.hypot(self.b)
-    }
-
-    /// `sqrt(|det|)` — the uniform-scale approximation used for pen width.
-    pub(crate) fn uniform_scale(&self) -> f64 {
-        (self.a * self.d - self.b * self.c).abs().sqrt()
-    }
-}
+use crate::engine::transform::Mat;
 
 /// A GDI `XForm` (row-vector `eM11,eM12,eM21,eM22,eDx,eDy`) as our column `Mat`.
 /// Row-vector `p·M` with `x' = x·eM11 + y·eM21 + eDx` ⇒ column `a=eM11, c=eM21,

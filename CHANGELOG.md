@@ -75,6 +75,11 @@ are held stable regardless.
   it but never mirrored, where it used to be drawn upright. Clicking and
   selecting text in a rotated slide shape follow the rotation, and in
   documents the text wraps around a rotated text box as it is drawn.
+- Presentations: a flipped group of shapes is drawn mirrored inside its own
+  box, where it used to be drawn a whole width or height off to one side, and
+  a rotated group turns everything in it. Shapes and charts inside a group,
+  and shapes in SmartArt graphics, now rotate and flip as they do on their
+  own, with clicking and selecting their text following them.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.

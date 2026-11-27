@@ -166,23 +166,9 @@ fn frame_transform(
     draw_ext_cx: i64,
     draw_ext_cy: i64,
 ) -> GroupTransform {
-    if draw_ext_cx <= 0 || draw_ext_cy <= 0 {
-        return GroupTransform {
-            sx: 1.0,
-            sy: 1.0,
-            tx: frame.off_x as f64,
-            ty: frame.off_y as f64,
-        };
-    }
-    let sx = frame.ext_cx as f64 / draw_ext_cx as f64;
-    let sy = frame.ext_cy as f64 / draw_ext_cy as f64;
-    // parent = off + (child - draw_off) * scale = scale*child + (off - draw_off*scale)
-    GroupTransform {
-        sx,
-        sy,
-        tx: frame.off_x as f64 - draw_off_x as f64 * sx,
-        ty: frame.off_y as f64 - draw_off_y as f64 * sy,
-    }
+    let off = (frame.off_x, frame.off_y);
+    GroupTransform::onto((draw_off_x, draw_off_y), (draw_ext_cx, draw_ext_cy), off, (frame.ext_cx, frame.ext_cy))
+        .unwrap_or(GroupTransform { tx: off.0 as f64, ty: off.1 as f64, ..GroupTransform::IDENTITY })
 }
 
 /// The bounding box (off_x, off_y, ext_cx, ext_cy) in EMU of every `<dsp:sp>`'s

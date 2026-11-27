@@ -108,11 +108,11 @@ const REL_TABLE_STYLES: &str =
 /// loaded. Owned so the renderer needs no `&mut` at layout time.
 struct SlideData {
     shapes: Vec<ooxml_pml::types::Shape>,
-    /// Per-shape cumulative group transform (§19.3.1.6), index-aligned with
+    /// Per-shape group transform (`p:grpSp`, §19.3.1.22), index-aligned with
     /// `shapes`. [`shape::GroupTransform::IDENTITY`] for a top-level (un-grouped)
-    /// shape; a `<p:grpSp>`-descendant carries the composed off/ext/chOff/chExt
-    /// translate+scale (with nesting) that maps its CHILD-space `a:xfrm` box into
-    /// absolute slide space.
+    /// shape; a `<p:grpSp>`-descendant carries where its groups, nested ones
+    /// composed, put it: the mapping of its CHILD-space `a:xfrm` box to the
+    /// frame it is drawn in, and the groups' turns of that frame.
     shape_transforms: Vec<shape::GroupTransform>,
     /// Connection shapes (§19.3.1.19 `p:cxnSp`): the slide's connector
     /// lines (with dash + arrowheads), captured from `spTree.connectors()` at
@@ -298,7 +298,7 @@ impl PmlRenderer {
                 }
                 // The slide's draw shapes = the top-level `p:sp` (identity
                 // transform) FOLLOWED BY every `p:grpSp`-descendant `p:sp`,
-                // flattened with its cumulative off/ext/chOff/chExt transform
+                // flattened with where its groups put it, turns included
                 // (nested groups compose). `Slide::shapes()` returns only the
                 // top-level `sp`, so we walk the spTree's `group_shape` list
                 // ourselves. Document order within: top-level first, then groups
@@ -716,7 +716,7 @@ impl PmlRenderer {
             //
             // Deviation, declared: a gradient or pattern fill turns with the
             // shape whatever its `rotWithShape` (§20.1.8.33, §20.1.8.47).
-            sh.transform.paint(p, sh.frame(), || {
+            sh.transform.paint(p, || {
                 if let Some(cmds) = &sh.geometry {
                     // The preset-geometry path painter — ONE path, filled AND
                     // stroked (§20.1.9.18). Commands are shape-local px; save/
@@ -809,7 +809,7 @@ impl PmlRenderer {
             // in a turned shape, is laid out across the unturned frame, not
             // re-wrapped to the box it then stands in; not measured.
             let (text_x, text_y, text_w) = shape_text_box(sh, font_cache);
-            matched_so_far += sh.text_transform.paint(p, sh.frame(), || {
+            matched_so_far += sh.text_transform.paint(p, || {
                 paint_paragraph_stack(p, &sh.paragraphs, text_x, text_y, text_w, sh.wrap, font_cache, search, matched_so_far)
             })?;
         }
@@ -894,7 +894,7 @@ impl PmlRenderer {
                     continue;
                 }
                 if let Some(bytes) = charts.get(&ch.chart_key) {
-                    let _ = ch.transform.paint(p, ch.frame(), || {
+                    let _ = ch.transform.paint(p, || {
                         crate::chart::with_scheme(self.chart_scheme(), || {
                             crate::chart::render_chart(bytes, p, ch.x, ch.y, ch.w, ch.h)
                         });
@@ -1469,8 +1469,8 @@ fn paint_cell_edges(p: &dyn Painter, cell: &table::TableCell) {
 
 /// Collect a slide's draw shapes + their group transforms (§19.3.1.6). The
 /// result is the top-level `p:sp` (each with `GroupTransform::IDENTITY`) followed
-/// by every `p:grpSp`-descendant `p:sp` paired with the CUMULATIVE transform from
-/// the slide root to its enclosing group (nested groups compose multiplicatively).
+/// by every `p:grpSp`-descendant `p:sp` paired with where its groups put it,
+/// from the slide root down ([`shape::GroupTransform::within`]).
 /// `Slide::shapes()` returns ONLY the top-level `sp`, so the group descendants
 /// (which `build_slide_page` previously dropped → blank group slides) are walked
 /// off the spTree's `group_shape` list here. The two returned vecs are index-
@@ -1559,7 +1559,7 @@ fn slide_table_items(slide: &ooxml_pml::Slide) -> Vec<table::TableItem> {
 /// rel ids restart per slide.
 fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::ChartItem> {
     // Frames at the top of the shape tree, and inside groups (§19.3.1.22)
-    // through each group's cumulative transform.
+    // where their groups put them.
     fn frames<'a>(
         group: &'a ooxml_pml::types::GroupShape,
         xf: shape::GroupTransform,
@@ -1569,7 +1569,7 @@ fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::C
             out.push((f, xf));
         }
         for g in &group.group_shape {
-            frames(g, xf.compose(&shape::group_transform(g)), out);
+            frames(g, xf.within(g), out);
         }
     }
     let mut all = Vec::new();
@@ -1595,13 +1595,12 @@ fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::C
             .map(|e| (e.cx, e.cy))
             .unwrap_or((0, 0));
         let b = xf.apply_box(off_x, off_y, ext_cx, ext_cy);
-        // The frame turns by its own rotation, unless a group maps it: a
-        // turn composes with its group's mapping, and groups are not drawn
-        // turned yet.
+        // The frame turns by its own rotation, then with its groups.
         //
-        // Deviation, declared: a frame's flips are not read, so a chart is
-        // never mirrored.
-        let rot = if xf.is_identity() { shape::xfrm_transform(Some(xfrm)).rot } else { 0.0 };
+        // Deviation, declared: a frame's own flips are not read, so neither
+        // mirrors its chart nor, as a vertical flip turns text, turns it half
+        // round.
+        let rot = shape::xfrm_transform(Some(xfrm)).rot;
         for rel in rel_ids {
             out.push(shape::ChartItem {
                 off_x: b.off_x,
@@ -1610,6 +1609,7 @@ fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::C
                 ext_cy: b.ext_cy,
                 chart_key: shape::chart_key(slide_idx, &rel),
                 transform: crate::engine::transform::Transform { rot, ..Default::default() },
+                group: xf.turn,
             });
         }
     }

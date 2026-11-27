@@ -2,7 +2,9 @@
 //! and every kind of drawing: pictures, shapes and the text they hold,
 //! connectors, graphic frames and Word text boxes. Where a turned frame
 //! lands, where a point on the page lies in it, and the paint that turns
-//! what it draws.
+//! what it draws. [`Mat`] is the same placement as one affine map, for a
+//! drawing whose turn composes with the turns of the groups that hold it, and
+//! for the EMF renderer's coordinate pipeline.
 
 use wasm_bindgen::JsValue;
 
@@ -10,6 +12,145 @@ use crate::engine::paint::Painter;
 
 /// A rectangle as `(x, y, width, height)`.
 pub(crate) type Xywh = (f64, f64, f64, f64);
+
+/// A 2×3 affine map in column-vector form, `x' = a·x + c·y + e` and
+/// `y' = b·x + d·y + f`: the order of the canvas `setTransform(a, b, c, d, e, f)`.
+/// Slide drawings use most of it and the EMF renderer the rest, so a build
+/// without both leaves some of it unused.
+#[cfg_attr(not(all(feature = "pml", feature = "emf")), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Mat {
+    pub a: f64,
+    pub b: f64,
+    pub c: f64,
+    pub d: f64,
+    pub e: f64,
+    pub f: f64,
+}
+
+#[cfg_attr(not(all(feature = "pml", feature = "emf")), allow(dead_code))]
+impl Mat {
+    pub(crate) const IDENTITY: Mat = Mat { a: 1.0, b: 0.0, c: 0.0, d: 1.0, e: 0.0, f: 0.0 };
+
+    pub(crate) fn scale_translate(sx: f64, sy: f64, e: f64, f: f64) -> Mat {
+        Mat { a: sx, b: 0.0, c: 0.0, d: sy, e, f }
+    }
+
+    /// `self ∘ other` — the result applies `other` FIRST, then `self`.
+    pub(crate) fn compose(&self, o: &Mat) -> Mat {
+        Mat {
+            a: self.a * o.a + self.c * o.b,
+            b: self.b * o.a + self.d * o.b,
+            c: self.a * o.c + self.c * o.d,
+            d: self.b * o.c + self.d * o.d,
+            e: self.a * o.e + self.c * o.f + self.e,
+            f: self.b * o.e + self.d * o.f + self.f,
+        }
+    }
+
+    /// Transform a point (translation applied).
+    pub(crate) fn apply(&self, x: f64, y: f64) -> (f64, f64) {
+        (self.a * x + self.c * y + self.e, self.b * x + self.d * y + self.f)
+    }
+
+    /// The map that undoes this one. The identity undoes to itself, exactly.
+    pub(crate) fn inverse(&self) -> Mat {
+        let det = self.a * self.d - self.b * self.c;
+        Mat {
+            a: self.d / det,
+            b: -self.b / det,
+            c: -self.c / det,
+            d: self.a / det,
+            e: (self.c * self.f - self.d * self.e) / det,
+            f: (self.b * self.e - self.a * self.f) / det,
+        }
+    }
+
+    /// Magnitude of the x-basis vector — the per-unit horizontal scale used to
+    /// scale text intercharacter `dx` advances.
+    pub(crate) fn x_scale(&self) -> f64 {
+        self.a.hypot(self.b)
+    }
+
+    /// `sqrt(|det|)` — the uniform-scale approximation used for pen width.
+    pub(crate) fn uniform_scale(&self) -> f64 {
+        (self.a * self.d - self.b * self.c).abs().sqrt()
+    }
+
+    /// How a placement that only turns and mirrors orients what it places, as
+    /// a [`Transform`]: its rotation, and its mirror, if any, read as `flipH`.
+    /// A vertical mirror is a horizontal one turned half round, so the one
+    /// spelling covers both, and [`Transform::text`] reads either alike.
+    pub(crate) fn orientation(&self) -> Transform {
+        let (mirrored, angle) = self.mirror_and_angle();
+        Transform::of(Some((angle.to_degrees() * 60_000.0).round() as i64), mirrored, false)
+    }
+
+    /// Whether the placement mirrors, and the angle in radians it turns
+    /// through after mirroring left to right: a placement that mirrors is a
+    /// rotation after `scale(-1, 1)`, whose first column is the rotation's,
+    /// negated.
+    fn mirror_and_angle(&self) -> (bool, f64) {
+        let mirrored = self.a * self.d - self.b * self.c < 0.0;
+        let (cos, sin) = if mirrored { (-self.a, -self.b) } else { (self.a, self.b) };
+        (mirrored, sin.atan2(cos))
+    }
+
+    /// `turn` about the centre of `frame`, carried to where `self` takes that
+    /// centre: how something drawn in `frame` lands when it goes where `self`
+    /// puts the frame but turns its own way, as text does, which never
+    /// mirrors. When `self` moves nothing it is `turn` about the frame, exactly.
+    pub(crate) fn carry(&self, frame: Xywh, turn: Transform) -> Mat {
+        let (cx, cy) = (frame.0 + frame.2 / 2.0, frame.1 + frame.3 / 2.0);
+        let (x, y) = self.apply(cx, cy);
+        let m = turn.matrix(frame);
+        Mat { e: m.e + (x - cx), f: m.f + (y - cy), ..m }
+    }
+
+    /// The upright box `rect` covers once placed: `rect` itself, exactly, when
+    /// the placement is the identity.
+    pub(crate) fn bounds(&self, rect: Xywh) -> Xywh {
+        if *self == Self::IDENTITY {
+            return rect;
+        }
+        let (x, y, w, h) = rect;
+        Transform::box_of([(x, y), (x + w, y), (x + w, y + h), (x, y + h)].map(|(px, py)| self.apply(px, py)))
+    }
+
+    /// Whether `frame`, once placed, covers `(x, y)`: the point taken back
+    /// lies in the frame, its left and top edges in and its right and bottom
+    /// edges out.
+    pub(crate) fn contains(&self, frame: Xywh, x: f64, y: f64) -> bool {
+        let (x, y) = self.inverse().apply(x, y);
+        let (fx, fy, w, h) = frame;
+        x >= fx && x < fx + w && y >= fy && y < fy + h
+    }
+
+    /// Run `draw`, which paints in page coordinates as if nothing were placed,
+    /// with what it paints placed by `self`: under a canvas transform that
+    /// moves by its translation, rotates and, when it mirrors, mirrors left to
+    /// right, restored after. The identity adds nothing to what `draw` paints.
+    /// It places by turning and mirroring only, never by scaling, as every
+    /// placement built from [`Transform::matrix`] does.
+    ///
+    /// The translate comes first, even when it moves nothing, for the reason
+    /// [`Transform::paint`] gives. The two stay separate: that one turns about
+    /// the frame's centre, and pictures and Word text boxes record its ops.
+    pub(crate) fn paint<T>(&self, p: &dyn Painter, draw: impl FnOnce() -> Result<T, JsValue>) -> Result<T, JsValue> {
+        if *self == Self::IDENTITY {
+            return draw();
+        }
+        let (mirrored, angle) = self.mirror_and_angle();
+        p.save();
+        let drawn = p
+            .translate(self.e, self.f)
+            .and_then(|()| if angle != 0.0 { p.rotate(angle) } else { Ok(()) })
+            .and_then(|()| if mirrored { p.scale(-1.0, 1.0) } else { Ok(()) })
+            .and_then(|()| draw());
+        p.restore();
+        drawn
+    }
+}
 
 /// How a drawing turns on its frame (`a:xfrm`, §20.1.7.6): mirrored left to
 /// right about the frame's centre when `flip_h`, top to bottom when `flip_v`,
@@ -98,11 +239,21 @@ impl Transform {
         if self.rotates() { Self::rotate_about(frame, pt, self.rot) } else { pt }
     }
 
-    /// The point drawn in `frame` as if it were upright that lands at
-    /// `(x, y)` once the frame turns: [`map`](Self::map) undone.
-    pub(crate) fn unmap(&self, frame: Xywh, pt: (f64, f64)) -> (f64, f64) {
-        let pt = if self.rotates() { Self::rotate_about(frame, pt, -self.rot) } else { pt };
-        self.flip_about(frame, pt)
+    /// This turn of `frame` as one [`Mat`]: the canvas transform
+    /// [`paint`](Self::paint) applies, a move of the frame's centre to the
+    /// origin, the rotation, the flips and the move back, composed. A turn
+    /// of nothing is the identity, exactly.
+    #[cfg_attr(not(feature = "pml"), allow(dead_code))]
+    pub(crate) fn matrix(&self, frame: Xywh) -> Mat {
+        if *self == Self::default() {
+            return Mat::IDENTITY;
+        }
+        let (cx, cy) = (frame.0 + frame.2 / 2.0, frame.1 + frame.3 / 2.0);
+        let sign = |flip: bool| if flip { -1.0 } else { 1.0 };
+        let (sx, sy) = (sign(self.flip_h), sign(self.flip_v));
+        let (sin, cos) = self.rot.sin_cos();
+        let turn = Mat { a: cos * sx, b: sin * sx, c: -sin * sy, d: cos * sy, e: 0.0, f: 0.0 };
+        Mat::scale_translate(1.0, 1.0, cx, cy).compose(&turn).compose(&Mat::scale_translate(1.0, 1.0, -cx, -cy))
     }
 
     /// Where the four corners of `frame` land once it turns. A flip only
@@ -188,7 +339,7 @@ impl Transform {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{Transform, Xywh};
+    use super::{Mat, Transform, Xywh};
 
     const QUARTER: f64 = std::f64::consts::FRAC_PI_2;
 
@@ -270,11 +421,11 @@ pub(crate) mod tests {
         ] {
             let landed = turn.map(frame, (10.0, 20.0));
             assert_points(&[landed], &[want], what);
-            assert_points(&[turn.unmap(frame, landed)], &[(10.0, 20.0)], what);
+            assert_points(&[turn.matrix(frame).inverse().apply(landed.0, landed.1)], &[(10.0, 20.0)], what);
         }
         let odd = (0.1 + 0.2, 1.0 / 3.0);
         assert_eq!(Transform::default().map(frame, odd), odd);
-        assert_eq!(Transform::default().unmap(frame, odd), odd);
+        assert_eq!(Transform::default().matrix(frame).inverse().apply(odd.0, odd.1), odd);
     }
 
     /// A rect drawn in a turned frame covers the upright box its corners
@@ -288,6 +439,111 @@ pub(crate) mod tests {
         assert_points(&[(x, y), (w, h)], &[(50.0, -50.0), (100.0, 100.0)], "a quarter turn");
         assert_eq!(Transform::of(None, true, false).bounds_in(frame, left_half), (100.0, 0.0, 100.0, 100.0), "flipH");
         assert_eq!(Transform::default().bounds_in(frame, (0.3, 0.1, 7.0, 9.0)), (0.3, 0.1, 7.0, 9.0));
+    }
+
+    /// A turn as one matrix lands every point where the turn does, and
+    /// undoes to where it was; a turn of nothing is the identity, exactly.
+    #[test]
+    fn a_turn_as_a_matrix_lands_points_where_the_turn_does() {
+        let frame = (10.0, 20.0, 200.0, 50.0);
+        for turn in [
+            Transform::of(Some(5_400_000), false, false),
+            Transform::of(Some(1_234_567), true, false),
+            Transform::of(None, false, true),
+            Transform::of(Some(-2_700_000), true, true),
+        ] {
+            let m = turn.matrix(frame);
+            for pt in [(10.0, 20.0), (210.0, 70.0), (47.5, 33.25)] {
+                let (x, y) = m.apply(pt.0, pt.1);
+                assert_points(&[(x, y)], &[turn.map(frame, pt)], &format!("{turn:?}"));
+                let back = m.inverse().apply(x, y);
+                assert_points(&[back], &[pt], &format!("{turn:?} undone"));
+            }
+            assert_eq!(m.contains(frame, 110.0, 45.0), turn.contains(frame, 110.0, 45.0));
+        }
+        assert_eq!(Transform::default().matrix(frame), Mat::IDENTITY);
+        assert_eq!(Mat::IDENTITY.inverse().apply(0.1 + 0.2, 1.0 / 3.0), (0.1 + 0.2, 1.0 / 3.0));
+        assert_eq!(Mat::IDENTITY.bounds((0.1, 0.2, 0.3, 0.4)), (0.1, 0.2, 0.3, 0.4));
+    }
+
+    /// A placement reads back as the turn that orients it: its rotation, and
+    /// a mirror as `flipH`, a vertical flip being a horizontal one turned half
+    /// round. Text placed by it turns as text in that turn does.
+    #[test]
+    fn a_placement_reads_back_as_the_turn_that_orients_it() {
+        let frame = (0.0, 0.0, 100.0, 40.0);
+        let turn = |rot, h, v| Transform::of(rot, h, v);
+        for (given, read) in [
+            (turn(Some(5_400_000), false, false), turn(Some(5_400_000), false, false)),
+            (turn(Some(1_234_567), true, false), turn(Some(1_234_567), true, false)),
+            (turn(None, false, true), turn(Some(10_800_000), true, false)),
+            (turn(Some(5_400_000), true, true), turn(Some(16_200_000), false, false)),
+            (Transform::default(), Transform::default()),
+        ] {
+            let orientation = given.matrix(frame).orientation();
+            assert_eq!(orientation, read, "{given:?}");
+            assert_eq!(orientation.text(Some(60_000), false), given.text(Some(60_000), false), "{given:?}: its text");
+        }
+    }
+
+    /// Something carried by a placement goes where the placement takes its
+    /// frame's centre and turns its own way; carried by nothing, it is its
+    /// own turn, exactly.
+    #[test]
+    fn a_carried_turn_goes_where_the_placement_takes_the_centre() {
+        let frame = (10.0, 20.0, 200.0, 50.0);
+        let quarter = Transform::of(Some(5_400_000), false, false);
+        assert_eq!(Mat::IDENTITY.carry(frame, quarter), quarter.matrix(frame));
+        let group = (0.0, 0.0, 400.0, 400.0);
+        let mirror = Transform::of(None, true, false).matrix(group);
+        let carried = mirror.carry(frame, quarter);
+        // The frame's centre (110, 45) goes to its mirror image (290, 45),
+        // and the frame's top-left corner turns a quarter about it.
+        assert_points(&[carried.apply(110.0, 45.0)], &[(290.0, 45.0)], "the centre");
+        assert_points(&[carried.apply(10.0, 20.0)], &[(290.0 + 25.0, 45.0 - 100.0)], "the corner");
+        assert_eq!(carried.orientation(), quarter, "not mirrored");
+    }
+
+    /// Paint under a placement records a canvas transform that lands what it
+    /// draws where the placement puts it, on the page and through a window,
+    /// and the identity records nothing.
+    #[test]
+    fn paint_under_a_placement_lands_what_it_draws_where_the_placement_does() {
+        use crate::engine::displaylist::{corners_of_each_rect, RecordingPainter};
+        use crate::engine::paint::Painter;
+        let frame = (10.0, 20.0, 200.0, 50.0);
+        let rect = |m: Mat| {
+            let rec = RecordingPainter::new();
+            m.paint(&rec, || {
+                rec.fill_rect(10.0, 20.0, 200.0, 50.0);
+                Ok(())
+            })
+            .unwrap();
+            rec.take()
+        };
+        assert_eq!(rect(Mat::IDENTITY), [crate::engine::displaylist::DrawCmd::FillRect { x: 10.0, y: 20.0, w: 200.0, h: 50.0 }]);
+        let group = (0.0, 0.0, 400.0, 300.0);
+        for m in [
+            Transform::of(Some(5_400_000), false, false).matrix(frame),
+            Transform::of(Some(2_700_000), false, true).matrix(group).compose(&Transform::of(Some(1_000_000), true, false).matrix(frame)),
+            Transform::of(None, true, false).matrix(group),
+        ] {
+            let cmds = rect(m);
+            let (_, got) = corners_of_each_rect(&cmds)[0];
+            let want = [(10.0, 20.0), (210.0, 20.0), (210.0, 70.0), (10.0, 70.0)].map(|(x, y)| m.apply(x, y));
+            assert_points(&got, &want, &format!("{m:?}"));
+            // Through a window at (30, 40), the same, less the window's origin.
+            let rec = RecordingPainter::new();
+            let window = crate::engine::paint::OffsetPainter::new(&rec, 30.0, 40.0);
+            m.paint(&window, || {
+                window.fill_rect(10.0, 20.0, 200.0, 50.0);
+                Ok(())
+            })
+            .unwrap();
+            let cmds = rec.take();
+            let (_, got) = corners_of_each_rect(&cmds)[0];
+            assert_points(&got, &want.map(|(x, y)| (x - 30.0, y - 40.0)), &format!("windowed: {m:?}"));
+        }
     }
 
     /// The text of a shape turns with the shape and by its body's own `rot`;

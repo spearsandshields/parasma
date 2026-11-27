@@ -7532,7 +7532,7 @@ impl Viewer {
             let tx = sh.x + sh.insets.left;
             let ty = sh.y + sh.insets.top;
             let tw = (sh.w - sh.insets.left - sh.insets.right).max(0.0);
-            let (x, y, w, h) = sh.text_transform.bounds_in(sh.frame(), (tx, ty, tw, sh.h));
+            let (x, y, w, h) = sh.text_transform.bounds((tx, ty, tw, sh.h));
             for para in &sh.paragraphs {
                 let ptext: String = para.runs.iter().map(|r| r.text.as_str()).collect();
                 emit(x, y, w, h, &ptext);

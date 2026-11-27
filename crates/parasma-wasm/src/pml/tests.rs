@@ -1521,10 +1521,17 @@ fn a_quarter_turned_connector_draws_vertical() {
 /// The chart deck with `xfrm` on its frame's `p:xfrm`, painted with its
 /// chart part loaded: what it records, and the frame.
 fn chart_cmds(xfrm: &str) -> (Vec<crate::engine::displaylist::DrawCmd>, (f64, f64, f64, f64)) {
+    let slide = CHART_SLIDE.replace("<p:xfrm>", &format!("<p:xfrm {xfrm}>"));
+    let frame = (emu_to_px(914_400), emu_to_px(914_400), emu_to_px(5_486_400), emu_to_px(3_200_400));
+    (chart_slide_cmds(&slide), frame)
+}
+
+/// What [`CHART_SLIDE`] with its slide part replaced by `slide` records,
+/// painted with its chart part loaded.
+fn chart_slide_cmds(slide: &str) -> Vec<crate::engine::displaylist::DrawCmd> {
     use crate::engine::displaylist::RecordingPainter;
     use crate::engine::fonts::FontCache;
     use std::cell::RefCell;
-    let slide = CHART_SLIDE.replace("<p:xfrm>", &format!("<p:xfrm {xfrm}>"));
     let pptx = build_pptx(&[
         ("[Content_Types].xml", CONTENT_TYPES_CHART),
         ("_rels/.rels", ROOT_RELS),
@@ -1534,7 +1541,7 @@ fn chart_cmds(xfrm: &str) -> (Vec<crate::engine::displaylist::DrawCmd>, (f64, f6
         ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
         ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
         ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", &slide),
+        ("ppt/slides/slide1.xml", slide),
         ("ppt/slides/_rels/slide1.xml.rels", CHART_SLIDE_RELS),
         ("ppt/charts/chart1.xml", CHART_PART),
     ]);
@@ -1544,8 +1551,7 @@ fn chart_cmds(xfrm: &str) -> (Vec<crate::engine::displaylist::DrawCmd>, (f64, f6
     let pages = RefCell::new(renderer.build_pages_for_test(&fc));
     let rec = RecordingPainter::new();
     renderer.render_page_clipped(0, &pages, &fc, &charts, &rec, None, None, None, None).expect("the slide paints");
-    let frame = (emu_to_px(914_400), emu_to_px(914_400), emu_to_px(5_486_400), emu_to_px(3_200_400));
-    (rec.take(), frame)
+    rec.take()
 }
 
 /// A chart whose frame turns (`p:graphicFrame/p:xfrm@rot`) draws what it
@@ -1563,6 +1569,379 @@ fn a_turned_chart_frame_draws_its_chart_turned() {
         assert_eq!(cmd, was);
         assert_corners(got, &corners.map(|pt| quarter_about(frame, pt)), &format!("{cmd:?}"));
     }
+}
+
+// ─── Turned and flipped groups (`p:grpSp` `a:xfrm`, §20.1.7.5, §20.1.7.6) ───
+
+type Xywh = (f64, f64, f64, f64);
+
+/// The box of the group these tests turn, centred on (300, 200) px.
+const GROUP: Xywh = (100.0, 100.0, 400.0, 200.0);
+/// A child's frame in [`GROUP`], off the group's centre so the pivot shows.
+const CHILD: Xywh = (120.0, 150.0, 160.0, 60.0);
+
+fn centre((x, y, w, h): Xywh) -> (f64, f64) {
+    (x + w / 2.0, y + h / 2.0)
+}
+
+/// `(x, y)` turned `deg` degrees clockwise about the centre of `frame`.
+fn turned_about(frame: Xywh, deg: f64, (x, y): (f64, f64)) -> (f64, f64) {
+    let ((cx, cy), (sin, cos)) = (centre(frame), deg.to_radians().sin_cos());
+    (cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos)
+}
+
+/// `px` CSS px in EMU.
+fn px_emu(px: f64) -> i64 {
+    (px * 9525.0).round() as i64
+}
+
+/// An `a:xfrm` with `attrs` on it for the box `frame` (px), and the child
+/// space `ch` (px) when it is a group's.
+fn xfrm_xml(attrs: &str, (x, y, w, h): Xywh, ch: Option<Xywh>) -> String {
+    let ch = ch.map_or(String::new(), |(cx, cy, cw, chh)| {
+        format!(r#"<a:chOff x="{}" y="{}"/><a:chExt cx="{}" cy="{}"/>"#, px_emu(cx), px_emu(cy), px_emu(cw), px_emu(chh))
+    });
+    format!(r#"<a:xfrm {attrs}><a:off x="{}" y="{}"/><a:ext cx="{}" cy="{}"/>{ch}</a:xfrm>"#, px_emu(x), px_emu(y), px_emu(w), px_emu(h))
+}
+
+/// A `prst` shape on `frame` (px) with `attrs` on its `a:xfrm`, filled green
+/// and outlined blue, holding `text` centred top to bottom.
+fn sp_xml(prst: &str, attrs: &str, frame: Xywh, text: &str) -> String {
+    format!(
+        r#"<p:sp><p:nvSpPr><p:cNvPr id="20" name="Child"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>{}<a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="0000FF"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr anchor="ctr"/><a:p><a:r><a:rPr lang="en-US" sz="1200"/><a:t>{text}</a:t></a:r></a:p></p:txBody></p:sp>"#,
+        xfrm_xml(attrs, frame, None)
+    )
+}
+
+/// A group on `frame` (px) with `attrs` on its `a:xfrm`, laying the child
+/// space `ch` (px) onto its box, holding `children`.
+fn grp_xml(attrs: &str, frame: Xywh, ch: Xywh, children: &str) -> String {
+    format!(
+        r#"<p:grpSp><p:nvGrpSpPr><p:cNvPr id="10" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr>{}</p:grpSpPr>{children}</p:grpSp>"#,
+        xfrm_xml(attrs, frame, Some(ch))
+    )
+}
+
+/// A deck whose one slide's shape tree holds `content`.
+fn tree_deck(content: &str) -> Vec<u8> {
+    one_slide_deck(&format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>{content}</p:spTree></p:cSld>
+</p:sld>"#
+    ))
+}
+
+/// [`GROUP`] with `attrs`, its child space its own box (as PowerPoint writes
+/// a group it has not resized), holding `children`.
+fn group_deck(attrs: &str, children: &str) -> Vec<u8> {
+    tree_deck(&grp_xml(attrs, GROUP, GROUP, children))
+}
+
+/// A group flipped left to right (`flipH="1"`) mirrors what it holds about
+/// its own centre, inside its own box: an arrow pointing right points left,
+/// on the arrow's mirror image. Its text is not mirrored, only carried to
+/// where the arrow went.
+#[test]
+fn a_flipped_group_mirrors_its_arrow_inside_its_own_box() {
+    let arrow = sp_xml("rightArrow", "", CHILD, "Arrow");
+    let upright = shape_drawn(group_deck("", &arrow));
+    let flipped = shape_drawn(group_deck(r#"flipH="1""#, &arrow));
+    let (gx, gy, gw, gh) = GROUP;
+    let mirror = |(x, y): (f64, f64)| (2.0 * gx + gw - x, y);
+    let inside = |&(x, y): &(f64, f64)| x >= gx - 1e-6 && x <= gx + gw + 1e-6 && y >= gy - 1e-6 && y <= gy + gh + 1e-6;
+    assert!(flipped.path.iter().all(inside), "the arrow stays in the group's box: {:?}", flipped.path);
+    assert_same_points(&flipped.path, &upright.path.iter().map(|&p| mirror(p)).collect::<Vec<_>>(), "the arrow");
+    // The tip is the one point on the arrow's middle line: its right end
+    // upright, its left end flipped.
+    let tip = |path: &[(f64, f64)]| path.iter().find(|p| (p.1 - centre(CHILD).1).abs() < 1e-6).expect("a tip").0;
+    let span = |path: &[(f64, f64)]| path.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(l, r), p| (l.min(p.0), r.max(p.0)));
+    assert_eq!(tip(&upright.path), span(&upright.path).1, "upright, it points right");
+    assert_eq!(tip(&flipped.path), span(&flipped.path).0, "flipped, it points left");
+    let moved = mirror(centre(CHILD)).0 - centre(CHILD).0;
+    assert_eq!(flipped.text.len(), upright.text.len(), "the same text");
+    for ((text, m, at), (was, _, at_upright)) in flipped.text.iter().zip(&upright.text) {
+        assert_eq!(text, was);
+        assert_linear(*m, UPRIGHT, text);
+        assert_point(*at, (at_upright.0 + moved, at_upright.1), text);
+    }
+}
+
+/// A group turned a quarter (`rot="5400000"`) turns what it holds a quarter
+/// clockwise about the group's centre, not the child's own: the child's
+/// outline, fill and text land where that turn takes them, the text turned.
+#[test]
+fn a_quarter_turned_group_turns_its_child_and_text_about_the_group_centre() {
+    let child = sp_xml("rect", "", CHILD, "Turned");
+    let upright = shape_drawn(group_deck("", &child));
+    let turned = shape_drawn(group_deck(r#"rot="5400000""#, &child));
+    let want: Vec<_> = upright.path.iter().map(|&p| quarter_about(GROUP, p)).collect();
+    assert_same_points(&turned.path, &want, "the outline");
+    assert_linear(turned.fill, QUARTER_TURN, "the fill");
+    assert_linear(turned.stroke, QUARTER_TURN, "the stroke");
+    assert_eq!(turned.text.len(), upright.text.len(), "the same text");
+    for ((text, m, at), (was, _, at_upright)) in turned.text.iter().zip(&upright.text) {
+        assert_eq!(text, was);
+        assert_linear(*m, QUARTER_TURN, text);
+        assert_point(*at, quarter_about(GROUP, *at_upright), text);
+    }
+}
+
+/// A child turned inside a turned group turns by both: its own 45° about its
+/// own centre, then the group's 45° about the group's, a quarter in all, and
+/// its text with it.
+#[test]
+fn a_turned_child_in_a_turned_group_composes_both_angles() {
+    let child = |attrs| sp_xml("rtTriangle", attrs, CHILD, "Both");
+    let upright = shape_drawn(group_deck("", &child("")));
+    let turned = shape_drawn(group_deck(r#"rot="2700000""#, &child(r#"rot="2700000""#)));
+    let both = |p| turned_about(GROUP, 45.0, turned_about(CHILD, 45.0, p));
+    assert_same_points(&turned.path, &upright.path.iter().map(|&p| both(p)).collect::<Vec<_>>(), "the outline");
+    assert_linear(turned.fill, QUARTER_TURN, "the fill");
+    assert_eq!(turned.text.len(), upright.text.len(), "the same text");
+    for ((text, m, at), (_, _, at_upright)) in turned.text.iter().zip(&upright.text) {
+        assert_linear(*m, QUARTER_TURN, text);
+        assert_point(*at, both(*at_upright), text);
+    }
+}
+
+/// Groups nest: an outer group turned a quarter, scaling its child space 2×,
+/// holds an inner group flipped left to right, scaling 2× again, which holds
+/// a triangle. The triangle is mirrored about the inner group's centre as the
+/// outer group lays that group out, then turned about the outer group's
+/// centre; its text turns a quarter and is not mirrored.
+#[test]
+fn a_two_level_nested_group_composes() {
+    // In px: the inner group's box (0, 0, 100, 100) in the outer child space
+    // lies at (100, 100, 200, 200) on the slide, centred on (200, 200); the
+    // triangle's (0, 0, 25, 10) in the inner child space at (100, 100, 100, 40).
+    let triangle = sp_xml("rtTriangle", "", (0.0, 0.0, 25.0, 10.0), "Nested");
+    let deck = |outer: &str, inner: &str| {
+        let inner = grp_xml(inner, (0.0, 0.0, 100.0, 100.0), (0.0, 0.0, 50.0, 50.0), &triangle);
+        tree_deck(&grp_xml(outer, GROUP, (0.0, 0.0, 200.0, 100.0), &inner))
+    };
+    let upright = shape_drawn(deck("", ""));
+    let nested = shape_drawn(deck(r#"rot="5400000""#, r#"flipH="1""#));
+    let land = |(x, y): (f64, f64)| quarter_about(GROUP, (400.0 - x, y));
+    assert_same_points(&upright.path, &[(100.0, 100.0), (100.0, 140.0), (200.0, 140.0)], "laid out upright");
+    assert_same_points(&nested.path, &upright.path.iter().map(|&p| land(p)).collect::<Vec<_>>(), "the outline");
+    // The text goes where the triangle's centre goes, turned a quarter.
+    let c = centre((100.0, 100.0, 100.0, 40.0));
+    let to = land(c);
+    assert_eq!(nested.text.len(), upright.text.len(), "the same text");
+    for ((text, m, at), (_, _, (ux, uy))) in nested.text.iter().zip(&upright.text) {
+        assert_linear(*m, QUARTER_TURN, text);
+        assert_point(*at, (to.0 - (uy - c.1), to.1 + (ux - c.0)), text);
+    }
+}
+
+/// A click on the text of a shape in a turned group hits the character it
+/// lands on: the one a click on the upright text there hits. A click where
+/// the shape stood before its group turned, which it has left, misses.
+#[test]
+fn a_click_on_a_grouped_turned_shapes_text_hits_it_where_it_lands() {
+    use crate::engine::fonts::FontCache;
+    use crate::pml::select::{hit_test, PmlTarget};
+    let fc = FontCache::new();
+    let child = sp_xml("rect", "", CHILD, "Turned");
+    let page = |attrs: &str| PmlRenderer::from_pptx(group_deck(attrs, &child)).expect("pptx loads").build_pages_for_test(&fc).remove(0);
+    let (upright, turned) = (page(""), page(r#"rot="5400000""#));
+    let cy = centre(CHILD).1;
+    for on_text in [(CHILD.0 + 14.0, cy), (CHILD.0 + 30.0, cy)] {
+        let want = hit_test(&upright, 0, on_text.0, on_text.1, None, &fc).expect("the upright text is hit");
+        let (tx, ty) = quarter_about(GROUP, on_text);
+        let got = hit_test(&turned, 0, tx, ty, None, &fc).expect("the turned text is hit");
+        assert_eq!((got.target, got.para, got.byte), (PmlTarget::Shape(0), want.para, want.byte), "{on_text:?}");
+    }
+    let left = (CHILD.0 + 10.0, CHILD.1 + 10.0);
+    assert!(hit_test(&upright, 0, left.0, left.1, None, &fc).is_some(), "the upright shape is there");
+    assert!(hit_test(&turned, 0, left.0, left.1, None, &fc).is_none(), "the turned shape has left");
+}
+
+/// A text selection in a shape of a turned group is highlighted where its
+/// text lands: each highlight is the upright one turned a quarter about the
+/// group's centre, and the rect reported for it is the upright box that
+/// turned highlight covers.
+#[test]
+fn a_selection_in_a_turned_group_is_highlighted_where_its_text_lands() {
+    use crate::engine::displaylist::{corners_of_each_rect, DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use crate::pml::select::{selection_rects, PmlSelection, PmlTarget};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let fc = FontCache::new();
+    let sel = PmlSelection { slide: 0, target: PmlTarget::Shape(0), start_para: 0, start_byte: 1, end_para: 0, end_byte: 5 };
+    let render = |attrs: &str| {
+        let renderer = PmlRenderer::from_pptx(group_deck(attrs, &sp_xml("rect", "", CHILD, "Turned"))).expect("pptx loads");
+        let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+        let rec = RecordingPainter::new();
+        renderer
+            .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, None, None, Some(&sel), None)
+            .expect("the slide paints");
+        let reported = selection_rects(&pages.borrow()[0], &sel, &fc);
+        (rec.take(), reported)
+    };
+    let (_, highlights) = render("");
+    assert!(!highlights.is_empty(), "the selection is highlighted");
+    let (cmds, reported) = render(r#"rot="5400000""#);
+    assert_eq!(reported.len(), highlights.len());
+    for (r, got) in highlights.iter().zip(&reported) {
+        let painted = corners_of_each_rect(&cmds)
+            .into_iter()
+            .find(|(c, _)| matches!(c, DrawCmd::FillRect { x, y, w, h } if (*x, *y, *w, *h) == (r.x, r.y, r.w, r.h)))
+            .unwrap_or_else(|| panic!("the highlight {r:?} is painted"));
+        let corners = [(r.x, r.y), (r.x + r.w, r.y), (r.x + r.w, r.y + r.h), (r.x, r.y + r.h)].map(|pt| quarter_about(GROUP, pt));
+        assert_corners(&painted.1, &corners, "the highlight");
+        assert_point((got.x, got.y), corners[3], "the reported rect");
+        assert_point((got.w, got.h), (r.h, r.w), "the reported rect's size");
+    }
+}
+
+/// A windowed paint draws a grouped shape where its group's turn takes it: a
+/// window over that place, which the shape's upright frame misses, draws it.
+#[test]
+fn a_window_over_where_a_turned_group_puts_its_shape_draws_it() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    // Turned a quarter about (300, 200), CHILD stands on x 290..350, y 20..180.
+    let window = crate::cull::Rect { x0: 300.0, y0: 30.0, x1: 340.0, y1: 60.0 };
+    let drawn = |attrs: &str| {
+        let renderer = PmlRenderer::from_pptx(group_deck(attrs, &sp_xml("rect", "", CHILD, "Turned"))).expect("pptx loads");
+        let fc = FontCache::new();
+        let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+        let rec = RecordingPainter::new();
+        renderer
+            .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, Some(&window), None, None, None)
+            .expect("the slide paints");
+        rec.take().iter().any(|c| matches!(c, DrawCmd::Fill))
+    };
+    assert!(!drawn(""), "the upright shape lies outside the window");
+    assert!(drawn(r#"rot="5400000""#), "the turned group's shape reaches into it");
+}
+
+/// A group that turns nothing only places what it holds: a slide whose group
+/// scales its child space unequally, from off the origin, around an arrow and
+/// a nested group's triangle, records exactly what a slide of the two shapes
+/// at the boxes that mapping gives them records, turns the canvas for
+/// neither, and is hit and highlighted alike everywhere.
+#[test]
+fn an_unturned_group_draws_its_children_as_if_placed_on_the_slide() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use crate::pml::select::{hit_test, selection_rects, PmlSelection, PmlTarget};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let sp = |id: u32, prst: &str, (x, y, w, h): (i64, i64, i64, i64), text: &str| {
+        format!(
+            r#"<p:sp><p:nvSpPr><p:cNvPr id="{id}" name="S{id}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="{x}" y="{y}"/><a:ext cx="{w}" cy="{h}"/></a:xfrm><a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="00AA00"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="0000FF"/></a:solidFill></a:ln></p:spPr><p:txBody><a:bodyPr anchor="ctr"/><a:p><a:r><a:rPr lang="en-US" sz="1200"/><a:t>{text}</a:t></a:r></a:p></p:txBody></p:sp>"#
+        )
+    };
+    // x' = 1.5·x + 250000 and y' = 0.5·y + 1375000; the nested group adds
+    // its own 2× to make x' = 3·x + 2500000 and y' = y + 1975000.
+    let grouped = tree_deck(&format!(
+        r#"<p:grpSp><p:nvGrpSpPr><p:cNvPr id="3" name="G"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="1000000" y="1500000"/><a:ext cx="3000000" cy="1000000"/><a:chOff x="500000" y="250000"/><a:chExt cx="2000000" cy="2000000"/></a:xfrm></p:grpSpPr>{}<p:grpSp><p:nvGrpSpPr><p:cNvPr id="5" name="N"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="1500000" y="1200000"/><a:ext cx="800000" cy="800000"/><a:chOff x="0" y="0"/><a:chExt cx="400000" cy="400000"/></a:xfrm></p:grpSpPr>{}</p:grpSp></p:grpSp>"#,
+        sp(4, "rightArrow", (600_000, 300_000, 1_200_000, 800_000), "Arrow text"),
+        sp(6, "rtTriangle", (50_000, 50_000, 300_000, 200_000), "Nested")
+    ));
+    let placed = tree_deck(&format!(
+        "{}{}",
+        sp(4, "rightArrow", (1_150_000, 1_525_000, 1_800_000, 400_000), "Arrow text"),
+        sp(6, "rtTriangle", (2_650_000, 2_025_000, 900_000, 200_000), "Nested")
+    ));
+    let fc = FontCache::new();
+    let record = |deck: Vec<u8>| {
+        let renderer = PmlRenderer::from_pptx(deck).expect("pptx loads");
+        let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+        let paint = |sel: Option<&PmlSelection>| {
+            let rec = RecordingPainter::new();
+            renderer
+                .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, None, None, sel, None)
+                .expect("the slide paints");
+            rec.take()
+        };
+        let plain = paint(None);
+        assert!(!plain.iter().any(|c| matches!(c, DrawCmd::Rotate { .. } | DrawCmd::Scale { .. })), "nothing turns");
+        let mut seen = vec![format!("{plain:?}")];
+        for si in 0..2 {
+            let sel = PmlSelection { slide: 0, target: PmlTarget::Shape(si), start_para: 0, start_byte: 1, end_para: 0, end_byte: 4 };
+            seen.push(format!("{:?} {:?}", paint(Some(&sel)), selection_rects(&pages.borrow()[0], &sel, &fc)));
+        }
+        let page = &pages.borrow()[0];
+        for y in (0..page.height as usize).step_by(5) {
+            for x in (0..page.width as usize).step_by(5) {
+                seen.push(format!("{:?}", hit_test(page, 0, x as f64 + 0.5, y as f64 + 0.5, None, &fc)));
+            }
+        }
+        seen
+    };
+    let (grouped, placed) = (record(grouped), record(placed));
+    assert!(grouped[0].contains("\"Arrow") && grouped[0].contains("\"Nested"), "both shapes draw: {}", grouped[0]);
+    assert_eq!(grouped, placed);
+}
+
+/// A chart in a turned group turns about the group's centre with it; in a
+/// group flipped left to right it goes to its mirror image's place but is
+/// not mirrored, as text is not.
+#[test]
+fn a_chart_in_a_turned_group_turns_with_it_and_never_mirrors() {
+    use crate::engine::displaylist::corners_of_each_rect;
+    let slide_box = (0.0, 0.0, 960.0, 720.0);
+    let grouped = |attrs: &str| {
+        let s = CHART_SLIDE.find("<p:graphicFrame>").unwrap();
+        let e = CHART_SLIDE.find("</p:graphicFrame>").unwrap() + "</p:graphicFrame>".len();
+        let group = grp_xml(attrs, slide_box, slide_box, &CHART_SLIDE[s..e]);
+        chart_slide_cmds(&format!("{}{group}{}", &CHART_SLIDE[..s], &CHART_SLIDE[e..]))
+    };
+    // The first rect is the slide's background, which no group holds.
+    let rects = |cmds: &[crate::engine::displaylist::DrawCmd]| -> Vec<_> {
+        corners_of_each_rect(cmds)[1..].iter().map(|(c, k)| ((*c).clone(), *k)).collect()
+    };
+    let (upright, turned, flipped) = (rects(&grouped("")), rects(&grouped(r#"rot="5400000""#)), rects(&grouped(r#"flipH="1""#)));
+    assert!(!upright.is_empty(), "the chart draws rects");
+    assert_eq!((turned.len(), flipped.len()), (upright.len(), upright.len()), "the same rects");
+    let (_, frame) = chart_cmds("");
+    let moved = (slide_box.2 - centre(frame).0) - centre(frame).0;
+    for (((cmd, was), (t, got)), (f, mirrored)) in upright.iter().zip(&turned).zip(&flipped) {
+        assert_eq!((cmd, cmd), (t, f));
+        assert_corners(got, &was.map(|pt| quarter_about(slide_box, pt)), &format!("turned: {cmd:?}"));
+        assert_corners(mirrored, &was.map(|(x, y)| (x + moved, y)), &format!("flipped: {cmd:?}"));
+    }
+}
+
+/// A shape in a SmartArt drawing turns by its own `a:xfrm@rot`, as a shape
+/// in a group does: the drawing lays its space onto the frame as a group
+/// lays its child space onto its box.
+#[test]
+fn a_turned_shape_in_a_diagram_drawing_turns() {
+    use crate::engine::displaylist::{transform_at_each_cmd, DrawCmd};
+    let deck = |drawing: &str| {
+        build_pptx(&[
+            ("[Content_Types].xml", CONTENT_TYPES),
+            ("_rels/.rels", ROOT_RELS),
+            ("ppt/presentation.xml", PRESENTATION),
+            ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
+            ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
+            ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
+            ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
+            ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
+            ("ppt/slides/slide1.xml", DGM_SLIDE),
+            ("ppt/slides/_rels/slide1.xml.rels", DGM_SLIDE_RELS),
+            ("ppt/diagrams/data1.xml", DGM_DATA),
+            ("ppt/diagrams/drawing1.xml", drawing),
+        ])
+    };
+    let turned_fills = |drawing: &str| {
+        transform_at_each_cmd(&slide_cmds(deck(drawing)))
+            .into_iter()
+            .filter(|(c, m)| matches!(c, DrawCmd::Fill) && m[..4].iter().zip(QUARTER_TURN).all(|(g, w)| (g - w).abs() < 1e-9))
+            .count()
+    };
+    let turned = DGM_DRAWING.replacen(r#"<a:xfrm><a:off x="0" y="0"/>"#, r#"<a:xfrm rot="5400000"><a:off x="0" y="0"/>"#, 1);
+    assert_ne!(turned, DGM_DRAWING);
+    assert_eq!(turned_fills(DGM_DRAWING), 0, "upright");
+    assert_eq!(turned_fills(&turned), 1, "the turned shape's fill");
 }
 
 // ─── Colour transparency (`a:alpha`, `a:alphaMod`, `a:alphaOff`, §20.1.2.3.1-3) ─

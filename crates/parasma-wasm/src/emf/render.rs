@@ -12,7 +12,8 @@ use super::records::{
     ETO_GLYPH_INDEX, ETO_OPAQUE, PS_NULL, PS_STYLE_MASK, TA_BASELINE, TA_BOTTOM, TA_CENTER,
     TA_RIGHT, TA_UPDATECP,
 };
-use super::transform::{xform_to_mat, Mat};
+use super::transform::xform_to_mat;
+use crate::engine::transform::Mat;
 use super::EmfPicture;
 
 /// MODIFYWORLDTRANSFORM modes (MS-EMF §2.1.24 ModifyWorldTransformMode).

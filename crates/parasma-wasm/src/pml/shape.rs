@@ -20,7 +20,7 @@ use crate::engine::counter;
 use crate::engine::fonts::{self, font_metrics, DEFAULT_FONT_FAMILY, FontCache};
 use crate::engine::geom::{preset_path, PathCmd};
 use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
-use crate::engine::transform::{Transform, Xywh};
+use crate::engine::transform::{Mat, Transform, Xywh};
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use ooxml_dml::ext::{TextParagraphExt, TextRunExt};
@@ -191,8 +191,9 @@ pub(crate) struct SlideChart {
     pub h: f64,
     /// Slide-namespaced chart-XML key (`chart::pml::{slideIdx}::{relId}`).
     pub chart_key: String,
-    /// How the frame, and the chart in it, turns.
-    pub transform: Transform,
+    /// Where the frame, and the chart in it, lands once it and its groups
+    /// turn; a chart never mirrors, so it turns as text does.
+    pub transform: Mat,
 }
 
 impl SlideChart {
@@ -213,6 +214,8 @@ pub(crate) struct ChartItem {
     pub chart_key: String,
     /// The frame's rotation (`p:graphicFrame/p:xfrm@rot`, §19.3.1.53).
     pub transform: Transform,
+    /// How the groups holding the frame turn it ([`GroupTransform::turn`]).
+    pub group: Mat,
 }
 
 /// One positioned picture on a slide (`p:pic`, §19.3.1.37). Carries the pixel
@@ -381,11 +384,12 @@ pub(crate) struct SlideShape {
     /// is `w - insets.left - insets.right`; the text origin is offset by
     /// `(insets.left, insets.top)`.
     pub insets: TextInsets,
-    /// How the shape, its geometry, fill and outline, turns on its frame.
-    pub transform: Transform,
-    /// How its text turns on the same frame: with the shape, never mirrored
-    /// ([`Transform::text`]).
-    pub text_transform: Transform,
+    /// Where the shape, its geometry, fill and outline, lands once it and the
+    /// groups holding it turn: drawn upright in its frame, then placed.
+    pub transform: Mat,
+    /// Where its text, drawn upright in the same frame, lands: with the
+    /// shape, never mirrored ([`Transform::text`]).
+    pub text_transform: Mat,
 }
 
 impl SlideShape {
@@ -492,29 +496,37 @@ pub(crate) struct SlideRun {
     pub color: String,
 }
 
-/// A cumulative group-shape transform (§19.3.1.23 `p:grpSpPr` /
-/// §20.1.7.5 `a:xfrm` "2D Transform for Grouped Objects")
-/// that maps a descendant shape's EMU coordinates from the group's CHILD
-/// coordinate space into absolute slide space. Composed multiplicatively while
-/// recursing nested groups; the identity transform ([`GroupTransform::IDENTITY`])
-/// is threaded for top-level shapes (no enclosing group).
+/// Where the groups holding a drawing put it (`p:grpSp`, §19.3.1.22; its
+/// `a:xfrm`, §20.1.7.5). A group lays its child coordinate space (`chOff`,
+/// `chExt`) onto its own box (`off`, `ext`), then turns that box as any
+/// drawing turns (`rot`, `flipH`, `flipV`, §20.1.7.6), about its centre.
 ///
-/// A child point/extent maps as:
-///   `parent_x = off.x + (child_x - chOff.x) * (ext.cx / chExt.cx)`
-/// i.e. translate by `tx`/`ty` then scale by `sx`/`sy`, where this struct stores
-/// the already-collapsed `(scale, translate)`. `flip_h`/`flip_v` negate the axis
-/// scale about the group box centre (Tier-1 best-effort — applied to the box, so
-/// preset/custGeom path scaling that derives from the box follows for free).
+/// The first part alone maps a child's box to the frame it is drawn in,
+/// upright: per axis `parent = off + (child − chOff)·ext/chExt`, nested groups
+/// composed, collapsed here to `parent = s·child + t`. [`turn`](Self::turn)
+/// then takes that frame to where the groups' turns put it.
+/// [`GroupTransform::IDENTITY`] places a drawing outside any group.
+///
+/// Deviation, declared: a turn inside a group whose child space scales
+/// unequally (`ext/chExt` differs between the axes) applies after the scale,
+/// so a turned child keeps its right angles: its box is scaled along the
+/// group's axes and then turned, where composing the two exactly would shear
+/// it. Not measured against PowerPoint.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GroupTransform {
-    /// X scale = `ext.cx / chExt.cx` (signed; negative when `flip_h`).
+    /// X scale, `ext.cx / chExt.cx` multiplied down the groups.
     pub sx: f64,
-    /// Y scale = `ext.cy / chExt.cy` (signed; negative when `flip_v`).
+    /// Y scale, `ext.cy / chExt.cy` multiplied down the groups.
     pub sy: f64,
     /// X translate (EMU): the constant term so `parent_x = sx*child_x + tx`.
     pub tx: f64,
     /// Y translate (EMU): the constant term so `parent_y = sy*child_y + ty`.
     pub ty: f64,
+    /// How the groups turn and mirror the frames they hold, on the slide in
+    /// px: each group's turn about its box as the groups around it lay that
+    /// box out upright, the outermost applied last. The identity when no
+    /// group turns.
+    pub turn: Mat,
 }
 
 impl GroupTransform {
@@ -524,26 +536,39 @@ impl GroupTransform {
         sy: 1.0,
         tx: 0.0,
         ty: 0.0,
+        turn: Mat::IDENTITY,
     };
 
-    /// Whether it maps nothing, as for a shape outside any group.
-    pub(crate) fn is_identity(&self) -> bool {
-        (self.sx, self.sy, self.tx, self.ty) == (1.0, 1.0, 0.0, 0.0)
+    /// The mapping that lays the child space at `ch_off` of size `ch_ext`
+    /// onto the box at `off` of size `ext` (EMU, §20.1.7.5), turning nothing.
+    /// `None` when the child space is empty on an axis, so no scale resolves.
+    pub(crate) fn onto(ch_off: (i64, i64), ch_ext: (i64, i64), off: (i64, i64), ext: (i64, i64)) -> Option<GroupTransform> {
+        if ch_ext.0 <= 0 || ch_ext.1 <= 0 {
+            return None;
+        }
+        let sx = ext.0 as f64 / ch_ext.0 as f64;
+        let sy = ext.1 as f64 / ch_ext.1 as f64;
+        // parent = off + (child - chOff) * scale  ⇒  parent = scale*child + (off - chOff*scale)
+        Some(GroupTransform {
+            sx,
+            sy,
+            tx: off.0 as f64 - ch_off.0 as f64 * sx,
+            ty: off.1 as f64 - ch_off.1 as f64 * sy,
+            turn: Mat::IDENTITY,
+        })
     }
 
-    /// Map a child-space EMU box (off/ext) into this transform's parent space.
-    /// The extent is scaled by `|scale|` (a box always has positive size); a
-    /// flip is reflected by translating the origin to the far edge so the box
-    /// still lands correctly (the painter doesn't mirror glyphs — Tier-1).
+    /// Map a child-space EMU box (off/ext) to the frame it is drawn in on the
+    /// slide, before any group turns it.
     pub(crate) fn apply_box(&self, off_x: i64, off_y: i64, ext_cx: i64, ext_cy: i64) -> PhBox {
         let (ox, oy) = (off_x as f64, off_y as f64);
         let (cx, cy) = (ext_cx as f64, ext_cy as f64);
-        // Map the two opposite corners, then normalise so width/height stay
-        // positive even under a negated (flipped) scale.
         let x0 = self.sx * ox + self.tx;
         let y0 = self.sy * oy + self.ty;
         let x1 = self.sx * (ox + cx) + self.tx;
         let y1 = self.sy * (oy + cy) + self.ty;
+        // Normalised, so a negative scale (a diagram frame with a negative
+        // extent) still yields a box of positive size.
         PhBox {
             off_x: x0.min(x1).round() as i64,
             off_y: y0.min(y1).round() as i64,
@@ -552,88 +577,58 @@ impl GroupTransform {
         }
     }
 
-    /// Compose `self` (outer) with `inner` (a nested group's own transform):
-    /// the result maps the inner group's CHILD space straight to `self`'s parent
-    /// space. Transforms are affine `p' = S·p + T`, so composition multiplies
-    /// the scales and threads the inner translate through the outer scale.
-    pub(crate) fn compose(&self, inner: &GroupTransform) -> GroupTransform {
+    /// Where `group`, itself put where `self` puts things, puts what it
+    /// holds: its child space laid onto its box, composed with `self`'s
+    /// mapping, and its box's turn, about the box as `self` lays it out, then
+    /// `self`'s turns. A group whose `a:xfrm` lacks a box or a child space,
+    /// or whose child space is empty, holds its children as `self` would:
+    /// unscaled, unmoved and unturned by it.
+    pub(crate) fn within(&self, group: &ooxml_pml::types::GroupShape) -> GroupTransform {
+        let Some(xfrm) = group.grp_sp_pr.transform.as_deref() else {
+            return *self;
+        };
+        let (Some(off), Some(ext), Some(ch_off), Some(ch_ext)) = (
+            xfrm.offset.as_deref(),
+            xfrm.extents.as_deref(),
+            xfrm.child_offset.as_deref(),
+            xfrm.child_extents.as_deref(),
+        ) else {
+            return *self;
+        };
+        let emu = |v: &str| v.trim().parse::<i64>().unwrap_or(0);
+        let (off, ext) = ((emu(&off.x), emu(&off.y)), (ext.cx, ext.cy));
+        let Some(own) = Self::onto((emu(&ch_off.x), emu(&ch_off.y)), (ch_ext.cx, ch_ext.cy), off, ext) else {
+            return *self;
+        };
+        let b = self.apply_box(off.0, off.1, ext.0, ext.1);
+        let frame = (emu_to_px(b.off_x), emu_to_px(b.off_y), emu_to_px(b.ext_cx), emu_to_px(b.ext_cy));
+        let turn = Transform::of(xfrm.rot.map(i64::from), xfrm.flip_h.unwrap_or(false), xfrm.flip_v.unwrap_or(false));
         GroupTransform {
-            sx: self.sx * inner.sx,
-            sy: self.sy * inner.sy,
-            tx: self.sx * inner.tx + self.tx,
-            ty: self.sy * inner.ty + self.ty,
+            sx: self.sx * own.sx,
+            sy: self.sy * own.sy,
+            tx: self.sx * own.tx + self.tx,
+            ty: self.sy * own.ty + self.ty,
+            turn: self.turn.compose(&turn.matrix(frame)),
         }
     }
 }
 
-/// Build the [`GroupTransform`] for one `p:grpSp` from its `grpSpPr/a:xfrm`
-/// (§19.3.1.23 grpSpPr / §20.1.7.5 group xfrm): off/ext = the group box on the
-/// parent, chOff/chExt = the child
-/// coordinate space. Returns the identity when the xfrm (or its child space) is
-/// missing or degenerate (zero child extent → no resolvable scale), so a
-/// malformed group still flattens its children 1:1 rather than collapsing them.
-pub(crate) fn group_transform(
-    g: &ooxml_pml::types::GroupShape,
-) -> GroupTransform {
-    let Some(xfrm) = g.grp_sp_pr.transform.as_deref() else {
-        return GroupTransform::IDENTITY;
-    };
-    let (Some(off), Some(ext), Some(ch_off), Some(ch_ext)) = (
-        xfrm.offset.as_deref(),
-        xfrm.extents.as_deref(),
-        xfrm.child_offset.as_deref(),
-        xfrm.child_extents.as_deref(),
-    ) else {
-        return GroupTransform::IDENTITY;
-    };
-    let off_x = off.x.trim().parse::<i64>().unwrap_or(0) as f64;
-    let off_y = off.y.trim().parse::<i64>().unwrap_or(0) as f64;
-    let ext_cx = ext.cx as f64;
-    let ext_cy = ext.cy as f64;
-    let ch_off_x = ch_off.x.trim().parse::<i64>().unwrap_or(0) as f64;
-    let ch_off_y = ch_off.y.trim().parse::<i64>().unwrap_or(0) as f64;
-    let ch_ext_cx = ch_ext.cx as f64;
-    let ch_ext_cy = ch_ext.cy as f64;
-    // A zero child extent gives no scale — fall back to identity (children then
-    // keep their own coords, the least-wrong degenerate behaviour).
-    if ch_ext_cx == 0.0 || ch_ext_cy == 0.0 {
-        return GroupTransform::IDENTITY;
-    }
-    let mut sx = ext_cx / ch_ext_cx;
-    let mut sy = ext_cy / ch_ext_cy;
-    // Group-level flipH/flipV (Tier-1 best-effort): negate the axis scale.
-    if xfrm.flip_h.unwrap_or(false) {
-        sx = -sx;
-    }
-    if xfrm.flip_v.unwrap_or(false) {
-        sy = -sy;
-    }
-    // parent = off + (child - chOff) * scale  ⇒  parent = scale*child + (off - chOff*scale)
-    GroupTransform {
-        sx,
-        sy,
-        tx: off_x - ch_off_x * sx,
-        ty: off_y - ch_off_y * sy,
-    }
-}
-
 /// Flatten a `p:grpSp` group tree into a document-order list of `(Shape,
-/// GroupTransform)` pairs. Each descendant `p:sp` is paired with the
-/// CUMULATIVE transform from the slide root to its enclosing group; nested
-/// `p:grpSp` compose multiplicatively and recurse. The shape itself is borrowed
-/// (not cloned) — the caller clones only when it needs an owned copy.
+/// GroupTransform)` pairs. Each descendant `p:sp` is paired with where its
+/// groups put it ([`GroupTransform::within`], from the slide root down). The
+/// shape itself is borrowed (not cloned) — the caller clones only when it
+/// needs an owned copy.
 ///
 /// Tier-1 covers `p:sp` and nested `p:grpSp` (the common authored cases
-/// + the synthetic nested case). Group-child `p:pic`/`p:cxnSp`/`p:graphicFrame`
-///   are NOT flattened here (uncommon inside groups) — a measured field
-///   gap, not a silent drop of top-level pics/connectors/tables, which keep their
-///   own paths.
+/// + the synthetic nested case). Group-child `p:pic`/`p:cxnSp` are NOT
+///   flattened here, nor anywhere else, so they are not drawn; of a group's
+///   `p:graphicFrame`s only charts are drawn, collected by the chart walk.
 pub(crate) fn flatten_group_shapes<'a>(
     group: &'a ooxml_pml::types::GroupShape,
     outer: GroupTransform,
     out: &mut Vec<(&'a Shape, GroupTransform)>,
 ) {
-    let xform = outer.compose(&group_transform(group));
+    let xform = outer.within(group);
     for sp in &group.shape {
         out.push((sp, xform));
     }
@@ -1184,21 +1179,32 @@ pub(crate) fn xfrm_transform(xfrm: Option<&ooxml_dml::types::Transform2D>) -> Tr
     xfrm.map_or_else(Transform::default, |t| Transform::of(t.rot.map(i64::from), t.flip_h.unwrap_or(false), t.flip_v.unwrap_or(false)))
 }
 
-/// How a slide shape (`p:sp`, §19.3.1.43) turns, and how its text does: by
-/// its own `a:xfrm` (§20.1.7.6), and its text further by its body
-/// (`bodyPr@rot` and `@upright`, §21.1.2.1.1), read by [`Transform::text`].
-///
-/// A shape whose box a group transform maps (`grouped`) does not turn, nor
-/// does its text: its turn composes with its group's mapping, which can
-/// mirror it, and groups are not drawn turned yet.
-fn shape_turn(sp: &Shape, grouped: bool) -> (Transform, Transform) {
-    if grouped {
-        return (Transform::default(), Transform::default());
-    }
-    let turn = xfrm_transform(sp.shape_properties.transform.as_deref());
+/// Where a slide shape (`p:sp`, §19.3.1.43) drawn upright in `frame` lands,
+/// and where its text does: turned by its own `a:xfrm` (§20.1.7.6) about the
+/// frame's centre, then by the groups holding it (`group`,
+/// [`GroupTransform::turn`]). Its text goes where the shape puts the frame's
+/// centre and turns by the rule of [`Transform::text`] read off the whole
+/// composed turn, further by its body (`bodyPr@rot` and `@upright`,
+/// §21.1.2.1.1).
+fn shape_turn(sp: &Shape, group: Mat, frame: Xywh) -> (Mat, Mat) {
+    let turn = group.compose(&xfrm_transform(sp.shape_properties.transform.as_deref()).matrix(frame));
     let body = sp.text_body.as_deref().map(|tb| &tb.body_pr);
-    let text = turn.text(body.and_then(|b| b.rot).map(i64::from), body.and_then(|b| b.upright).unwrap_or(false));
-    (turn, text)
+    let text = turn.orientation().text(body.and_then(|b| b.rot).map(i64::from), body.and_then(|b| b.upright).unwrap_or(false));
+    (turn, group.carry(frame, text))
+}
+
+/// Where a chart's frame (`p:graphicFrame`, §19.3.1.21) lands: turned by its
+/// own rotation about its centre, then by the groups holding it. A chart
+/// never mirrors, so it goes where its groups put the frame's centre and
+/// turns by the rule its text would, [`Transform::text`], read off the whole
+/// composed turn.
+///
+/// Deviation, declared: a flipped group mirrors where its chart goes but not
+/// the chart, which a vertical flip turns half round; not measured.
+fn chart_turn(c: &ChartItem) -> Mat {
+    let frame = (emu_to_px(c.off_x), emu_to_px(c.off_y), emu_to_px(c.ext_cx), emu_to_px(c.ext_cy));
+    let turn = c.group.compose(&c.transform.matrix(frame)).orientation().text(None, false);
+    c.group.carry(frame, turn)
 }
 
 /// The slide-namespaced image key for a picture's embed rel id. Rel ids restart
@@ -1263,7 +1269,7 @@ pub(crate) fn build_slide_page(
             w: emu_to_px(c.ext_cx),
             h: emu_to_px(c.ext_cy),
             chart_key: c.chart_key.clone(),
-            transform: c.transform,
+            transform: chart_turn(c),
         })
         .collect();
 
@@ -1272,9 +1278,9 @@ pub(crate) fn build_slide_page(
         let ph_type = sp.placeholder_type().map(|t| t.to_string());
         let ph_type_ref = ph_type.as_deref();
         let ph_idx = sp.placeholder_index();
-        // The cumulative group transform for this shape (identity for a
-        // top-level shape). A group child's own `a:xfrm` is in the group's
-        // CHILD coordinate space — map it to absolute slide space.
+        // Where this shape's groups put it (identity for a top-level shape).
+        // A group child's own `a:xfrm` is in the group's CHILD coordinate
+        // space — map it to the frame it is drawn in on the slide.
         let xform = shape_transforms
             .get(sp_idx)
             .copied()
@@ -1318,7 +1324,8 @@ pub(crate) fn build_slide_page(
             continue;
         }
 
-        let (transform, text_transform) = shape_turn(sp, !xform.is_identity());
+        let frame = (emu_to_px(bx.off_x), emu_to_px(bx.off_y), w_px, h_px);
+        let (transform, text_transform) = shape_turn(sp, xform.turn, frame);
         out.push(SlideShape {
             x: emu_to_px(bx.off_x),
             y: emu_to_px(bx.off_y),
