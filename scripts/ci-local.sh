@@ -38,14 +38,47 @@ note()  { printf '\033[33m  ! %s\033[0m\n' "$*"; }
 
 run() { # run <label> <cmd...>   (each check prints its own duration)
   local label="$1"; shift
-  local t0=$SECONDS
-  if "$@" >/tmp/ci-local.$$ 2>&1; then
+  local t0=$SECONDS log
+  log="$(mktemp "$T/run.XXXXXX")"
+  if "$@" >"$log" 2>&1; then
     ok "$label ($((SECONDS - t0))s)"
   else
     bad "$label ($((SECONDS - t0))s)"
-    printf '\033[2m'; tail -25 /tmp/ci-local.$$ | sed 's/^/      /'; printf '\033[0m'
+    printf '\033[2m'; tail -25 "$log" | sed 's/^/      /'; printf '\033[0m'
   fi
-  rm -f /tmp/ci-local.$$
+  rm -f "$log"
+}
+
+# One temp directory per gate run, so two runs never share a file. Bash starts
+# a background group with SIGINT ignored, so Ctrl-C stops the groups by hand.
+T="$(mktemp -d "${TMPDIR:-/tmp}/ci-local.XXXXXX")"
+PIDS=""
+descendants() { local c; for c in $(pgrep -P "$1"); do echo "$c"; descendants "$c"; done; }
+stop() { # stop <exit code>: kill each group and everything under it
+  trap '' INT TERM
+  local p
+  for p in $PIDS; do kill "$p" $(descendants "$p") 2>/dev/null; done
+  exit "$1"
+}
+trap 'rm -rf "$T"' EXIT
+trap 'stop 130' INT
+trap 'stop 143' TERM
+
+spawn() { # spawn <group>: run it in the background, its lines and failed labels into $T
+  ( FAILED=()
+    "$1" >"$T/$1.out" 2>&1
+    [ ${#FAILED[@]} -eq 0 ] || printf '%s\n' "${FAILED[@]}" >"$T/$1.failed"
+    exit 0 ) &
+  PIDS="$PIDS $!"
+}
+collect() { # collect <group> <pid>: print its block and adopt its failures
+  local rc=0 f
+  wait "$2" || rc=$?
+  cat "$T/$1.out"
+  if [ -f "$T/$1.failed" ]; then
+    while IFS= read -r f; do FAILED+=("$f"); done <"$T/$1.failed"
+  fi
+  [ "$rc" = 0 ] || bad "$1 stopped before finishing (exit $rc)"
 }
 
 # ── 0. Preconditions ─────────────────────────────────────────────────────────
@@ -100,85 +133,107 @@ else
   printf '%s\n' "$layering_out" | sed 's/^/      /'
 fi
 
-# ── 2. Rust ──────────────────────────────────────────────────────────────────
-bold "rust (features: sml,pml,emf — what ships)"
-run "clippy -D warnings" \
-  cargo clippy -p parasma-wasm --features sml,pml,emf --locked -- -D warnings
-run "native tests" \
-  cargo test -p parasma-wasm --features sml,pml,emf --locked
+# ── 2-4. Two groups of checks, run at the same time ─────────────────────────
+# The Rust group shares cargo's build-directory lock, so it runs in order
+# inside itself. The TypeScript and ship-path group never runs cargo and reads
+# nothing the Rust group writes, with one exception: DISPLAY_LIST_BLESS=1 makes
+# the native tests rewrite packages/parasma-core/src/display-list-golden.json,
+# which the TS tests read, so a blessing run keeps the old one-after-the-other
+# order. Each group's lines print as one block, Rust first.
+rust_checks() {
+  # ── 2. Rust ────────────────────────────────────────────────────────────────
+  bold "rust (features: sml,pml,emf — what ships)"
+  run "clippy -D warnings" \
+    cargo clippy -p parasma-wasm --features sml,pml,emf --locked -- -D warnings
+  run "native tests" \
+    cargo test -p parasma-wasm --features sml,pml,emf --locked
 
-# Surface the ground-truth summary. libtest swallows a PASSING test's
-# stdout, so without this a run that compared NOTHING to Word (clean checkout,
-# CI — every calibration document absent) is indistinguishable from a green one.
-if [ -f target/ground-truth-report.txt ]; then
-  gt_line=$(grep -m1 "GROUND-TRUTH SUMMARY" target/ground-truth-report.txt || true)
-  if grep -q "0 CHECKED" target/ground-truth-report.txt; then
-    note "${gt_line:-ground truth: no summary} — compared nothing to Word"
-  else
-    ok "${gt_line:-ground truth reported}"
-  fi
-fi
-
-# ── 3. TypeScript ────────────────────────────────────────────────────────────
-bold "typescript"
-for p in parasma-core headless snippet vue react; do
-  run "typecheck @parasma/$p" bash -c "cd packages/$p && bunx tsc --noEmit"
-done
-run "unit tests" bun run --filter '*' test
-
-# ── 4. Ship-path coverage ────────────────────────────────────────────────────
-# Three things the earlier gate did not cover:
-# size (report-only here; the CI workflow enforces the gzip budget), the demo build (what
-# scripts/build-demo-site.sh actually ships), and the publish manifest swap
-# (a prepack/postpack regression otherwise surfaces only at publish).
-bold "ship-path"
-WASM_ARTIFACT=packages/parasma-core/src/wasm/parasma_wasm_bg.wasm
-if [ -f "$WASM_ARTIFACT" ]; then
-  raw_b=$(wc -c < "$WASM_ARTIFACT" | tr -d ' ')
-  gz_b=$(gzip -9 -c "$WASM_ARTIFACT" | wc -c | tr -d ' ')
-  raw_mb=$(awk -v b="$raw_b" 'BEGIN{printf "%.2f", b/1048576}')
-  gz_mb=$(awk -v b="$gz_b" 'BEGIN{printf "%.2f", b/1048576}')
-  note "wasm size: ${raw_mb} MB raw, ${gz_mb} MB gzip — REPORT ONLY (the CI workflow enforces the gzip budget)"
-fi
-run "snippet styles generated-module agreement" node scripts/gen-snippet-styles.mjs --check
-# The wasm licence inventory is generated from Cargo.lock and records the
-# lockfile's sha256 on its first line; a dependency change must re-run the
-# generator (needs cargo-about), but detecting the drift needs only shasum.
-run "runtime JS dependency licences allowed" node scripts/check-licenses.mjs
-run "wasm licence inventory matches Cargo.lock" bash -c '
-  want="$(shasum -a 256 Cargo.lock | cut -d" " -f1)"
-  have="$(head -1 packages/parasma-core/THIRD-PARTY-LICENSES.md | grep -oE "[0-9a-f]{64}")"
-  [ "$want" = "$have" ] || { echo "stale: run ./scripts/gen-wasm-licenses.sh"; exit 1; }
-'
-run "demo build (what the demo site ships)" bash -c "cd packages/snippet && bun run build:demo >/dev/null"
-# npm (not `bun pm`) on purpose: this script usually runs under `bun run ci`,
-# and a nested `bun pm pack` deadlocks on bun's own process lock (measured:
-# the gate hung forever; direct ./scripts/ci-local.sh passed). npm runs the
-# same prepack/postpack lifecycle without touching bun's lock.
-# Compares each package.json BEFORE vs AFTER the pack — NOT against git: a
-# legitimately-dirty manifest (work in progress) must not fail the round-trip,
-# only a pack that fails to restore what it found. (A git-diff version of
-# this check false-positived on ordinary in-progress edits.)
-run "publish manifest swap round-trips" bash -c '
-  set -euo pipefail
-  tmp="$(mktemp -d)"
-  for p in parasma-core headless snippet vue react; do
-    cp "packages/$p/package.json" "$tmp/$p.before"
-  done
-  for p in parasma-core headless snippet vue react; do
-    (cd "packages/$p" && npm pack --quiet --pack-destination "$tmp" >/dev/null)
-  done
-  for p in parasma-core headless snippet vue react; do
-    if ! cmp -s "$tmp/$p.before" "packages/$p/package.json"; then
-      echo "prepack/postpack did not restore packages/$p/package.json to its pre-pack bytes:"
-      diff "$tmp/$p.before" "packages/$p/package.json" | head -10; exit 1
+  # Surface the ground-truth summary. libtest swallows a PASSING test's
+  # stdout, so without this a run that compared NOTHING to Word (clean checkout,
+  # CI — every calibration document absent) is indistinguishable from a green one.
+  if [ -f target/ground-truth-report.txt ]; then
+    gt_line=$(grep -m1 "GROUND-TRUTH SUMMARY" target/ground-truth-report.txt || true)
+    if grep -q "0 CHECKED" target/ground-truth-report.txt; then
+      note "${gt_line:-ground truth: no summary} — compared nothing to Word"
+    else
+      ok "${gt_line:-ground truth reported}"
     fi
-  done
-  rm -rf "$tmp"
-  if ls packages/*/package.json.prepack-orig >/dev/null 2>&1; then
-    echo "leftover package.json.prepack-orig after pack"; exit 1
   fi
-'
+}
+
+ts_checks() {
+  # ── 3. TypeScript ──────────────────────────────────────────────────────────
+  bold "typescript"
+  local p
+  for p in parasma-core headless snippet vue react; do
+    run "typecheck @parasma/$p" bash -c "cd packages/$p && bunx tsc --noEmit"
+  done
+  run "unit tests" bun run --filter '*' test
+
+  # ── 4. Ship-path coverage ──────────────────────────────────────────────────
+  # Three things the earlier gate did not cover:
+  # size (report-only here; the CI workflow enforces the gzip budget), the demo build (what
+  # scripts/build-demo-site.sh actually ships), and the publish manifest swap
+  # (a prepack/postpack regression otherwise surfaces only at publish).
+  bold "ship-path"
+  WASM_ARTIFACT=packages/parasma-core/src/wasm/parasma_wasm_bg.wasm
+  if [ -f "$WASM_ARTIFACT" ]; then
+    raw_b=$(wc -c < "$WASM_ARTIFACT" | tr -d ' ')
+    gz_b=$(gzip -9 -c "$WASM_ARTIFACT" | wc -c | tr -d ' ')
+    raw_mb=$(awk -v b="$raw_b" 'BEGIN{printf "%.2f", b/1048576}')
+    gz_mb=$(awk -v b="$gz_b" 'BEGIN{printf "%.2f", b/1048576}')
+    note "wasm size: ${raw_mb} MB raw, ${gz_mb} MB gzip — REPORT ONLY (the CI workflow enforces the gzip budget)"
+  fi
+  run "snippet styles generated-module agreement" node scripts/gen-snippet-styles.mjs --check
+  # The wasm licence inventory is generated from Cargo.lock and records the
+  # lockfile's sha256 on its first line; a dependency change must re-run the
+  # generator (needs cargo-about), but detecting the drift needs only shasum.
+  run "runtime JS dependency licences allowed" node scripts/check-licenses.mjs
+  run "wasm licence inventory matches Cargo.lock" bash -c '
+    want="$(shasum -a 256 Cargo.lock | cut -d" " -f1)"
+    have="$(head -1 packages/parasma-core/THIRD-PARTY-LICENSES.md | grep -oE "[0-9a-f]{64}")"
+    [ "$want" = "$have" ] || { echo "stale: run ./scripts/gen-wasm-licenses.sh"; exit 1; }
+  '
+  run "demo build (what the demo site ships)" bash -c "cd packages/snippet && bun run build:demo >/dev/null"
+  # npm (not `bun pm`) on purpose: this script usually runs under `bun run ci`,
+  # and a nested `bun pm pack` deadlocks on bun's own process lock (measured:
+  # the gate hung forever; direct ./scripts/ci-local.sh passed). npm runs the
+  # same prepack/postpack lifecycle without touching bun's lock.
+  # Compares each package.json BEFORE vs AFTER the pack — NOT against git: a
+  # legitimately-dirty manifest (work in progress) must not fail the round-trip,
+  # only a pack that fails to restore what it found. (A git-diff version of
+  # this check false-positived on ordinary in-progress edits.)
+  run "publish manifest swap round-trips" bash -c '
+    set -euo pipefail
+    tmp="$(mktemp -d)"
+    for p in parasma-core headless snippet vue react; do
+      cp "packages/$p/package.json" "$tmp/$p.before"
+    done
+    for p in parasma-core headless snippet vue react; do
+      (cd "packages/$p" && npm pack --quiet --pack-destination "$tmp" >/dev/null)
+    done
+    for p in parasma-core headless snippet vue react; do
+      if ! cmp -s "$tmp/$p.before" "packages/$p/package.json"; then
+        echo "prepack/postpack did not restore packages/$p/package.json to its pre-pack bytes:"
+        diff "$tmp/$p.before" "packages/$p/package.json" | head -10; exit 1
+      fi
+    done
+    rm -rf "$tmp"
+    if ls packages/*/package.json.prepack-orig >/dev/null 2>&1; then
+      echo "leftover package.json.prepack-orig after pack"; exit 1
+    fi
+  '
+}
+
+if [ "${DISPLAY_LIST_BLESS:-}" = 1 ]; then
+  rust_checks
+  ts_checks
+else
+  spawn rust_checks; rust_pid=$!
+  spawn ts_checks; ts_pid=$!
+  collect rust_checks "$rust_pid"
+  collect ts_checks "$ts_pid"
+fi
 
 # ── 5. Non-fatal: lints CI never compiled ────────────────────────────────────
 if [ "$STRICT" = 1 ]; then
