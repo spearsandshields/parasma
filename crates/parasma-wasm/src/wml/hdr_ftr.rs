@@ -297,10 +297,8 @@ fn position_hf_table(
     band_left: f64,
     band_width: f64,
 ) {
-    let cell_x_start = band_left + table.offset_in(band_width);
-
     for row in &table.rows {
-        rows.push(table.whole_row(row, cell_x_start, *y));
+        rows.push(table.whole_row(row, band_left + table.row_offset(row, band_width), *y));
         *y += row.height_px;
     }
 }

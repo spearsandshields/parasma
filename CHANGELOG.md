@@ -300,6 +300,11 @@ are held stable regardless.
 - Tables: thin spacer and rule rows in templates stay thin (empty cells set
   to ignore their paragraph mark no longer force a full line of height),
   and hidden rows take no space.
+- Tables: right-to-left tables show their first cell on the right and sit
+  at the right margin, with borders and indent mirrored. A row with its own
+  alignment or indent is placed by it, and rows that override the table's
+  borders or cell padding (common in merged and converted documents) keep
+  their own.
 
 ### Changed
 

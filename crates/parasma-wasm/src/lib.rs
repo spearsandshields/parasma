@@ -3992,13 +3992,13 @@ impl Viewer {
             // more than half of the space left, so a table with an oversized
             // header still makes progress; nor in the column-balancing pass.
             macro_rules! repeat_header_rows {
-                ($table:expr, $row_idx:expr, $table_x:expr) => {{
+                ($table:expr, $row_idx:expr, $band_x:expr, $avail:expr) => {{
                     let table = $table;
                     if table.header_rows > 0 && $row_idx >= table.header_rows {
                         let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                         let avail = effective_content_height(&laid_out_hf, geo, section_page_idx) - y_in_page;
                         if table.header_height() <= avail / 2.0 {
-                            for header in table.repeated_header_rows($table_x, margin_top + y_in_page) {
+                            for header in table.repeated_header_rows($band_x, $avail, margin_top + y_in_page) {
                                 y_in_page += header.height_px;
                                 current.push(PageElement::TableRow(header));
                             }
@@ -4043,7 +4043,7 @@ impl Viewer {
                     let col = &geo.columns[entry_col];
                     let col_ml = col.x_offset_px;
                     let col_cw = col.width_px;
-                    let cell_x_start = col_ml + table.offset_in(col_cw);
+                    let cell_x_start = col_ml + table.row_offset(row, col_cw);
 
                     // Flatten every cell once (content-relative line protos +
                     // structural metadata). `cell_protos[i]` is the flat line list
@@ -4070,7 +4070,7 @@ impl Viewer {
                         // Past its first fragment the row continues on a new
                         // page or column, which opens with the header rows.
                         if consumed > 0.0 {
-                            repeat_header_rows!(table, $row_idx, cell_x_start);
+                            repeat_header_rows!(table, $row_idx, col_ml, col_cw);
                         }
                         let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                         let content_height_now = effective_content_height(&laid_out_hf, geo, section_page_idx);
@@ -5268,7 +5268,7 @@ impl Viewer {
                             }
                             if continues {
                                 let col = &geo.columns[col_idx];
-                                repeat_header_rows!(table, row_idx, col.x_offset_px + table.offset_in(col.width_px));
+                                repeat_header_rows!(table, row_idx, col.x_offset_px, col.width_px);
                             }
                             // A row that still does not fit where it now stands —
                             // it opens its page, or was just pushed to a fresh
@@ -5290,7 +5290,7 @@ impl Viewer {
                             let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                             let row_y_top = margin_top + y_in_page;
                             let mut paged_cells = Vec::new();
-                            let cell_x_start = col_ml + table.offset_in(col_cw);
+                            let cell_x_start = col_ml + table.row_offset(row, col_cw);
 
 
                             for cell in &row.cells {
@@ -5538,7 +5538,7 @@ impl Viewer {
                                     let col_cw = col.width_px;
                                     let margin_top = effective_margin_top(&laid_out_hf, geo, section_page_idx);
                                     let row_y_top = margin_top + balance_band_offset + y_in_page;
-                                    let cell_x_start = col_ml + table.offset_in(col_cw);
+                                    let cell_x_start = col_ml + table.row_offset(row, col_cw);
                                     current.push(PageElement::TableRow(table.whole_row(row, cell_x_start, row_y_top)));
                                     y_in_page += row.height_px;
                                 }

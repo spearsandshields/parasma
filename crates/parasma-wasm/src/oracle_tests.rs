@@ -12322,3 +12322,63 @@ fn a_hidden_row_takes_no_space() {
     assert_px(with_hidden[1].y_top, shown[1].y_top, "the row after the hidden one");
     assert!(with_hidden[1].cells[0].border_bottom.is_some(), "which is the table's last row");
 }
+
+// ── Right-to-left tables and row alignment (§17.4.1, §17.4.27, §17.4.60) ────
+
+/// The first row of a 1000 + 3000 twip table: each cell's left edge and
+/// width, and the row itself.
+fn uneven_row(tbl_pr: &str, tr_extra: &str) -> PagedTableRow {
+    let cell = |w: u32, text: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="{w}" w:type="dxa"/></w:tcPr>{}</w:tc>"#, p("", &r("", text)));
+    let body = format!(
+        r#"<w:tbl><w:tblPr>{tbl_pr}<w:tblW w:w="4000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr>{tr_extra}{}{}</w:tr></w:tbl><w:p/>"#,
+        cell(1000, "a"), cell(3000, "b"),
+    );
+    table_rows_of(&layout(numbering_docx("", "", &body))).remove(0)
+}
+
+/// The left and right edges of the text area: a 12240 twip page with 1440
+/// twip margins.
+const TEXT_LEFT_PX: f64 = 96.0;
+const TEXT_RIGHT_PX: f64 = 720.0;
+
+/// §17.4.1: a visually right-to-left table shows its first cell on the
+/// right, sits at the right margin, and mirrors its borders and indent.
+#[test]
+fn a_right_to_left_table_is_mirrored() {
+    let row = uneven_row(&format!("<w:bidiVisual/>{GRID}"), "");
+    let (a, b) = (&row.cells[0], &row.cells[1]);
+    assert_px(a.x + a.width_px, TEXT_RIGHT_PX, "the first cell ends at the right margin");
+    assert_px(b.x + b.width_px, a.x, "the second cell is to its left");
+    assert_px(a.width_px, 1000.0 * PX_PER_TWIP, "and keeps its own width");
+    assert_eq!(a.border_right.as_ref().map(|e| e.color.as_str()), Some("#000000"), "the table's left border, on the right");
+    assert_eq!(b.border_left.as_ref().map(|e| e.color.as_str()), Some("#FF0000"), "the table's right border, on the left");
+    assert_eq!(a.border_left, b.border_right, "one line between the two cells");
+    let indented = uneven_row(r#"<w:bidiVisual/><w:tblInd w:w="720" w:type="dxa"/>"#, "");
+    assert_px(indented.cells[0].x + indented.cells[0].width_px, TEXT_RIGHT_PX - 48.0, "the indent is from the right");
+    let ended = uneven_row(r#"<w:bidiVisual/><w:jc w:val="end"/>"#, "");
+    assert_px(ended.cells[1].x, TEXT_LEFT_PX, "the trailing edge is the left margin");
+}
+
+/// A row's own alignment (§17.4.27), or its table-level exception's
+/// (§17.4.26), places that row.
+#[test]
+fn a_row_can_set_its_own_alignment() {
+    let table_right = TEXT_RIGHT_PX - 4000.0 * PX_PER_TWIP;
+    assert_px(uneven_row("", "").cells[0].x, TEXT_LEFT_PX, "the table's default");
+    assert_px(uneven_row("", r#"<w:trPr><w:jc w:val="right"/></w:trPr>"#).cells[0].x, table_right, "the row's jc");
+    assert_px(uneven_row("", r#"<w:tblPrEx><w:jc w:val="right"/></w:tblPrEx>"#).cells[0].x, table_right, "the row's exception");
+    assert_px(uneven_row(r#"<w:jc w:val="right"/>"#, r#"<w:trPr><w:jc w:val="left"/></w:trPr>"#).cells[0].x, TEXT_LEFT_PX, "the row over the table");
+    assert_px(uneven_row("", r#"<w:tblPrEx><w:tblInd w:w="720" w:type="dxa"/></w:tblPrEx>"#).cells[0].x, TEXT_LEFT_PX + 48.0, "an exception's indent");
+}
+
+/// §17.4.60: a row's table-level exceptions override the table's borders
+/// and default cell margins for that row, edge by edge.
+#[test]
+fn a_row_exception_overrides_borders_and_margins() {
+    let ex = r#"<w:tblPrEx><w:tblBorders><w:left w:val="single" w:sz="12" w:color="00B050"/></w:tblBorders><w:tblCellMar><w:left w:w="600" w:type="dxa"/></w:tblCellMar></w:tblPrEx>"#;
+    let row = uneven_row(GRID, ex);
+    let a = &row.cells[0];
+    assert_eq!(a.border_left.as_ref().map(|e| e.color.as_str()), Some("#00B050"), "the exception's left border");
+    assert!(a.border_top.is_some(), "the table's other borders stay");
+    assert_px(a.lines[0].content_left - a.x, 600.0 * PX_PER_TWIP, "the exception's left padding");
+}

@@ -43,8 +43,9 @@ pub(crate) struct TableCache {
     pub(crate) rows: Vec<TableRowCache>,
     pub(crate) border_color: String,
     pub(crate) has_borders: bool,
-    pub(crate) alignment: STJcTable,
-    pub(crate) indent_px: f64,
+    /// §17.4.1 bidiVisual: the table is shown right to left. Its cells are
+    /// already mirrored in the cache; a row's offset is mirrored when placed.
+    pub(crate) rtl: bool,
     /// §17.4.49 tblHeader: how many leading rows are drawn again at the top
     /// of every page and column the table continues onto. 0 when the first
     /// row is not marked, or when every row is.
@@ -60,6 +61,10 @@ pub(crate) struct TableRowCache {
     /// the remaining space splits across the break at line granularity. A row
     /// that fits on no page splits either way.
     pub(crate) cant_split: bool,
+    /// The row's alignment and indent: its own jc (§17.4.27), else its
+    /// table-level exception's (§17.4.26, §17.4.51), else the table's.
+    pub(crate) alignment: STJcTable,
+    pub(crate) indent_px: f64,
 }
 
 pub(crate) struct TableCellCache {
@@ -136,15 +141,17 @@ pub(crate) enum CellFloatDraw {
 }
 
 impl TableCache {
-    /// The table's left edge inside a band `avail` wide: by its alignment
+    /// A row's left edge inside a band `avail` wide: by its alignment
     /// (§17.4.28), and by its indent (§17.4.50) when it sits at the start.
-    pub(crate) fn offset_in(&self, avail: f64) -> f64 {
+    /// Both are reversed in a right-to-left table (§17.4.1).
+    pub(crate) fn row_offset(&self, row: &TableRowCache, avail: f64) -> f64 {
         let width: f64 = self.col_widths_px.iter().sum();
-        match self.alignment {
+        let offset = match row.alignment {
             STJcTable::Center => (avail - width) / 2.0,
             STJcTable::End | STJcTable::Right => avail - width,
-            _ => self.indent_px,
-        }
+            _ => row.indent_px,
+        };
+        if self.rtl { avail - width - offset } else { offset }
     }
 
     /// One whole row as it is drawn with its top at `row_y_top` and the
@@ -189,12 +196,13 @@ impl TableCache {
     }
 
     /// The header rows as they are drawn again where the table continues,
-    /// starting at `y_top`. A repeat is display only: its lines belong to no
+    /// starting at `y_top` in a band `avail` wide whose left edge is
+    /// `band_x`. A repeat is display only: its lines belong to no
     /// paragraph, so selection, copy and search see the header once.
-    pub(crate) fn repeated_header_rows(&self, table_x: f64, y_top: f64) -> Vec<PagedTableRow> {
+    pub(crate) fn repeated_header_rows(&self, band_x: f64, avail: f64, y_top: f64) -> Vec<PagedTableRow> {
         let mut y = y_top;
         self.rows[..self.header_rows].iter().map(|row| {
-            let mut paged = self.whole_row(row, table_x, y);
+            let mut paged = self.whole_row(row, band_x + self.row_offset(row, avail), y);
             for line in paged.cells.iter_mut().flat_map(|c| c.lines.iter_mut()) {
                 line.para = PARA_SENTINEL;
             }
@@ -760,8 +768,8 @@ impl CellMargins {
 
     /// Take the edges a tblCellMar or tcMar names. A `pct` or `auto` margin
     /// is ignored (§17.4.5, the same for every edge) and `nil` is zero.
-    /// Declared: start and end are left and right, also in a right-to-left
-    /// table.
+    /// Start and end are left and right here; a right-to-left table mirrors
+    /// its cells once they are built.
     fn overlay(
         &mut self,
         top: Option<&ooxml_wml::types::CTTblWidth>,
@@ -836,12 +844,13 @@ pub(crate) fn layout_table(
 
     // §17.4.50 tblInd: the table's own, else its style hierarchy's. A pct or
     // auto indent is ignored.
+    let table_indent_px = |ind: &ooxml_wml::types::CTTblWidth| match tbl_width(ind) {
+        TblWidth::Px(px) => px,
+        _ => 0.0,
+    };
     let indent_px = props.tbl_ind.as_deref()
         .or_else(|| style.tbl_prs().filter_map(|tp| tp.tbl_ind.as_deref()).last())
-        .map_or(0.0, |ind| match tbl_width(ind) {
-            TblWidth::Px(px) => px,
-            _ => 0.0,
-        });
+        .map_or(0.0, table_indent_px);
 
     let col_count = table.tbl_grid.grid_col.len();
     let col_widths_px: Vec<f64> = if col_count == 0 {
@@ -880,7 +889,7 @@ pub(crate) fn layout_table(
     };
 
     let (border_color, has_borders) = extract_table_border_info(props);
-    let table_border_edges = extract_table_border_edges(theme_fonts, props, &style);
+    let table_border_edges = extract_table_border_edges(theme_fonts, props, &style, None);
     // §17.4.28 jc: the table's own, else its style hierarchy's.
     let alignment = props.justification.as_deref()
         .or_else(|| style.tbl_prs().filter_map(|tp| tp.justification.as_deref()).last())
@@ -916,6 +925,19 @@ pub(crate) fn layout_table(
         let row_cells = collect_row_cells(row);
         let num_cols = row_cells.len();
 
+        // §17.4.60 tblPrEx: the row's table-level exceptions override the
+        // table's borders and default cell margins edge by edge. Declared:
+        // an exception's shading, width, layout, look and cell spacing are
+        // not read.
+        let exception = row.tbl_pr_ex.as_deref();
+        let row_border_edges = exception.and_then(|ex| ex.tbl_borders.as_deref())
+            .map(|b| extract_table_border_edges(theme_fonts, props, &style, Some(b)));
+        let row_border_edges = row_border_edges.as_ref().unwrap_or(&table_border_edges);
+        let mut row_mar = table_mar;
+        if let Some(m) = exception.and_then(|ex| ex.tbl_cell_mar.as_deref()) {
+            row_mar.overlay(m.top.as_deref(), m.bottom.as_deref(), m.start.as_deref().or(m.left.as_deref()), m.end.as_deref().or(m.right.as_deref()));
+        }
+
         // §17.4.80: an hRule="exact" row is a fixed-height box — paragraph spacing
         // must not push cell content out of it (see paragraph.rs). Known up-front
         // from the row props, before the cells lay out.
@@ -949,8 +971,8 @@ pub(crate) fn layout_table(
             let style_pprs: Vec<&ooxml_wml::types::CTPPrGeneral> = sources.iter().filter_map(|src| src.p_pr).collect();
 
             // §17.4.68: a cell's margins edge by edge, from its own tcMar,
-            // else its style's tcMar, else the table's defaults.
-            let mut mar = table_mar;
+            // else its style's tcMar, else the row's defaults.
+            let mut mar = row_mar;
             let style_tc_mars = sources.iter().rev().filter_map(|src| src.tc_pr?.tc_mar.as_deref());
             for m in style_tc_mars.chain(cell.properties().and_then(|p| p.tc_mar.as_deref())) {
                 mar.overlay(m.top.as_deref(), m.bottom.as_deref(), m.start.as_deref().or(m.left.as_deref()), m.end.as_deref().or(m.right.as_deref()));
@@ -1016,7 +1038,7 @@ pub(crate) fn layout_table(
 
             let cond_borders = resolve_conditional_cell_borders(theme_fonts, at, &sources);
             let (cell_bdr_top, cell_bdr_bottom, cell_bdr_left, cell_bdr_right) =
-                extract_cell_borders(theme_fonts, cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, num_cols);
+                extract_cell_borders(theme_fonts, cell, row_border_edges, &cond_borders, row_idx, cell_idx, num_rows, num_cols);
             row_direct.push(direct_cell_edges(cell));
 
             // §17.4.21 hideMark: only printing characters count toward the
@@ -1094,7 +1116,15 @@ pub(crate) fn layout_table(
             .find_map(|p| crate::check_toggle(&p.cant_split))
             .unwrap_or(false);
 
-        rows.push(TableRowCache { cells, height_px: row_height, cant_split });
+        rows.push(TableRowCache {
+            cells,
+            height_px: row_height,
+            cant_split,
+            alignment: row.row_properties.as_ref().and_then(|p| p.justification.as_deref())
+                .or_else(|| exception.and_then(|ex| ex.justification.as_deref()))
+                .map_or(alignment, |j| j.value),
+            indent_px: exception.and_then(|ex| ex.tbl_ind.as_deref()).map_or(indent_px, table_indent_px),
+        });
         direct_edges.push(row_direct);
     }
     resolve_border_conflicts(&mut rows, &direct_edges);
@@ -1102,7 +1132,25 @@ pub(crate) fn layout_table(
     // Declared: tblHeader is read from the rows themselves, not from a style's
     // trPr.
     let header_rows = Some(leading_header_rows(&table_rows)).filter(|n| *n < rows.len()).unwrap_or(0);
-    Ok(TableCache { col_widths_px, rows, border_color, has_borders, alignment, indent_px, header_rows })
+
+    // §17.4.1 bidiVisual: everything above treats the table as left to right;
+    // the cells are then shown right to left, each with its sides swapped.
+    // Declared: a float hosted in a cell keeps its unmirrored place.
+    let rtl = crate::check_toggle(&props.bidi_visual)
+        .or_else(|| style.tbl_prs().filter_map(|tp| crate::check_toggle(&tp.bidi_visual)).last())
+        .unwrap_or(false);
+    if rtl {
+        let table_width: f64 = col_widths_px.iter().sum();
+        for cell in rows.iter_mut().flat_map(|r| r.cells.iter_mut()) {
+            cell.x_px = table_width - cell.x_px - cell.width_px;
+            std::mem::swap(&mut cell.border_left, &mut cell.border_right);
+            std::mem::swap(&mut cell.mar_left, &mut cell.mar_right);
+            if let Some(d) = cell.diagonals.as_deref_mut() {
+                std::mem::swap(&mut d.down, &mut d.up);
+            }
+        }
+    }
+    Ok(TableCache { col_widths_px, rows, border_color, has_borders, rtl, header_rows })
 }
 
 /// One place a table style formats a cell from: a tblStylePr region, or
@@ -1583,16 +1631,18 @@ fn edge_override(theme: &ThemeFonts, b: &Option<Box<ooxml_wml::types::CTBorder>>
     b.as_ref().map(|bd| border_value(theme, bd))
 }
 
-/// The table's own borders: each edge from the table's tblBorders, else
-/// from its style hierarchy's (§17.4.38); the nearest that names the edge
-/// decides, a nil there removing it.
+/// The table's own borders for a row: each edge from the row's table-level
+/// exception (§17.4.39), else the table's tblBorders, else its style
+/// hierarchy's (§17.4.38); the nearest that names the edge decides, a nil
+/// there removing it.
 fn extract_table_border_edges(
     theme: &ThemeFonts,
     props: &ooxml_wml::types::TableProperties,
     style: &TableStyle,
+    exception: Option<&ooxml_wml::types::CTTblBorders>,
 ) -> TableBorderEdges {
     let mut e = TableBorderEdges { top: None, bottom: None, left: None, right: None, inside_h: None, inside_v: None };
-    for b in style.tbl_prs().filter_map(|tp| tp.tbl_borders.as_deref()).chain(props.tbl_borders.as_deref()) {
+    for b in style.tbl_prs().filter_map(|tp| tp.tbl_borders.as_deref()).chain(props.tbl_borders.as_deref()).chain(exception) {
         if let Some(v) = edge_override(theme, &b.top) { e.top = v; }
         if let Some(v) = edge_override(theme, &b.bottom) { e.bottom = v; }
         if let Some(v) = edge_override(theme, &b.left).or_else(|| edge_override(theme, &b.start)) { e.left = v; }
@@ -1847,17 +1897,20 @@ mod tests {
                     cells: vec![cell(false, Some("#FF0000"))],
                     height_px: 20.0,
                     cant_split: false,
+                    alignment: STJcTable::Start,
+                    indent_px: 0.0,
                 },
                 TableRowCache {
                     cells: vec![cell(true, None)],
                     height_px: 20.0,
                     cant_split: false,
+                    alignment: STJcTable::Start,
+                    indent_px: 0.0,
                 },
             ],
             border_color: "#000000".to_string(),
             has_borders: true,
-            alignment: STJcTable::Start,
-            indent_px: 0.0,
+            rtl: false,
             header_rows: 0,
         };
 
