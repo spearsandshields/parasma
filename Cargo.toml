@@ -17,6 +17,13 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 
+# Dependencies (font shaping, zip, the XML parser) are optimised in dev and
+# test builds. They build once and stay cached, so the crate itself still
+# compiles fast, but the native tests run their layouts several times faster.
+# The shipped release build is not affected.
+[profile.dev.package."*"]
+opt-level = 2
+
 # Pin to Parasma's public fork of pterror/ooxml. The fork's
 # CHANGES-FROM-UPSTREAM.md lists every patch it carries; the ones this crate
 # cannot build without are the deflate-only zip dependency (zstd-sys does not
