@@ -22,10 +22,10 @@ use ooxml_wml::types::CTTxbxContent;
 
 use crate::chart;
 use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
-use crate::engine::images::crop_draw;
+use crate::engine::images::{draw_picture, PictureStyle, Xywh};
 use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::pt_to_px;
-use crate::wml::drawing::{is_layout_control, PictureStyle, TextBoxAnchor, TextBoxFrame};
+use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
 use crate::wml::content_walk::{flatten_blocks, FlatBlock};
 use crate::wml::linebreak::{measure_item_text, Item, PageFields, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::{resolve_numbering_marker, ListCounters, NumberingLevelDef};
@@ -167,60 +167,45 @@ fn substitute_item_text(line: &mut PagedLine, font_cache: &FontCache, text_of: i
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/// Paint one picture, inline or floating, into its frame `(x, y, w, h)`: its
-/// image, then its outline over it.
+/// Paint one picture, inline or floating, into its frame: an EMF picture's
+/// raster, a chart, or a bitmap, the raster and the bitmap through
+/// [`draw_picture`] with their crop and outline.
 ///
-/// The image is an EMF picture's raster, a chart, or a bitmap. An
-/// `image/x-emf` rel draws one image op under the synthetic `emf-pic:{rel}`
-/// key and logs the drawn footprint; the TS adapter rasterizes it off the hot
-/// path and registers the bitmap under that key (a miss draws the grey
-/// placeholder, as any image does before it decodes). A chart that can't be
-/// drawn shows the fallback picture its part carries (stored under the same
-/// key), else the placeholder.
-///
-/// A cropped picture draws the part of its bitmap the crop keeps, where
-/// [`crop_draw`] places it, and nothing when it keeps none; an uncropped one
-/// draws the whole bitmap over the frame.
-///
-/// Declared, not measured in Word: the outline is a solid line centred on the
-/// frame's edge (the `ctr` pen of §20.1.10.39; `a:ln@algn` is not read), so
-/// half of it lies outside the picture. It takes no space in the layout.
+/// An `image/x-emf` rel draws under the synthetic `emf-pic:{rel}` key and
+/// logs the drawn footprint; the TS adapter rasterizes it off the hot path and
+/// registers the bitmap under that key (a miss draws the grey placeholder, as
+/// any image does before it decodes). A chart that can't be drawn shows the
+/// fallback picture its part carries (stored under the same key), else the
+/// placeholder.
 pub(crate) fn paint_picture(
     p: &dyn Painter,
     key: &str,
-    (x, y, w, h): (f64, f64, f64, f64),
+    frame: Xywh,
     style: Option<&PictureStyle>,
     charts: &HashMap<String, Vec<u8>>,
 ) -> Result<(), JsValue> {
-    let crop = style.and_then(|s| s.crop.as_ref());
-    let part = crop.and_then(|c| crop_draw((x, y, w, h), c));
-    if crop.is_none() || part.is_some() {
-        #[cfg(feature = "emf")]
-        let emf_key = crate::emf::is_active(key).then(|| {
-            // A cropped raster is asked for at the size the WHOLE picture
-            // draws at this scale, so the part shown is as sharp as an
-            // uncropped picture. The worker replay reports the same size.
-            let (rw, rh) = part.map_or((w, h), |((_, _, sw, sh), (_, _, dw, dh))| (dw / sw, dh / sh));
+    #[cfg(feature = "emf")]
+    if crate::emf::is_active(key) {
+        // A cropped raster is asked for at the size the WHOLE picture draws
+        // at this scale, so the part shown is as sharp as an uncropped
+        // picture; none is asked for when none of it shows. The worker replay
+        // reports the same size.
+        let whole = match style.and_then(|s| s.crop.as_ref()) {
+            None => Some((frame.2, frame.3)),
+            Some(crop) => crate::engine::images::crop_draw(frame, crop).map(|((_, _, sw, sh), (_, _, dw, dh))| (dw / sw, dh / sh)),
+        };
+        if let Some((rw, rh)) = whole {
             crate::emf::note_request(key, rw, rh);
-            crate::emf::pic_key(key)
-        });
-        #[cfg(not(feature = "emf"))]
-        let emf_key: Option<String> = None;
-        let charted = emf_key.is_none() && charts.get(key).is_some_and(|xml| chart::render_chart(xml, p, x, y, w, h));
-        if !charted {
-            let key = emf_key.as_deref().unwrap_or(key);
-            match part {
-                Some(((sx, sy, sw, sh), (dx, dy, dw, dh))) => p.draw_image_crop(key, sx, sy, sw, sh, dx, dy, dw, dh)?,
-                None => p.draw_image(key, x, y, w, h)?,
-            }
         }
+        return draw_picture(p, &crate::emf::pic_key(key), frame, style);
     }
-    if let Some(line) = style.and_then(|s| s.outline.as_ref()) {
-        p.set_stroke_style_str(&line.color);
-        p.set_line_width(line.width_px);
-        p.stroke_rect(x, y, w, h);
+    // A chart is not a `pic:pic`, so it carries no picture style: it draws
+    // itself.
+    let (x, y, w, h) = frame;
+    if charts.get(key).is_some_and(|xml| chart::render_chart(xml, p, x, y, w, h)) {
+        return Ok(());
     }
-    Ok(())
+    draw_picture(p, key, frame, style)
 }
 
 // Positional orchestrator args; struct-ification deferred to a dedicated pass.

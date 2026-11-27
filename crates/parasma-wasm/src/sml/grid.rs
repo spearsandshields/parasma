@@ -14,6 +14,7 @@
 //!  - §18.3.1.73  row@ht in POINTS → px via `engine::units::pt_to_px`.
 //!  - §18.3.1.81  sheetFormatPr defaults.
 
+use crate::engine::images::PictureStyle;
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use super::drawings::SheetDrawing;
@@ -89,6 +90,9 @@ pub(crate) struct PageImage {
     pub(crate) w: f64,
     pub(crate) h: f64,
     pub(crate) key: String,
+    /// A picture's crop and outline, `None` for one with neither (and for a
+    /// chart).
+    pub(crate) style: Option<Box<PictureStyle>>,
 }
 
 /// One print page of a sheet: the gridline column-x and row-y rails (page-local)
@@ -445,7 +449,7 @@ pub(crate) fn plan_pages(input: PlanInput, page: PageBox) -> SheetPlan {
                 (emu_to_px(cx), emu_to_px(cy))
             }
         };
-        Some(PageImage { x: x0, y: y0, w, h, key: d.image_key.clone() })
+        Some(PageImage { x: x0, y: y0, w, h, key: d.image_key.clone(), style: d.style.clone() })
     };
     let abs_images: Vec<PageImage> = input.drawings.iter().filter_map(to_box).collect();
     // Anchored charts: the SAME box math (embedded charts share the picture
@@ -691,6 +695,7 @@ pub(crate) fn fill_plan_page<'a>(
                     w: im.w,
                     h: im.h,
                     key: im.key.clone(),
+                    style: im.style.clone(),
                 });
             }
         }

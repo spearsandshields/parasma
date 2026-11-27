@@ -234,8 +234,9 @@ impl SmlRenderer {
         }
 
         // Anchored pictures + embedded charts — the same shared OPC handle
-        // (sheet rels → drawing part → xdr anchors → media / chart-part bytes).
-        let wd = drawings::parse_workbook_drawings(opc_pkg.as_mut());
+        // (sheet rels → drawing part → xdr anchors → media / chart-part bytes),
+        // picture outlines coloured through the workbook theme.
+        let wd = drawings::parse_workbook_drawings(opc_pkg.as_mut(), &color_ctx);
 
         // NOTE: the original bytes are NOT retained — every OPC self-parse
         // (theme, SST, drawings) happens above through the one
@@ -1406,21 +1407,9 @@ impl SmlRenderer {
         None
     }
 
-    /// The workbook theme as a chart scheme lookup (`chart::with_scheme`):
-    /// `color_ctx.theme` is in Excel's `color@theme` order (§18.8.3: lt1,
-    /// dk1, lt2, dk2, accents, hyperlinks); text and background names take
-    /// the default mapping.
+    /// The workbook theme as a chart scheme lookup (`chart::with_scheme`).
     pub(crate) fn chart_scheme(&self) -> impl Fn(&str) -> Option<String> + '_ {
-        move |name| {
-            let i = match name {
-                "lt1" | "bg1" => 0, "dk1" | "tx1" => 1, "lt2" | "bg2" => 2, "dk2" | "tx2" => 3,
-                "accent1" => 4, "accent2" => 5, "accent3" => 6, "accent4" => 7, "accent5" => 8,
-                "accent6" => 9, "hlink" => 10, "folHlink" => 11,
-                _ => return None,
-            };
-            let hex = &self.color_ctx.theme[i];
-            (!hex.is_empty()).then(|| format!("#{hex}"))
-        }
+        move |name| self.color_ctx.scheme_color(name)
     }
 
     /// Workbook colour-resolution context (theme + indexed palettes) — exposed

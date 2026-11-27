@@ -19,6 +19,7 @@ use wasm_bindgen::JsValue;
 use web_sys::ImageBitmap;
 
 use crate::engine::fonts::{self, FaceCache, FontCache, DEFAULT_FONT_PT};
+use crate::engine::images::draw_picture;
 use crate::engine::paint::{Painter, RunStyle, Underline, VertAlign};
 
 use super::grid::{col_letters, gutter_dims, PageCell, SheetPage};
@@ -380,8 +381,8 @@ fn paint_page_images_slice(
     p.rect(origin_x, origin_y, clip_w, clip_h);
     p.clip();
     for im in images {
-        let (x, y) = (origin_x + im.x, origin_y + im.y);
-        let _ = p.draw_image(&im.key, x, y, im.w, im.h);
+        let frame = (origin_x + im.x, origin_y + im.y, im.w, im.h);
+        let _ = draw_picture(p, &im.key, frame, im.style.as_deref());
     }
     p.restore();
 }
@@ -1238,8 +1239,8 @@ fn paint_grid_region(
         if im.y + im.h < win_y0 || im.y > win_y1 || im.x + im.w < win_x0 || im.x > win_x1 {
             continue;
         }
-        let (x, y) = (ox + im.x, oy + im.y);
-        let _ = p.draw_image(&im.key, x, y, im.w, im.h);
+        let frame = (ox + im.x, oy + im.y, im.w, im.h);
+        let _ = draw_picture(p, &im.key, frame, im.style.as_deref());
     }
 
     // ── Anchored CHARTS (embedded charts) — the same drawing layer, rendered

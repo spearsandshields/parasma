@@ -2150,10 +2150,12 @@ mod color_ctx_tests {
 //  - §20.5.2.24  oneCellAnchor (from + xdr:ext cx/cy)
 //  - §20.1.8.13  a:blip r:embed → media part
 mod drawing_tests {
+    use std::collections::HashMap;
     use std::io::{Cursor, Write};
 
-    use super::super::grid;
+    use super::super::{grid, render};
     use super::{calibri_font_cache, sst, ARIMO_MDW, ROOT_RELS, STYLES, WORKBOOK, WORKBOOK_RELS};
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
     use crate::engine::units::pt_to_px;
 
     /// 1×1 px PNG (the pml::tests::TINY_PNG bytes — duplicated; that const is
@@ -2411,6 +2413,100 @@ mod drawing_tests {
              i.e. the bound is off by one at its own documented edge",
             gs.geom.images[0].w
         );
+    }
+
+    // ─── picture crop (`a:srcRect`, §20.1.8.55) and outline (`a:ln`, §20.1.2.2.24)
+
+    /// A red line 1.5 pt (19 050 EMU, 2 px) wide.
+    const RED_LINE: &str = r#"<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>"#;
+
+    /// [`DRAWING_TWO_CELL`] with `src_rect` after its blip and `ln` at the end
+    /// of its `xdr:spPr`.
+    fn styled_drawing(src_rect: &str, ln: &str) -> String {
+        let blip = r#"r:embed="rId1"/>"#;
+        let s = DRAWING_TWO_CELL
+            .replace(blip, &format!("{blip}{src_rect}"))
+            .replace("</xdr:spPr>", &format!("{ln}</xdr:spPr>"));
+        assert_eq!(s.len(), DRAWING_TWO_CELL.len() + src_rect.len() + ln.len(), "both insertions take");
+        s
+    }
+
+    /// Each image op a paint records, and each rectangle stroked after the
+    /// first one with the stroke colour and width in force.
+    type PictureOps = (Vec<DrawCmd>, Vec<(String, f64, (f64, f64, f64, f64))>);
+
+    fn picture_ops(cmds: Vec<DrawCmd>) -> PictureOps {
+        let (mut images, mut frames) = (Vec::new(), Vec::new());
+        let (mut color, mut width) = (String::new(), 1.0);
+        for c in cmds {
+            match c {
+                DrawCmd::DrawImage { .. } | DrawCmd::DrawImageCrop { .. } => images.push(c),
+                DrawCmd::SetStrokeStyle(s) => color = s.to_ascii_lowercase(),
+                DrawCmd::SetLineWidth(w) => width = w,
+                DrawCmd::StrokeRect { x, y, w, h } if !images.is_empty() => frames.push((color.clone(), width, (x, y, w, h))),
+                _ => {}
+            }
+        }
+        (images, frames)
+    }
+
+    /// What a sheet holding `drawing` draws for its picture: on the grid (the
+    /// default view), and on its first print page.
+    fn sheet_picture_ops(drawing: &str) -> [PictureOps; 2] {
+        let fc = calibri_font_cache();
+        let r = super::SmlRenderer::from_xlsx(xlsx_with_drawing(drawing)).expect("from_xlsx");
+        let grid = RecordingPainter::new();
+        r.paint_grid_into(&grid, 0, 0.0, 0.0, 640.0, 480.0, 1.0, &fc, &HashMap::new(), None, None, None)
+            .expect("the grid paints");
+        let pages = r.paginate_all(&fc);
+        let print = RecordingPainter::new();
+        render::paint_sheet_page(&print, &pages[0], 24.0, 24.0, 816.0, 1056.0, r.normal_font(), &fc, &HashMap::new(), &HashMap::new(), None)
+            .expect("the print page paints");
+        [picture_ops(grid.take()), picture_ops(print.take())]
+    }
+
+    /// The rectangle each view draws an unstyled picture over: its frame.
+    fn picture_frames() -> [(f64, f64, f64, f64); 2] {
+        sheet_picture_ops(DRAWING_TWO_CELL).map(|(images, _)| match images.as_slice() {
+            [DrawCmd::DrawImage { dx, dy, dw, dh, .. }] if *dw > 0.0 && *dh > 0.0 => (*dx, *dy, *dw, *dh),
+            other => panic!("one whole-bitmap draw: {other:?}"),
+        })
+    }
+
+    /// A picture with neither a crop nor a line draws its whole bitmap over
+    /// its frame and strokes nothing, as does one whose line has no fill.
+    #[test]
+    fn an_unstyled_picture_draws_its_whole_bitmap() {
+        for ln in ["", r#"<a:ln w="19050"><a:noFill/></a:ln>"#] {
+            let views = picture_frames().into_iter().zip(sheet_picture_ops(&styled_drawing("", ln)));
+            for ((x, y, w, h), (images, frames)) in views {
+                assert_eq!(images, [DrawCmd::DrawImage { key: "sml::0::rId1".into(), dx: x, dy: y, dw: w, dh: h }]);
+                assert_eq!(frames, [], "ln {ln:?} strokes nothing");
+            }
+        }
+    }
+
+    /// `a:srcRect l="25000" r="25000"` draws the middle half of the bitmap's
+    /// width, its full height, over the whole frame.
+    #[test]
+    fn a_cropped_picture_draws_the_part_its_crop_keeps() {
+        let views = picture_frames().into_iter().zip(sheet_picture_ops(&styled_drawing(r#"<a:srcRect l="25000" r="25000"/>"#, "")));
+        for ((x, y, w, h), (images, frames)) in views {
+            let part = DrawCmd::DrawImageCrop {
+                key: "sml::0::rId1".into(), sx: 0.25, sy: 0.0, sw: 0.5, sh: 1.0, dx: x, dy: y, dw: w, dh: h,
+            };
+            assert_eq!((images, frames), (vec![part], vec![]));
+        }
+    }
+
+    /// A picture's `a:ln` draws one frame over the picture, on its edge.
+    #[test]
+    fn a_picture_draws_its_outline() {
+        let views = picture_frames().into_iter().zip(sheet_picture_ops(&styled_drawing("", RED_LINE)));
+        for ((x, y, w, h), (images, frames)) in views {
+            assert_eq!(images, [DrawCmd::DrawImage { key: "sml::0::rId1".into(), dx: x, dy: y, dw: w, dh: h }]);
+            assert_eq!(frames, [("#ff0000".to_owned(), 2.0, (x, y, w, h))], "one red 1.5 pt frame on the picture's edge");
+        }
     }
 }
 

@@ -854,7 +854,7 @@ pub(crate) struct LayoutStats {
 /// Module-scoped (hoisted from `run_layout_impl`) so `PageCheckpoint` can own
 /// a clone of the pending queue; `Clone` exists solely for that capture.
 #[derive(Clone)]
-struct DeferredFloat { rel_id: String, fx: f64, width_px: f64, height_px: f64, wrap: WrapInfo, behind_text: bool, target: usize, id: FloatId, anchor_para: Option<u32>, style: Option<Box<wml::drawing::PictureStyle>> }
+struct DeferredFloat { rel_id: String, fx: f64, width_px: f64, height_px: f64, wrap: WrapInfo, behind_text: bool, target: usize, id: FloatId, anchor_para: Option<u32>, style: Option<Box<engine::images::PictureStyle>> }
 
 /// Which per-paragraph anchored-float Vec an id addresses.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

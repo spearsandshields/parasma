@@ -1,9 +1,13 @@
 //! Images, for every format: the media part types, the placeholder drawn for
-//! an image not yet decoded, and where a cropped picture draws.
+//! an image not yet decoded, and how a picture draws: its crop and outline,
+//! and the paint that draws them.
 
 use wasm_bindgen::JsValue;
 
+use crate::engine::border::{Edge, LineStyle};
+use crate::engine::color::parse_dml_pct;
 use crate::engine::paint::Painter;
+use crate::engine::units::emu_to_px;
 
 /// Derive an image mime type from a media part's file extension. Lives in
 /// engine/ (always compiled, format-agnostic) so both the `sml` and `pml`
@@ -67,6 +71,16 @@ pub(crate) struct RelativeRect {
     pub(crate) b: f64,
 }
 
+impl RelativeRect {
+    /// The rectangle `attr` reads: its `l`, `t`, `r` and `b` attributes, each
+    /// a percentage (`ST_Percentage`, §20.1.10.40), an absent or unreadable
+    /// one zero.
+    pub(crate) fn from_attrs<'a>(attr: impl Fn(&str) -> Option<&'a str>) -> Self {
+        let edge = |name| attr(name).and_then(parse_dml_pct).unwrap_or(0.0);
+        RelativeRect { l: edge("l"), t: edge("t"), r: edge("r"), b: edge("b") }
+    }
+}
+
 /// What part of a picture's bitmap is drawn, and where in the picture's frame
 /// (`a:blipFill` with `a:stretch`, §20.1.8.14). All zero is the whole bitmap
 /// stretched over the whole frame.
@@ -82,6 +96,67 @@ pub(crate) struct ImageCrop {
 
 /// A rectangle as `(x, y, width, height)`.
 pub(crate) type Xywh = (f64, f64, f64, f64);
+
+/// How a picture is drawn beyond its whole bitmap stretched over its frame:
+/// its crop, read from its fill (`a:blipFill`, §20.1.8.14), and its outline,
+/// read from its shape properties. One value for every format, carried whole
+/// from the markup to the paint by every picture carrier, which holds `None`
+/// for a picture that sets neither.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PictureStyle {
+    /// The outline (`a:ln`, §20.1.2.2.24), drawn over the picture.
+    pub(crate) outline: Option<Edge>,
+    /// The crop, `None` when it is all zero.
+    pub(crate) crop: Option<ImageCrop>,
+}
+
+impl PictureStyle {
+    /// The style of a picture cropped by `crop` whose line (`a:ln`,
+    /// §20.1.2.2.24) draws in `line_color` (`None` for no line, a `noFill`
+    /// line, or a fill not drawn here) and is `line_width_emu` (`@w`) wide.
+    /// `None` when it draws neither, as most pictures do.
+    ///
+    /// Deviations, declared: a line without `@w` is drawn 9525 EMU (1px)
+    /// wide, where the spec reads an absent width as 0; not measured in
+    /// Office. A line of zero width draws nothing. The dash, compound line,
+    /// pen alignment, caps and joins are not read: the outline is a solid
+    /// single stroke.
+    pub(crate) fn of(crop: ImageCrop, line_color: Option<String>, line_width_emu: Option<i64>) -> Option<Box<Self>> {
+        let width_px = emu_to_px(line_width_emu.unwrap_or(9_525));
+        let outline = line_color
+            .filter(|_| width_px > 0.0)
+            .map(|color| Edge { color, width_px, dash: None, style: LineStyle::Single });
+        let crop = (crop != ImageCrop::default()).then_some(crop);
+        (outline.is_some() || crop.is_some()).then(|| Box::new(PictureStyle { outline, crop }))
+    }
+}
+
+/// Draw picture `key`'s bitmap into its frame, then its outline over it.
+///
+/// A cropped picture draws the part of its bitmap the crop keeps, where
+/// [`crop_draw`] places it, and nothing when it keeps none; an uncropped one
+/// draws the whole bitmap over the frame.
+///
+/// Declared, not measured in Office: the outline is a solid line centred on
+/// the frame's edge (the `ctr` pen of §20.1.10.39; `a:ln@algn` is not read),
+/// so half of it lies outside the picture. It takes no space in the layout.
+pub(crate) fn draw_picture(p: &dyn Painter, key: &str, frame: Xywh, style: Option<&PictureStyle>) -> Result<(), JsValue> {
+    let (x, y, w, h) = frame;
+    match style.and_then(|s| s.crop.as_ref()) {
+        None => p.draw_image(key, x, y, w, h)?,
+        Some(crop) => {
+            if let Some(((sx, sy, sw, sh), (dx, dy, dw, dh))) = crop_draw(frame, crop) {
+                p.draw_image_crop(key, sx, sy, sw, sh, dx, dy, dw, dh)?;
+            }
+        }
+    }
+    if let Some(line) = style.and_then(|s| s.outline.as_ref()) {
+        p.set_stroke_style_str(&line.color);
+        p.set_line_width(line.width_px);
+        p.stroke_rect(x, y, w, h);
+    }
+    Ok(())
+}
 
 /// Where a cropped picture in `frame` draws: the part of the bitmap as
 /// fractions of its width and height `(sx, sy, sw, sh)`, each within 0 to 1,

@@ -59,6 +59,10 @@ are held stable regardless.
 - Documents: a picture cropped in Word shows only the part kept by the crop,
   where it used to show the whole picture squeezed into its frame. A picture
   cropped outward ("Fit") shows empty space where the crop reaches past it.
+- Presentations and spreadsheets: pictures cropped in PowerPoint or Excel
+  show only the part kept by the crop, and a picture border is drawn around
+  the picture in its colour and width, as in documents. Dashed and double
+  borders are drawn as a plain line for now.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.

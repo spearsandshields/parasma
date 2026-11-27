@@ -134,7 +134,7 @@ pub(crate) enum CellFloatDraw {
     // copy), forwarded verbatim onto the emitted `AnchoredImageLayout`.
     Image {
         rel_id: String, x: f64, y: f64, width_px: f64, height_px: f64, behind_text: bool, anchor_para: Option<u32>,
-        style: Option<Box<crate::wml::drawing::PictureStyle>>,
+        style: Option<Box<crate::engine::images::PictureStyle>>,
     },
     TextBox {
         lines: Vec<PagedLine>, // box-local (untranslated), as PositionedTextBox expects

@@ -487,7 +487,7 @@ pub(crate) fn resolve_color_choice(
 /// six colour models, with its transform children in document order), for
 /// readers that scan raw part XML. `scheme` resolves a `schemeClr@val` to its
 /// base colour.
-#[cfg(feature = "pml")]
+#[cfg(any(feature = "pml", feature = "sml"))]
 pub(crate) fn resolve_dml_color_xml(
     fragment: &str,
     scheme: impl FnOnce(&str) -> Option<String>,

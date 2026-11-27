@@ -650,7 +650,7 @@ fn a_cropped_emf_picture_asks_for_its_whole_footprint() {
 
     let pic = Rc::new(parse(&synth_emf()).expect("parse"));
     super::set_active(&HashMap::from([("rIdC".to_string(), pic)]));
-    let style = crate::wml::drawing::PictureStyle {
+    let style = crate::engine::images::PictureStyle {
         outline: None,
         crop: Some(ImageCrop { src: RelativeRect { l: 0.25, t: 0.0, r: 0.25, b: 0.5 }, fill: RelativeRect::default() }),
     };

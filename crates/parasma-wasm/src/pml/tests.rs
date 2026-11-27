@@ -380,9 +380,15 @@ const PIC_SLIDE_RELS: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone=
 </Relationships>"#;
 
 /// Build the picture deck: the base master/layout/presentation plus a
-/// slide carrying one `p:pic` and a real PNG media part. Mixes str + byte parts,
-/// so it zips them directly (the str builder only takes UTF-8 content).
+/// slide carrying one `p:pic` and a real PNG media part.
 fn picture_pptx() -> Vec<u8> {
+    picture_deck(PIC_SLIDE)
+}
+
+/// A deck of the base master/layout/presentation, `slide` as its one slide,
+/// and the PNG part its `rId2` names. Mixes str + byte parts, so it zips them
+/// directly (the str builder only takes UTF-8 content).
+fn picture_deck(slide: &str) -> Vec<u8> {
     let mut zw = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let opts: zip::write::SimpleFileOptions =
         zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -395,7 +401,7 @@ fn picture_pptx() -> Vec<u8> {
         ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
         ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
         ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", PIC_SLIDE),
+        ("ppt/slides/slide1.xml", slide),
         ("ppt/slides/_rels/slide1.xml.rels", PIC_SLIDE_RELS),
     ];
     for (name, content) in str_parts {
@@ -945,32 +951,94 @@ fn picture_without_xfrm_or_embed_is_dropped() {
       <p:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>
   </p:spTree></p:cSld>
 </p:sld>"#;
-    let mut zw = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let opts: zip::write::SimpleFileOptions =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    let str_parts: &[(&str, &str)] = &[
-        ("[Content_Types].xml", CONTENT_TYPES_PIC),
-        ("_rels/.rels", ROOT_RELS),
-        ("ppt/presentation.xml", PRESENTATION),
-        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
-        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
-        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
-        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
-        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
-        ("ppt/slides/slide1.xml", NOXFRM_SLIDE),
-        ("ppt/slides/_rels/slide1.xml.rels", PIC_SLIDE_RELS),
-    ];
-    for (name, content) in str_parts {
-        zw.start_file(*name, opts).unwrap();
-        zw.write_all(content.as_bytes()).unwrap();
-    }
-    zw.start_file("ppt/media/image1.png", opts).unwrap();
-    zw.write_all(TINY_PNG).unwrap();
-    let bytes = zw.finish().unwrap().into_inner();
-
-    let renderer = PmlRenderer::from_pptx(bytes).expect("noxfrm picture pptx loads");
+    let renderer = PmlRenderer::from_pptx(picture_deck(NOXFRM_SLIDE)).expect("noxfrm picture pptx loads");
     let pages = renderer.build_pages_for_test(&FontCache::new());
     assert!(pages[0].pictures.is_empty(), "pic with no xfrm box is dropped");
+}
+
+// ─── Picture crop (`a:srcRect`, §20.1.8.55) and outline (`a:ln`, §20.1.2.2.24) ─
+
+/// A red line 1.5 pt (19 050 EMU, 2 px) wide.
+const RED_LINE: &str = r#"<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>"#;
+
+/// [`PIC_SLIDE`] with `src_rect` after its blip and `ln` at the end of its
+/// `p:spPr`.
+fn styled_picture_deck(src_rect: &str, ln: &str) -> Vec<u8> {
+    let slide = PIC_SLIDE
+        .replace(r#"<a:blip r:embed="rId2"/>"#, &format!(r#"<a:blip r:embed="rId2"/>{src_rect}"#))
+        .replace("</p:spPr>", &format!("{ln}</p:spPr>"));
+    assert_eq!(slide.len(), PIC_SLIDE.len() + src_rect.len() + ln.len(), "both insertions take");
+    picture_deck(&slide)
+}
+
+/// What the slide draws for its picture: each image op, and each rectangle
+/// stroked after the first one with the stroke colour and width in force.
+type PictureOps = (Vec<crate::engine::displaylist::DrawCmd>, Vec<(String, f64, (f64, f64, f64, f64))>);
+
+fn picture_ops(deck: Vec<u8>) -> PictureOps {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let renderer = PmlRenderer::from_pptx(deck).expect("picture pptx loads");
+    let fc = FontCache::new();
+    let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+    let rec = RecordingPainter::new();
+    renderer
+        .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, None, None, None, None)
+        .expect("the slide paints");
+    let (mut images, mut frames) = (Vec::new(), Vec::new());
+    let (mut color, mut width) = (String::new(), 1.0);
+    for c in rec.take() {
+        match c {
+            DrawCmd::DrawImage { .. } | DrawCmd::DrawImageCrop { .. } => images.push(c),
+            DrawCmd::SetStrokeStyle(s) => color = s.to_ascii_lowercase(),
+            DrawCmd::SetLineWidth(w) => width = w,
+            DrawCmd::StrokeRect { x, y, w, h } if !images.is_empty() => frames.push((color.clone(), width, (x, y, w, h))),
+            _ => {}
+        }
+    }
+    (images, frames)
+}
+
+/// The picture's frame on the slide: its `a:xfrm` box in px.
+fn picture_frame() -> (f64, f64, f64, f64) {
+    (emu_to_px(1_828_800), emu_to_px(1_371_600), emu_to_px(3_657_600), emu_to_px(2_743_200))
+}
+
+/// A picture with neither a crop nor a line draws its whole bitmap over its
+/// frame and strokes nothing, as does one whose line has no fill.
+#[test]
+fn an_unstyled_picture_draws_its_whole_bitmap() {
+    use crate::engine::displaylist::DrawCmd;
+    let (x, y, w, h) = picture_frame();
+    let whole = DrawCmd::DrawImage { key: "pml::0::rId2".into(), dx: x, dy: y, dw: w, dh: h };
+    for ln in ["", r#"<a:ln w="19050"><a:noFill/></a:ln>"#] {
+        assert_eq!(picture_ops(styled_picture_deck("", ln)), (vec![whole.clone()], vec![]), "ln {ln:?}");
+    }
+}
+
+/// `a:srcRect l="25000" r="25000"` draws the middle half of the bitmap's
+/// width, its full height, over the whole frame.
+#[test]
+fn a_cropped_picture_draws_the_part_its_crop_keeps() {
+    use crate::engine::displaylist::DrawCmd;
+    let (x, y, w, h) = picture_frame();
+    let (images, frames) = picture_ops(styled_picture_deck(r#"<a:srcRect l="25000" r="25000"/>"#, ""));
+    let part = DrawCmd::DrawImageCrop {
+        key: "pml::0::rId2".into(), sx: 0.25, sy: 0.0, sw: 0.5, sh: 1.0, dx: x, dy: y, dw: w, dh: h,
+    };
+    assert_eq!((images, frames), (vec![part], vec![]));
+}
+
+/// A picture's `a:ln` draws one frame over the picture, on its edge.
+#[test]
+fn a_picture_draws_its_outline() {
+    use crate::engine::displaylist::DrawCmd;
+    let (x, y, w, h) = picture_frame();
+    let (images, frames) = picture_ops(styled_picture_deck("", RED_LINE));
+    assert_eq!(images, [DrawCmd::DrawImage { key: "pml::0::rId2".into(), dx: x, dy: y, dw: w, dh: h }]);
+    assert_eq!(frames, [("#ff0000".to_owned(), 2.0, (x, y, w, h))], "one red 1.5 pt frame on the picture's edge");
 }
 
 // ─── Slide tables (DML a:tbl in a p:graphicFrame) ───────────────────────────

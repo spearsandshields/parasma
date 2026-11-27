@@ -12,10 +12,9 @@
 //! Purity is enforced by the oracle snapshot tests — their geometry hashes
 //! must not drift on a pure move.
 
-use crate::engine::border::{Edge, LineStyle};
-use crate::engine::color::{apply_color_transforms, css_color, dml_base_color, parse_dml_pct, vml_color_to_css, DmlTransform, DML_COLOR_MODELS};
+use crate::engine::color::{apply_color_transforms, css_color, dml_base_color, vml_color_to_css, DmlTransform, DML_COLOR_MODELS};
 use crate::engine::fonts::ThemeFonts;
-use crate::engine::images::{ImageCrop, RelativeRect};
+use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
 use crate::engine::units::{css_length_to_px, emu_to_px};
 use crate::engine::vml::{vml_attr, vml_find_descendant, xml_local_name};
 use crate::wml::float::{AnchorAlign, AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
@@ -497,9 +496,9 @@ fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame
             Some(ln) => {
                 let color = ln_ref.as_ref().filter(|r| r.0 > 0).and_then(|r| r.1.clone());
                 let width = ln_ref.as_ref().map_or(12_700, |r| theme_line_width_emu(r.0));
-                if let Some(line) = line_edge(ln, theme, color, width) {
-                    frame.border_width_px = line.width_px;
-                    frame.border_color = Some(line.color);
+                if let Some(color) = line_color(ln, theme, color) {
+                    frame.border_width_px = emu_to_px(line_width_emu(ln).unwrap_or(width));
+                    frame.border_color = Some(color);
                 }
             }
             None => {
@@ -545,74 +544,55 @@ fn child<'a>(parent: &'a ooxml_xml::RawXmlElement, name: &str) -> Option<&'a oox
     })
 }
 
-/// The line a DrawingML outline draws (`a:ln`, §20.1.2.2.24): none for
+/// The colour a DrawingML outline draws in (`a:ln`, §20.1.2.2.24): none for
 /// `noFill`; else the colour of its solid fill, or of a gradient's first
-/// stop, else `color`, and its width `@w` in EMU, else `width_emu`. A line
-/// with no colour draws nothing.
+/// stop, else `color`. A line with no colour draws nothing.
 ///
-/// Deviations, declared: the spec reads an absent `@w` as 0; each caller
-/// names the width drawn instead. The dash, compound line, pen alignment,
-/// caps and joins are not read: every line is a solid single stroke.
-fn line_edge(ln: &ooxml_xml::RawXmlElement, theme: &ThemeFonts, color: Option<String>, width_emu: i64) -> Option<Edge> {
+/// Deviation, declared: the dash, compound line, pen alignment, caps and
+/// joins are not read: every line is drawn a solid single stroke.
+fn line_color(ln: &ooxml_xml::RawXmlElement, theme: &ThemeFonts, color: Option<String>) -> Option<String> {
     if child(ln, "noFill").is_some() {
         return None;
     }
-    let color = child(ln, "solidFill").and_then(|f| dml_color(f, theme))
+    child(ln, "solidFill").and_then(|f| dml_color(f, theme))
         .or_else(|| child(ln, "gradFill").and_then(|f| fill_color(f, theme)))
-        .or(color)?;
-    let width = vml_attr(ln, "w").and_then(|v| v.parse::<i64>().ok()).unwrap_or(width_emu);
-    Some(Edge { color, width_px: emu_to_px(width), dash: None, style: LineStyle::Single })
+        .or(color)
 }
 
-/// How a picture is drawn beyond its whole bitmap stretched over its frame,
-/// read from its fill (`pic:blipFill`, §20.2.2.1) and shape properties
-/// (`pic:spPr`, §20.2.2.6). One value, carried whole from the markup to the
-/// paint by every picture carrier, which holds `None` for a picture that
-/// sets none of it.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct PictureStyle {
-    /// The outline (`a:ln`, §20.1.2.2.24), drawn over the picture.
-    pub(crate) outline: Option<Edge>,
-    /// The crop, `None` when it is all zero.
-    pub(crate) crop: Option<ImageCrop>,
+/// An outline's width, `a:ln@w`, in EMU. The spec reads an absent one as 0;
+/// each caller names the width drawn instead.
+fn line_width_emu(ln: &ooxml_xml::RawXmlElement) -> Option<i64> {
+    vml_attr(ln, "w").and_then(|v| v.parse().ok())
 }
 
 /// The style of the picture a drawing holds (`wp:inline` or `wp:anchor` →
 /// `a:graphic` → `a:graphicData` → `pic:pic`, §20.4.2.8, §20.4.2.3,
-/// §20.2.2.5), or `None` when it sets nothing drawn here.
+/// §20.2.2.5): the crop of its fill (`pic:blipFill`, §20.2.2.1) and the
+/// outline of its shape properties (`pic:spPr`, §20.2.2.6), read by
+/// [`PictureStyle::of`]. `None` when it sets nothing drawn here.
 ///
-/// Deviations, declared: a line without `@w` is drawn 9525 EMU (1px) wide,
-/// not measured in Word. A line of zero width draws nothing. A picture's
-/// style reference (`pic:style`) is not read, so a theme line alone draws no
-/// outline. A tiled fill (`a:tile`) is drawn stretched. Pictures inside a
-/// group or a shape take no style.
+/// Deviations, declared: a picture's style reference (`pic:style`) is not
+/// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
+/// drawn stretched. Pictures inside a group or a shape take no style.
 pub(crate) fn picture_style(drawing: &ooxml_wml::types::CTDrawing, theme: &ThemeFonts) -> Option<Box<PictureStyle>> {
     let frame = drawing.extra_children.iter().find_map(|c| match &c.node {
         ooxml_xml::RawXmlNode::Element(e) if matches!(xml_local_name(&e.name), "inline" | "anchor") => Some(e),
         _ => None,
     })?;
     let pic = ["graphic", "graphicData", "pic"].iter().try_fold(frame, |e, name| child(e, name))?;
-    let outline = child(pic, "spPr")
-        .and_then(|sp_pr| child(sp_pr, "ln"))
-        .and_then(|ln| line_edge(ln, theme, None, 9_525))
-        .filter(|line| line.width_px > 0.0);
-    let crop = child(pic, "blipFill").and_then(blip_crop);
-    (outline.is_some() || crop.is_some()).then(|| Box::new(PictureStyle { outline, crop }))
+    let ln = child(pic, "spPr").and_then(|sp_pr| child(sp_pr, "ln"));
+    let crop = child(pic, "blipFill").map_or_else(ImageCrop::default, blip_crop);
+    PictureStyle::of(crop, ln.and_then(|ln| line_color(ln, theme, None)), ln.and_then(line_width_emu))
 }
 
 /// The crop of a picture's fill (`pic:blipFill`, §20.2.2.1): its `a:srcRect`
-/// and its `a:stretch/a:fillRect`, an absent rectangle or edge being zero.
-/// `None` when every edge is zero.
-fn blip_crop(blip_fill: &ooxml_xml::RawXmlElement) -> Option<ImageCrop> {
-    let rect = |e: Option<&ooxml_xml::RawXmlElement>| {
-        let edge = |name| e.and_then(|e| vml_attr(e, name)).and_then(parse_dml_pct).unwrap_or(0.0);
-        RelativeRect { l: edge("l"), t: edge("t"), r: edge("r"), b: edge("b") }
-    };
-    let crop = ImageCrop {
+/// and its `a:stretch/a:fillRect`, an absent rectangle being zero.
+fn blip_crop(blip_fill: &ooxml_xml::RawXmlElement) -> ImageCrop {
+    let rect = |e: Option<&ooxml_xml::RawXmlElement>| RelativeRect::from_attrs(|name| e.and_then(|e| vml_attr(e, name)));
+    ImageCrop {
         src: rect(child(blip_fill, "srcRect")),
         fill: rect(child(blip_fill, "stretch").and_then(|s| child(s, "fillRect"))),
-    };
-    (crop != ImageCrop::default()).then_some(crop)
+    }
 }
 
 /// The default Office theme's line widths, by `lnRef@idx` (its `lnStyleLst`):

@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use crate::engine::counter;
 use crate::engine::fonts::{self, font_metrics, DEFAULT_FONT_FAMILY, FontCache};
 use crate::engine::geom::{preset_path, PathCmd};
+use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use ooxml_dml::ext::{TextParagraphExt, TextRunExt};
@@ -202,7 +203,7 @@ pub(crate) struct ChartItem {
     pub chart_key: String,
 }
 
-/// One positioned picture on a slide (`p:pic`, §19.3.1.x). Carries the pixel
+/// One positioned picture on a slide (`p:pic`, §19.3.1.37). Carries the pixel
 /// box (from the picture's `a:xfrm` off/ext, EMU → px) plus the slide-namespaced
 /// image key the renderer looks the decoded `ImageBitmap` up under. A picture
 /// with no resolvable `a:xfrm` is dropped at build time (no box to draw into).
@@ -216,6 +217,8 @@ pub(crate) struct SlidePicture {
     /// the renderer stored the picture's media bytes under (rel ids restart per
     /// slide, so the bare rel id would collide across slides).
     pub image_key: String,
+    /// Its crop and outline, `None` for a picture with neither.
+    pub style: Option<Box<PictureStyle>>,
 }
 
 /// One picture's raw geometry + embed rel id, captured from the fork-parsed
@@ -227,6 +230,7 @@ pub(crate) struct PictureItem {
     pub ext_cx: i64,
     pub ext_cy: i64,
     pub image_key: String,
+    pub style: Option<Box<PictureStyle>>,
 }
 
 /// A resolved shape fill. Mirrors [`SlideBg`]'s solid/gradient split
@@ -1054,13 +1058,15 @@ fn default_ph_box(ph_type: Option<&str>, sld_cx: i64, sld_cy: i64) -> PhBox {
 }
 
 /// Collect the positioned-picture items for a slide: each `p:pic` with a
-/// resolvable `a:xfrm` off/ext and an embed rel id (§19.3.1.x) becomes a
-/// [`PictureItem`] keyed by `pml::{slide_idx}::{relId}`. Pictures missing the
-/// xfrm box or the embed rel id are dropped (nothing to draw). The same
-/// `Picture` type as a slide layout's, so `PictureExt` works directly.
+/// resolvable `a:xfrm` off/ext and an embed rel id (§19.3.1.37) becomes a
+/// [`PictureItem`] keyed by `pml::{slide_idx}::{relId}`, its style's colours
+/// through `theme`. Pictures missing the xfrm box or the embed rel id are
+/// dropped (nothing to draw). The same `Picture` type as a slide layout's, so
+/// `PictureExt` works directly.
 pub(crate) fn slide_picture_items(
     pictures: &[ooxml_pml::types::Picture],
     slide_idx: usize,
+    theme: &SlideTheme,
 ) -> Vec<PictureItem> {
     use ooxml_pml::ext::PictureExt;
     let mut out = Vec::new();
@@ -1076,9 +1082,51 @@ pub(crate) fn slide_picture_items(
             ext_cx: cx,
             ext_cy: cy,
             image_key: image_key(slide_idx, rel),
+            style: picture_style(pic, theme),
         });
     }
     out
+}
+
+/// The style of a slide picture (`p:pic`, §19.3.1.37): the crop of its fill
+/// (`p:blipFill`, §19.3.1.4: `a:srcRect` and `a:stretch/a:fillRect`) and the
+/// outline of its shape properties (`p:spPr`, §19.3.1.44: `a:ln`), read by
+/// [`PictureStyle::of`]. The line draws in its solid fill's colour, or its
+/// gradient's first stop's, through the slide theme.
+///
+/// Deviations, declared: a picture's style reference (`p:style`) is not
+/// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
+/// drawn stretched.
+fn picture_style(pic: &ooxml_pml::types::Picture, theme: &SlideTheme) -> Option<Box<PictureStyle>> {
+    use ooxml_dml::types::{CTRelativeRect, EGFillModeProperties, EGLineFillProperties as LF};
+    let rect = |r: Option<&CTRelativeRect>| {
+        RelativeRect::from_attrs(|edge| {
+            let r = r?;
+            // The fork names the `r` attribute `relationship_id`.
+            match edge {
+                "l" => r.l.as_deref(),
+                "t" => r.t.as_deref(),
+                "r" => r.relationship_id.as_deref(),
+                "b" => r.b.as_deref(),
+                _ => None,
+            }
+        })
+    };
+    let fill = match pic.blip_fill.fill_mode_properties.as_deref() {
+        Some(EGFillModeProperties::Stretch(s)) => s.fill_rect.as_deref(),
+        _ => None,
+    };
+    let crop = ImageCrop { src: rect(pic.blip_fill.src_rect.as_deref()), fill: rect(fill) };
+    let ln = pic.shape_properties.line.as_deref();
+    let color = match ln.and_then(|l| l.line_fill_properties.as_deref()) {
+        Some(LF::SolidFill(f)) => color_choice_css(f.color_choice.as_deref(), theme),
+        Some(LF::GradFill(g)) => {
+            let first = g.gs_lst.as_deref().and_then(|l| l.gs.first());
+            color_choice_css(first.and_then(|s| s.color_choice.as_deref()), theme)
+        }
+        _ => None,
+    };
+    PictureStyle::of(crop, color, ln.and_then(|l| l.width).map(i64::from))
 }
 
 /// The slide-namespaced image key for a picture's embed rel id. Rel ids restart
@@ -1131,6 +1179,7 @@ pub(crate) fn build_slide_page(
             w: emu_to_px(p.ext_cx),
             h: emu_to_px(p.ext_cy),
             image_key: p.image_key.clone(),
+            style: p.style.clone(),
         })
         .collect();
 

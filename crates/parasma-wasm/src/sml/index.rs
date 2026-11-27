@@ -418,7 +418,7 @@ impl SheetIndex {
                         (emu_to_px(cx), emu_to_px(cy))
                     }
                 };
-                Some(PageImage { x: x0, y: y0, w, h, key: d.image_key.clone() })
+                Some(PageImage { x: x0, y: y0, w, h, key: d.image_key.clone(), style: d.style.clone() })
             };
             let abs_boxes: Vec<PageImage> =
                 drawings.iter().filter_map(|d| to_box(&geom, d)).collect();

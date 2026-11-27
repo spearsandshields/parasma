@@ -1043,6 +1043,21 @@ impl ColorCtx {
         }
         None
     }
+
+    /// The colour a DrawingML `schemeClr` names (§20.1.2.3.29), as
+    /// `#RRGGBB`: `theme` is in Excel's `color@theme` order (§18.8.3: lt1,
+    /// dk1, lt2, dk2, accents, hyperlinks); text and background names take
+    /// the default mapping.
+    pub(crate) fn scheme_color(&self, name: &str) -> Option<String> {
+        let i = match name {
+            "lt1" | "bg1" => 0, "dk1" | "tx1" => 1, "lt2" | "bg2" => 2, "dk2" | "tx2" => 3,
+            "accent1" => 4, "accent2" => 5, "accent3" => 6, "accent4" => 7, "accent5" => 8,
+            "accent6" => 9, "hlink" => 10, "folHlink" => 11,
+            _ => return None,
+        };
+        let hex = &self.theme[i];
+        (!hex.is_empty()).then(|| format!("#{hex}"))
+    }
 }
 
 /// Decoded ARGB/RGB bytes (`STUnsignedIntHex`) → `#RRGGBB` (the 4-byte ARGB

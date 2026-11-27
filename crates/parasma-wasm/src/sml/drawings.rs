@@ -9,17 +9,19 @@
 //! `engine/vml.rs` raw-scan precedent): reading through the load's shared
 //! `engine::opc::OpcPackage` (one archive open per load), it walks
 //! `xl/worksheets/_rels/sheetN.xml.rels` → `xl/drawings/drawingN.xml`, scans
-//! the anchors for `a:blip r:embed`, and resolves each embed through the
-//! drawing part's own rels to the `xl/media/*` bytes. Anchor → pixel
-//! conversion happens later in [`super::grid::paginate`] on the EXISTING grid
-//! col/row rails (EMU/9525 = px, `engine::units::EMU_PER_PX`).
+//! the anchors for `a:blip r:embed` and each picture's crop and outline, and
+//! resolves each embed through the drawing part's own rels to the
+//! `xl/media/*` bytes. Anchor → pixel conversion happens later in
+//! [`super::grid::paginate`] on the EXISTING grid col/row rails (EMU/9525 =
+//! px, `engine::units::EMU_PER_PX`).
 //!
 //! Pure (no web-sys) so the whole walk is natively unit-testable.
 
 use std::collections::HashMap;
 
-use super::model::{MAX_ADDRESSABLE_COL, MAX_ADDRESSABLE_ROW};
-use crate::engine::images::ImageBytes;
+use super::model::{ColorCtx, MAX_ADDRESSABLE_COL, MAX_ADDRESSABLE_ROW};
+use crate::engine::color::{css_color, resolve_dml_color_xml};
+use crate::engine::images::{ImageBytes, ImageCrop, PictureStyle, RelativeRect};
 use crate::engine::opc;
 
 /// One xdr anchor point (§20.5.2.15/.16/.32/.33): a 0-based column/row index
@@ -44,6 +46,9 @@ pub(crate) struct SheetDrawing {
     /// `images` / `image_bitmaps` maps key on this (the PML `image_key`
     /// precedent, `pml::shape::image_key`).
     pub(crate) image_key: String,
+    /// The picture's crop and outline, `None` for one with neither (and for
+    /// a chart).
+    pub(crate) style: Option<Box<PictureStyle>>,
 }
 
 /// Relationship type of a worksheet part (workbook rels → sheet part).
@@ -74,7 +79,8 @@ pub(crate) struct WorkbookDrawings {
 }
 
 /// Walk the workbook (through the load's SHARED [`opc::OpcPackage`] — one open per load)
-/// for every sheet's anchored pictures AND charts.
+/// for every sheet's anchored pictures AND charts, picture outline colours
+/// through `colors`' theme.
 ///
 /// Drawings/charts are keyed by SHEET NAME (not index) because the `<col>` shim may
 /// DROP an unrecoverable sheet — the renderer's `sheets` vec indices then
@@ -82,7 +88,7 @@ pub(crate) struct WorkbookDrawings {
 /// Any structural miss (unopened package, no rels, no drawing, unreadable
 /// part) skips that sheet/picture/chart — graceful by construction, mirroring
 /// `pml::resolve_picture_images`.
-pub(crate) fn parse_workbook_drawings(pkg: Option<&mut opc::OpcPackage<'_>>) -> WorkbookDrawings {
+pub(crate) fn parse_workbook_drawings(pkg: Option<&mut opc::OpcPackage<'_>>, colors: &ColorCtx) -> WorkbookDrawings {
     let mut out = WorkbookDrawings {
         drawings: HashMap::new(),
         images: Vec::new(),
@@ -133,7 +139,7 @@ pub(crate) fn parse_workbook_drawings(pkg: Option<&mut opc::OpcPackage<'_>>) -> 
             };
             let drawing_rels = pkg.rels(&drawing_path);
 
-            for (anchor, embed_rel) in scan_anchors(&xml) {
+            for (anchor, embed_rel) in scan_anchors(&xml, colors) {
                 let key = image_key(sheet_idx, &embed_rel);
                 // Resolve the media bytes ONCE per key (a drawing reusing one
                 // rel id across anchors still decodes a single bitmap).
@@ -230,9 +236,10 @@ fn scan_workbook_sheets(xml: &str) -> Vec<(String, String)> {
 
 /// Raw-scan an `xdr:wsDr` drawing for picture anchors: every `twoCellAnchor` /
 /// `oneCellAnchor` block (any prefix) containing an `a:blip r:embed`. Returns
-/// the anchor geometry (image_key left empty — the caller namespaces it) and
-/// the embed rel id. Anchors without a blip (shapes, charts) are skipped.
-fn scan_anchors(xml: &str) -> Vec<(SheetDrawing, String)> {
+/// the anchor geometry and picture style (image_key left empty — the caller
+/// namespaces it) and the embed rel id. Anchors without a blip (shapes,
+/// charts) are skipped.
+fn scan_anchors(xml: &str, colors: &ColorCtx) -> Vec<(SheetDrawing, String)> {
     let mut out = Vec::new();
     for local in ["twoCellAnchor", "oneCellAnchor"] {
         for block in element_blocks(xml, local) {
@@ -250,13 +257,48 @@ fn scan_anchors(xml: &str) -> Vec<(SheetDrawing, String)> {
             // rails. Both share the local name "ext" with cx/cy attrs — take
             // the first that yields a positive extent.
             let ext_emu = ext_cx_cy(block);
+            // An anchor holds one object (§20.5.2.33); a picture inside a
+            // group takes no style.
+            let style = element_blocks(block, "pic")
+                .into_iter()
+                .next()
+                .filter(|_| element_blocks(block, "grpSp").is_empty())
+                .and_then(|pic| picture_style(pic, colors));
             out.push((
-                SheetDrawing { from, to, ext_emu, image_key: String::new() },
+                SheetDrawing { from, to, ext_emu, image_key: String::new(), style },
                 embed,
             ));
         }
     }
     out
+}
+
+/// The style of an anchored picture (`xdr:pic`, §20.5.2.25, its content
+/// here): the crop of its fill (`xdr:blipFill`, §20.5.2.2: `a:srcRect` and
+/// `a:stretch/a:fillRect`) and the outline of its shape properties
+/// (`xdr:spPr`, §20.5.2.30: `a:ln`), read by [`PictureStyle::of`]. The line
+/// draws in its solid fill's colour, or its gradient's first stop's, a
+/// `schemeClr` through the workbook theme.
+///
+/// Deviations, declared: a picture's style reference (`xdr:style`) is not
+/// read, so a theme line alone draws no outline. A tiled fill (`a:tile`) is
+/// drawn stretched.
+fn picture_style(pic: &str, colors: &ColorCtx) -> Option<Box<PictureStyle>> {
+    let first = |xml, local| element_blocks(xml, local).into_iter().next();
+    let first_tag = |xml, local| element_open_tags(xml, local).into_iter().next();
+    let rect = |tag: Option<&str>| RelativeRect::from_attrs(|edge| attr_value(tag?, edge));
+    let blip_fill = first(pic, "blipFill").unwrap_or_default();
+    let crop = ImageCrop {
+        src: rect(first_tag(blip_fill, "srcRect")),
+        fill: rect(first(blip_fill, "stretch").and_then(|s| first_tag(s, "fillRect"))),
+    };
+    let sp_pr = first(pic, "spPr").unwrap_or_default();
+    let color = first(sp_pr, "ln")
+        .and_then(|ln| first(ln, "solidFill").or_else(|| first(ln, "gs")))
+        .and_then(|fill| resolve_dml_color_xml(fill, |name| colors.scheme_color(name)))
+        .map(|(hex, alpha)| css_color(&hex, alpha));
+    let width = first_tag(sp_pr, "ln").and_then(|tag| attr_value(tag, "w")).and_then(|w| w.trim().parse().ok());
+    PictureStyle::of(crop, color, width)
 }
 
 /// Raw-scan an `xdr:wsDr` drawing for CHART anchors: every `twoCellAnchor` /
@@ -283,7 +325,7 @@ fn scan_chart_anchors(xml: &str) -> Vec<(SheetDrawing, String)> {
             // `a:xfrm` `a:ext` doubles as the frame extent (same rule as pics).
             let ext_emu = ext_cx_cy(block);
             out.push((
-                SheetDrawing { from, to, ext_emu, image_key: String::new() },
+                SheetDrawing { from, to, ext_emu, image_key: String::new(), style: None },
                 rid,
             ));
         }

@@ -24,13 +24,14 @@ use crate::engine::fonts::{
     font_metrics, font_slot_class, resolve_font_slot, FaceCache, FontCache, FontSlot, ShapedRun,
     ThemeFonts, DEFAULT_FONT_PT,
 };
+use crate::engine::images::PictureStyle;
 use crate::engine::paint::{RunStyle, Underline, VertAlign};
 use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::bidi::bidi_reorder_line;
 use crate::wml::drawing::{
     extract_drawing_text_box, extract_pict_text_box, extract_vml_dimensions, inline_dist_px,
-    drawing_is_hidden, is_layout_control, parse_anchor_position, pict_is_hidden, picture_style, PictureStyle,
-    TextBoxFrame, WrapInfo,
+    drawing_is_hidden, is_layout_control, parse_anchor_position, pict_is_hidden, picture_style, TextBoxFrame,
+    WrapInfo,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
 use crate::wml::content_walk::{self, Revision, Visit};
