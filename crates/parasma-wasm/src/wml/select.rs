@@ -1691,11 +1691,11 @@ mod tests {
     // Pixel-identity canary, native form — worker == in-process by
     // construction. `paint_selection_pass` emits ONLY backend-invariant
     // primitives (save/set_global_alpha/set_fill_style_str/fill_rect/restore),
-    // none of the two backend-divergent methods (`draw_image` key-vs-bitmap,
-    // `measure_text_width` 0.0-vs-real). Both `render_wml_page` (CanvasPainter)
-    // and `render_page_display_list` (RecordingPainter) drive the SAME
-    // `paint_wml_page`, so the recorded selection subsequence IS what the canvas
-    // backend issues. This test pins that the recorded stream contains only
+    // none of the backend-divergent methods (`draw_image` and
+    // `draw_image_crop` key-vs-bitmap, `measure_text_width` 0.0-vs-real).
+    // Both `render_wml_page` (CanvasPainter) and `render_page_display_list`
+    // (RecordingPainter) drive the SAME `paint_wml_page`, so the recorded
+    // selection subsequence IS what the canvas backend issues. This test pins that the recorded stream contains only
     // those invariant primitives and matches `selection_rects_impl`.
     #[test]
     fn selection_uses_only_backend_invariant_primitives() {

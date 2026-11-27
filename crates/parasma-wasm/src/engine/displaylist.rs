@@ -16,7 +16,7 @@
 //! below (`encode_display_list`, opcode contract) — `DrawCmd` is the in-memory IR; the
 //! wire format is a separate layer over it.
 //!
-//! `draw_image` records only the KEY: the worker holds no bitmaps, so the
+//! The image draws record only the KEY: the worker holds no bitmaps, so the
 //! present-vs-placeholder decision is deferred to the main-thread replay (which
 //! owns the bitmap cache). `measure_text_width` returns 0.0 — the only sync
 //! browser query, used by the watermark, whose sizing is resolved main-thread.
@@ -90,6 +90,9 @@ pub(crate) enum DrawCmd {
     ClearLineDash,
     /// `fontKerning` on (`true`) or off.
     SetFontKerning(bool),
+    /// Part of an image (key only, like `DrawImage`): the source in
+    /// fractions of the bitmap's size, resolved to pixels at replay.
+    DrawImageCrop { key: String, sx: f64, sy: f64, sw: f64, sh: f64, dx: f64, dy: f64, dw: f64, dh: f64 },
 }
 
 /// An ordered list of draw commands for one render (page / window / grid slice).
@@ -148,6 +151,9 @@ pub(crate) const OP_SET_LINE_DASH: f64 = 38.0;
 pub(crate) const OP_CLEAR_LINE_DASH: f64 = 39.0;
 /// `fontKerning`: 1 = "normal", 0 = "none".
 pub(crate) const OP_SET_FONT_KERNING: f64 = 40.0;
+/// `key, sx, sy, sw, sh, dx, dy, dw, dh`: the 9-argument `drawImage` order,
+/// the source in fractions of the bitmap's size.
+pub(crate) const OP_DRAW_IMAGE_CROP: f64 = 41.0;
 // pattern-tile sub-tags (module-private; discriminate the count-prefixed prims).
 const TILE_LINE: f64 = 0.0;
 const TILE_DOT: f64 = 1.0;
@@ -271,6 +277,9 @@ pub(crate) fn encode_display_list(list: &DisplayList) -> (Vec<f64>, Vec<String>)
             DrawCmd::SetFontKerning(on) => {
                 ops.push(OP_SET_FONT_KERNING);
                 ops.push(if *on { 1.0 } else { 0.0 });
+            }
+            DrawCmd::DrawImageCrop { key, sx, sy, sw, sh, dx, dy, dw, dh } => {
+                ops.extend_from_slice(&[OP_DRAW_IMAGE_CROP, s!(key), *sx, *sy, *sw, *sh, *dx, *dy, *dw, *dh])
             }
         }
     }
@@ -467,6 +476,10 @@ impl Painter for RecordingPainter {
         // Record the key only — the worker holds no bitmaps. The main-thread
         // replay resolves it (drawing the bitmap, or the placeholder on a miss).
         self.push(DrawCmd::DrawImage { key: key.to_owned(), dx, dy, dw, dh });
+        Ok(())
+    }
+    fn draw_image_crop(&self, key: &str, sx: f64, sy: f64, sw: f64, sh: f64, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue> {
+        self.push(DrawCmd::DrawImageCrop { key: key.to_owned(), sx, sy, sw, sh, dx, dy, dw, dh });
         Ok(())
     }
     fn measure_text_width(&self, _text: &str) -> f64 {
@@ -694,6 +707,9 @@ mod tests {
                 }
                 OP_CLEAR_LINE_DASH => DrawCmd::ClearLineDash,
                 OP_SET_FONT_KERNING => DrawCmd::SetFontKerning(a!() != 0.0),
+                OP_DRAW_IMAGE_CROP => DrawCmd::DrawImageCrop {
+                    key: st(a!()), sx: a!(), sy: a!(), sw: a!(), sh: a!(), dx: a!(), dy: a!(), dw: a!(), dh: a!(),
+                },
                 other => panic!("unknown opcode {other}"),
             });
         }
@@ -822,7 +838,7 @@ mod tests {
     /// distinct per slot, negative and fractional, both bool values, and the
     /// count-prefixed payloads at zero and non-zero length. `#1a1a1a` recurs as a
     /// fill, a stroke, a gradient stop and a pattern foreground, so the string
-    /// table must dedup it. The two images are one bitmap hit and one miss in the
+    /// table must dedup it. Each image op has one bitmap hit and one miss in the
     /// TS test (it supplies a bitmap for `rId7` only).
     fn wire_coverage() -> DisplayList {
         use std::f64::consts::{FRAC_PI_4, PI, TAU};
@@ -902,6 +918,14 @@ mod tests {
             ],
             DrawCmd::ClearLineDash => [DrawCmd::ClearLineDash],
             DrawCmd::SetFontKerning(_) => [DrawCmd::SetFontKerning(true), DrawCmd::SetFontKerning(false)],
+            DrawCmd::DrawImageCrop { .. } => [
+                DrawCmd::DrawImageCrop {
+                    key: "rId7".into(), sx: 0.25, sy: 0.125, sw: 0.5, sh: 0.625, dx: -3.5, dy: 4.25, dw: 80.75, dh: 60.5,
+                },
+                DrawCmd::DrawImageCrop {
+                    key: "emf-pic:rId9".into(), sx: 0.0, sy: 0.375, sw: 0.75, sh: 0.5, dx: 12.0, dy: -8.5, dw: 64.5, dh: 24.25,
+                },
+            ],
         }
     }
 
@@ -1021,6 +1045,11 @@ mod tests {
             }
             DrawCmd::ClearLineDash => ("OP_CLEAR_LINE_DASH", OP_CLEAR_LINE_DASH, vec![]),
             DrawCmd::SetFontKerning(on) => ("OP_SET_FONT_KERNING", OP_SET_FONT_KERNING, vec![B(*on)]),
+            DrawCmd::DrawImageCrop { key, sx, sy, sw, sh, dx, dy, dw, dh } => (
+                "OP_DRAW_IMAGE_CROP",
+                OP_DRAW_IMAGE_CROP,
+                vec![S(key.clone()), N(*sx), N(*sy), N(*sw), N(*sh), N(*dx), N(*dy), N(*dw), N(*dh)],
+            ),
         }
     }
 

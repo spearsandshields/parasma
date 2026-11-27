@@ -1815,17 +1815,22 @@ impl Item {
         }
         // The payload destructures below are the same completeness guard as the
         // `Item` one above, applied to the structs that HANG off an item: both
-        // are complete today, so what they buy is that the NEXT field (an image
-        // crop rect, a text-box inset) cannot reach the painter while staying
-        // invisible to this stream. Every field of both affects what is drawn.
+        // are complete today, so what they buy is that the NEXT field (a
+        // picture's transparency, a text-box inset) cannot reach the painter
+        // while staying invisible to this stream. Every field of both affects
+        // what is drawn.
         if let Some(ImageItem {
             rel_id, height_px, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style,
         }) = image {
             let _ = write!(out, " img{rel_id:?} h{height_px:.2} dist{dist_l_px:.2},{dist_t_px:.2},{dist_r_px:.2},{dist_b_px:.2}");
             // Written only when set, so pictures without one dump as before.
-            let outline = style.as_deref().and_then(|PictureStyle { outline }| outline.as_ref());
+            let (outline, crop) = style.as_deref().map_or((None, None), |PictureStyle { outline, crop }| (outline.as_ref(), crop.as_ref()));
             if let Some(crate::engine::border::Edge { color, width_px, dash, style }) = outline {
                 let _ = write!(out, " ln{color}/{width_px:.2}/{style:?}/{dash:?}");
+            }
+            if let Some(crate::engine::images::ImageCrop { src, fill }) = crop {
+                let rect = |r: &crate::engine::images::RelativeRect| format!("{:.4},{:.4},{:.4},{:.4}", r.l, r.t, r.r, r.b);
+                let _ = write!(out, " crop{}/{}", rect(src), rect(fill));
             }
         }
         if let Some(f) = field {

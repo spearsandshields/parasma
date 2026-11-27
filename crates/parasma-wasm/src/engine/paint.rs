@@ -386,6 +386,14 @@ pub(crate) trait Painter {
     /// and the main-thread replay resolves it (the worker holds no bitmaps).
     fn draw_image(&self, key: &str, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue>;
 
+    /// Draw part of image `key` into the dest rect: the part at `(sx, sy)`,
+    /// `sw` × `sh`, in FRACTIONS of the bitmap's own width and height, already
+    /// within it (0 to 1), so the engine never needs a bitmap's pixel size.
+    /// The key resolves as for `draw_image`, and a miss draws the placeholder
+    /// over the dest rect.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_image_crop(&self, key: &str, sx: f64, sy: f64, sw: f64, sh: f64, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue>;
+
     // ── worker-gating query (no recording equivalent) ───────────────────────────--
     /// Width of `text` under the currently-set font. A SYNC browser query with no
     /// recording equivalent — only the watermark uses it. The recording backend
@@ -672,6 +680,17 @@ impl Painter for CanvasPainter<'_> {
             Some(bm) => self
                 .ctx
                 .draw_image_with_image_bitmap_and_dw_and_dh(bm, dx, dy, dw, dh),
+            None => super::images::draw_image_placeholder(self, dx, dy, dw, dh),
+        }
+    }
+    fn draw_image_crop(&self, key: &str, sx: f64, sy: f64, sw: f64, sh: f64, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue> {
+        match self.images.get(key) {
+            Some(bm) => {
+                let (w, h) = (f64::from(bm.width()), f64::from(bm.height()));
+                self.ctx.draw_image_with_image_bitmap_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                    bm, sx * w, sy * h, sw * w, sh * h, dx, dy, dw, dh,
+                )
+            }
             None => super::images::draw_image_placeholder(self, dx, dy, dw, dh),
         }
     }
@@ -1020,6 +1039,10 @@ impl Painter for OffsetPainter<'_> {
         // re-entry (fill_rect/stroke_rect/fill_text) does NOT subtract again.
         self.inner.draw_image(key, self.ax(dx), self.ay(dy), dw, dh)
     }
+    fn draw_image_crop(&self, key: &str, sx: f64, sy: f64, sw: f64, sh: f64, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue> {
+        // The source is in bitmap fractions, not page coords: only the dest moves.
+        self.inner.draw_image_crop(key, sx, sy, sw, sh, self.ax(dx), self.ay(dy), dw, dh)
+    }
     fn measure_text_width(&self, text: &str) -> f64 {
         self.inner.measure_text_width(text)
     }
@@ -1213,6 +1236,9 @@ mod offset_tests {
             // Mirror CanvasPainter's bitmap-MISS branch: re-enter the placeholder
             // on SELF (the inner painter). If the offset lived on the concrete
             // painter this re-entry would double-subtract; here it does not.
+            super::super::images::draw_image_placeholder(self, dx, dy, dw, dh)
+        }
+        fn draw_image_crop(&self, _key: &str, _sx: f64, _sy: f64, _sw: f64, _sh: f64, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue> {
             super::super::images::draw_image_placeholder(self, dx, dy, dw, dh)
         }
         fn measure_text_width(&self, _t: &str) -> f64 {

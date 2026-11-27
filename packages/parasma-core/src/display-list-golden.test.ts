@@ -54,7 +54,8 @@ function loggingTarget(prefix: string, log: Call[], returns: Record<string, (...
 }
 
 const PATTERN = { pattern: "tile" };
-const BITMAP = { bitmap: "rId7" } as unknown as ImageBitmap;
+/** Unequal sides, so a cropped draw's source pixels show which side each fraction scaled. */
+const BITMAP = { bitmap: "rId7", width: 640, height: 480 } as unknown as ImageBitmap;
 /** The replay's bitmap cache: `rId7` hits, every other key misses. */
 const IMAGES = new Map([["rId7", BITMAP]]);
 
@@ -178,6 +179,19 @@ const EXPECT: Record<string, (args: Arg[]) => Call[]> = {
     const notify = k.startsWith("emf-pic:") ? [call("onImageDraw", k, w, h)] : [];
     const bitmap = IMAGES.get(k);
     return [...notify, ...(bitmap ? [call("drawImage", bitmap, x, y, w, h)] : placeholder(x, y, w, h))];
+  },
+  OP_DRAW_IMAGE_CROP: ([key, sx, sy, sw, sh, dx, dy, dw, dh]) => {
+    const k = str(key);
+    const [u, v, uw, vh] = [num(sx), num(sy), num(sw), num(sh)];
+    const [x, y, w, h] = [num(dx), num(dy), num(dw), num(dh)];
+    // The EMF raster cache is told the size the WHOLE picture draws at, so the kept part stays sharp.
+    const notify = k.startsWith("emf-pic:") ? [call("onImageDraw", k, w / uw, h / vh)] : [];
+    const bitmap = IMAGES.get(k);
+    // The source fractions scale by the bitmap's own size into drawImage's 9-argument form.
+    const drawn = bitmap
+      ? [call("drawImage", bitmap, u * bitmap.width, v * bitmap.height, uw * bitmap.width, vh * bitmap.height, x, y, w, h)]
+      : placeholder(x, y, w, h);
+    return [...notify, ...drawn];
   },
   OP_SET_LINEAR_GRADIENT: (args) => [
     call("createLinearGradient", ...args.slice(0, 4).map(num)),

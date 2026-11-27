@@ -12418,9 +12418,10 @@ fn picture_in_cell_body(ln: &str) -> String {
         picture_body(true, ln))
 }
 
-/// What page 0 draws for the picture: its image rect, and each rectangle
-/// stroked after it with the stroke colour and width in force.
-fn picture_paint(body: &str) -> ((f64, f64, f64, f64), Vec<(String, f64, (f64, f64, f64, f64))>) {
+/// What page 0 draws for the picture: its one image draw, whole or cropped,
+/// and each rectangle stroked after it with the stroke colour and width in
+/// force.
+fn picture_draw(body: &str) -> (crate::engine::displaylist::DrawCmd, Vec<(String, f64, (f64, f64, f64, f64))>) {
     use crate::engine::displaylist::{DrawCmd, RecordingPainter};
     let v = layout(picture_docx(body));
     let rec = RecordingPainter::new();
@@ -12429,7 +12430,10 @@ fn picture_paint(body: &str) -> ((f64, f64, f64, f64), Vec<(String, f64, (f64, f
     let (mut color, mut width) = (String::new(), 1.0);
     for c in rec.take() {
         match c {
-            DrawCmd::DrawImage { key, dx, dy, dw, dh } if key == "rId40" => image = Some((dx, dy, dw, dh)),
+            DrawCmd::DrawImage { ref key, .. } | DrawCmd::DrawImageCrop { ref key, .. } if key == "rId40" => {
+                assert!(image.is_none(), "the picture is drawn once");
+                image = Some(c);
+            }
             DrawCmd::SetStrokeStyle(s) => color = s,
             DrawCmd::SetLineWidth(w) => width = w,
             DrawCmd::StrokeRect { x, y, w, h } if image.is_some() => frames.push((color.clone(), width, (x, y, w, h))),
@@ -12437,6 +12441,15 @@ fn picture_paint(body: &str) -> ((f64, f64, f64, f64), Vec<(String, f64, (f64, f
         }
     }
     (image.expect("the picture is drawn"), frames)
+}
+
+/// [`picture_draw`] of a picture drawn whole: its image rect, and the frames.
+fn picture_paint(body: &str) -> ((f64, f64, f64, f64), Vec<(String, f64, (f64, f64, f64, f64))>) {
+    let (draw, frames) = picture_draw(body);
+    let crate::engine::displaylist::DrawCmd::DrawImage { dx, dy, dw, dh, .. } = draw else {
+        panic!("the picture is drawn whole: {draw:?}");
+    };
+    ((dx, dy, dw, dh), frames)
 }
 
 /// A picture's `a:ln` draws a frame over the picture, centred on its edge:
@@ -12482,5 +12495,72 @@ fn a_picture_outline_moves_nothing() {
     ] {
         assert_eq!(geometry_dump(&layout(picture_docx(&lined))), geometry_dump(&layout(picture_docx(&plain))), "{what}");
         assert_eq!(picture_paint(&lined).0, picture_paint(&plain).0, "{what}: the image rect");
+    }
+}
+
+// ── Picture crop (`pic:blipFill`: `a:srcRect` §20.1.8.55, `a:fillRect` §20.1.8.30) ──
+
+/// Half the bitmap's width cut away, a quarter from each side, as Word writes it.
+const SIDE_CROP: &str = r#"<a:srcRect l="25000" r="25000"/><a:stretch><a:fillRect/></a:stretch>"#;
+
+/// `body` with `blip_fill` after the picture's `a:blip`, in its `pic:blipFill`.
+fn with_blip_fill(body: String, blip_fill: &str) -> String {
+    body.replace(r#"<a:blip r:embed="rId40"/>"#, &format!(r#"<a:blip r:embed="rId40"/>{blip_fill}"#))
+}
+
+/// The same picture inline, floating, and floating in a table cell, each with
+/// `ln` in its shape properties.
+fn picture_bodies(ln: &str) -> [(&'static str, String); 3] {
+    [("inline", picture_body(false, ln)), ("anchored", picture_body(true, ln)), ("in a cell", picture_in_cell_body(ln))]
+}
+
+/// A crop of a quarter from the left and the right draws the middle half of
+/// the bitmap's width over the whole frame.
+#[test]
+fn a_cropped_picture_draws_the_part_its_source_rectangle_keeps() {
+    use crate::engine::displaylist::DrawCmd;
+    for (what, body) in picture_bodies("") {
+        let ((dx, dy, dw, dh), _) = picture_paint(&body);
+        let (draw, _) = picture_draw(&with_blip_fill(body, SIDE_CROP));
+        assert_eq!(
+            draw,
+            DrawCmd::DrawImageCrop { key: "rId40".into(), sx: 0.25, sy: 0.0, sw: 0.5, sh: 1.0, dx, dy, dw, dh },
+            "{what}",
+        );
+    }
+}
+
+/// A picture with no crop, or one whose rectangles are all zero as Word
+/// writes for every uncropped picture, draws the whole bitmap as before.
+#[test]
+fn an_uncropped_picture_draws_the_whole_bitmap() {
+    for blip_fill in [
+        "",
+        r#"<a:stretch><a:fillRect/></a:stretch>"#,
+        r#"<a:srcRect/><a:stretch><a:fillRect/></a:stretch>"#,
+        r#"<a:srcRect l="0" t="0" r="0" b="0"/><a:stretch><a:fillRect l="0"/></a:stretch>"#,
+    ] {
+        for (what, body) in picture_bodies("") {
+            let (draw, _) = picture_draw(&with_blip_fill(body, blip_fill));
+            assert!(matches!(draw, crate::engine::displaylist::DrawCmd::DrawImage { .. }), "{what}, {blip_fill:?}: {draw:?}");
+        }
+    }
+}
+
+/// A crop changes what fills the frame, not the frame: every line and float
+/// stays where it was, and the outline is drawn on the frame's edge, also
+/// when the bitmap draws smaller than the frame (the negative source edges
+/// Word's "Fit" writes).
+#[test]
+fn a_crop_moves_nothing_and_keeps_the_outline_on_the_frame() {
+    let fit = r#"<a:srcRect t="-25000" b="-25000"/><a:stretch><a:fillRect/></a:stretch>"#;
+    for crop in [SIDE_CROP, fit] {
+        for (what, plain) in picture_bodies(RED_LINE) {
+            let cropped = with_blip_fill(plain.clone(), crop);
+            assert_eq!(geometry_dump(&layout(picture_docx(&cropped))), geometry_dump(&layout(picture_docx(&plain))), "{what}");
+            let (frame, _) = picture_paint(&plain);
+            let (_, frames) = picture_draw(&cropped);
+            assert_eq!(frames, [("#FF0000".to_owned(), 2.0, frame)], "{what}, {crop}");
+        }
     }
 }

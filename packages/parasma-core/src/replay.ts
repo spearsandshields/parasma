@@ -61,6 +61,8 @@ export const OP_SET_LINE_DASH = 38;
 export const OP_CLEAR_LINE_DASH = 39;
 /** `fontKerning`: 1 = "normal", 0 = "none". */
 export const OP_SET_FONT_KERNING = 40;
+/** `key, sx, sy, sw, sh, dx, dy, dw, dh`: the source in fractions of the bitmap's size. */
+export const OP_DRAW_IMAGE_CROP = 41;
 // pattern-tile sub-tags (mirror engine/displaylist.rs TILE_LINE / TILE_DOT).
 export const TILE_LINE = 0;
 export const TILE_DOT = 1;
@@ -169,16 +171,17 @@ function drawImagePlaceholder(
 /**
  * Replay an encoded display list onto a 2D context. Pure plumbing: each opcode
  * maps to the identical `ctx.*` call the Rust `CanvasPainter` would have made.
- * `images` resolves `DrawImage` keys (relId → ImageBitmap); a miss draws the
- * placeholder. The caller owns the context's pre-transform (the list is in the
- * same coordinate space the engine painted in).
+ * `images` resolves `DrawImage` and `DrawImageCrop` keys (relId → ImageBitmap);
+ * a miss draws the placeholder. The caller owns the context's pre-transform
+ * (the list is in the same coordinate space the engine painted in).
  *
- * `onImageDraw` (EMF raster cache): invoked for every `DrawImage` whose key
+ * `onImageDraw` (EMF raster cache): invoked for every image draw whose key
  * starts with `"emf-pic:"` — the worker-mode paint-request funnel feeding the
  * resolution policy. Fired on HIT **and** MISS (a hit at a higher zoom must
  * still trigger the upgrade check; a miss is the first-paint placeholder
- * beat). `dw`/`dh` are the list's page-logical px; the caller multiplies by
- * its known zoom·dpr. Inert for documents without EMF keys (prefix filter).
+ * beat). `dw`/`dh` are the list's page-logical px, for a cropped draw the
+ * whole picture's; the caller multiplies by its known zoom·dpr. Inert for
+ * documents without EMF keys (prefix filter).
  */
 export function replayDisplayList(
   ctx: CanvasRenderingContext2D,
@@ -319,6 +322,25 @@ export function replayDisplayList(
         if (onImageDraw && key.startsWith("emf-pic:")) onImageDraw(key, dw, dh);
         const bm = images.get(key);
         if (bm) ctx.drawImage(bm, dx, dy, dw, dh);
+        else drawImagePlaceholder(ctx, dx, dy, dw, dh);
+        break;
+      }
+      case OP_DRAW_IMAGE_CROP: {
+        const key = str();
+        const sx = next();
+        const sy = next();
+        const sw = next();
+        const sh = next();
+        const dx = next();
+        const dy = next();
+        const dw = next();
+        const dh = next();
+        // An EMF raster is asked for at the size the WHOLE picture draws at,
+        // as the in-process paint asks, so the kept part stays sharp. The
+        // engine never records an empty source, so `sw`, `sh` are above 0.
+        if (onImageDraw && key.startsWith("emf-pic:")) onImageDraw(key, dw / sw, dh / sh);
+        const bm = images.get(key);
+        if (bm) ctx.drawImage(bm, sx * bm.width, sy * bm.height, sw * bm.width, sh * bm.height, dx, dy, dw, dh);
         else drawImagePlaceholder(ctx, dx, dy, dw, dh);
         break;
       }

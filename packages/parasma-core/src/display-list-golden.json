@@ -41,7 +41,8 @@
     "OP_SET_PATTERN_FILL": 37,
     "OP_SET_LINE_DASH": 38,
     "OP_CLEAR_LINE_DASH": 39,
-    "OP_SET_FONT_KERNING": 40
+    "OP_SET_FONT_KERNING": 40,
+    "OP_DRAW_IMAGE_CROP": 41
   },
   "tileTags": {
     "TILE_LINE": 0,
@@ -111,7 +112,9 @@
     38, 0,
     39,
     40, 1,
-    40, 0
+    40, 0,
+    41, 7, 0.25, 0.125, 0.5, 0.625, -3.5, 4.25, 80.75, 60.5,
+    41, 8, 0, 0.375, 0.75, 0.5, 12, -8.5, 64.5, 24.25
   ],
   "decoded": [
     { "op": "OP_SAVE", "args": [] },
@@ -160,6 +163,8 @@
     { "op": "OP_SET_LINE_DASH", "args": [0] },
     { "op": "OP_CLEAR_LINE_DASH", "args": [] },
     { "op": "OP_SET_FONT_KERNING", "args": [true] },
-    { "op": "OP_SET_FONT_KERNING", "args": [false] }
+    { "op": "OP_SET_FONT_KERNING", "args": [false] },
+    { "op": "OP_DRAW_IMAGE_CROP", "args": ["rId7", 0.25, 0.125, 0.5, 0.625, -3.5, 4.25, 80.75, 60.5] },
+    { "op": "OP_DRAW_IMAGE_CROP", "args": ["emf-pic:rId9", 0, 0.375, 0.75, 0.5, 12, -8.5, 64.5, 24.25] }
   ]
 }

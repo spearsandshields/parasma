@@ -109,6 +109,11 @@ fn dump_ops(cmds: &[DrawCmd]) -> String {
             DrawCmd::DrawImage { key, dx, dy, dw, dh } => {
                 let _ = write!(out, "DrawImage {key:?} {dx:.2} {dy:.2} {dw:.2} {dh:.2}");
             }
+            // The source is in fractions of the bitmap, so it gets four places:
+            // two would hide a shift of nearly 1% of the picture.
+            DrawCmd::DrawImageCrop { key, sx, sy, sw, sh, dx, dy, dw, dh } => {
+                let _ = write!(out, "DrawImageCrop {key:?} src{sx:.4} {sy:.4} {sw:.4} {sh:.4} {dx:.2} {dy:.2} {dw:.2} {dh:.2}");
+            }
             DrawCmd::SetLinearGradient { x0, y0, x1, y1, stops } => {
                 let _ = write!(out, "SetLinearGradient {x0:.2} {y0:.2} {x1:.2} {y1:.2}");
                 for (pos, hex) in stops {

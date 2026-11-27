@@ -36,6 +36,8 @@ enum Op {
     StrokeStyle(String),
     LineWidth(f64),
     DrawImage(String, f64, f64, f64, f64),
+    /// The key, the source in bitmap fractions, the dest rect.
+    DrawImageCrop(String, [f64; 4], [f64; 4]),
     SetLineDash(Vec<f64>),
     ClearLineDash,
 }
@@ -165,6 +167,10 @@ impl Painter for RecordingPainter {
     }
     fn draw_image(&self, key: &str, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue> {
         self.push(Op::DrawImage(key.to_string(), dx, dy, dw, dh));
+        Ok(())
+    }
+    fn draw_image_crop(&self, key: &str, sx: f64, sy: f64, sw: f64, sh: f64, dx: f64, dy: f64, dw: f64, dh: f64) -> Result<(), JsValue> {
+        self.push(Op::DrawImageCrop(key.to_string(), [sx, sy, sw, sh], [dx, dy, dw, dh]));
         Ok(())
     }
     fn measure_text_width(&self, _text: &str) -> f64 {
@@ -631,6 +637,29 @@ fn anchored_image_dispatches_active_emf_rel() {
     );
     let reqs = super::take_requests();
     assert_eq!(reqs, vec![("emf-pic:rIdA".to_string(), 80.0, 40.0)]);
+}
+
+/// A cropped EMF picture draws the kept part of its raster, and asks for the
+/// raster at the size the WHOLE picture would be drawn at that scale, so the
+/// part shown is as sharp as an uncropped picture.
+#[test]
+fn a_cropped_emf_picture_asks_for_its_whole_footprint() {
+    use crate::engine::images::{ImageCrop, RelativeRect};
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    let pic = Rc::new(parse(&synth_emf()).expect("parse"));
+    super::set_active(&HashMap::from([("rIdC".to_string(), pic)]));
+    let style = crate::wml::drawing::PictureStyle {
+        outline: None,
+        crop: Some(ImageCrop { src: RelativeRect { l: 0.25, t: 0.0, r: 0.25, b: 0.5 }, fill: RelativeRect::default() }),
+    };
+
+    let rec = RecordingPainter::default();
+    crate::wml::render::paint_picture(&rec, "rIdC", (10.0, 20.0, 80.0, 40.0), Some(&style), &HashMap::new()).unwrap();
+    let draws: Vec<Op> = rec.ops().into_iter().filter(|o| matches!(o, Op::DrawImage(..) | Op::DrawImageCrop(..))).collect();
+    assert_eq!(draws, [Op::DrawImageCrop("emf-pic:rIdC".into(), [0.25, 0.0, 0.5, 0.5], [10.0, 20.0, 80.0, 40.0])]);
+    assert_eq!(super::take_requests(), vec![("emf-pic:rIdC".to_string(), 160.0, 80.0)]);
 }
 
 // ── pic_key / is_active / request-log units ─────────────────────────────────
