@@ -52,6 +52,10 @@ are held stable regardless.
   table of contents entries are no longer blue. Text styled as a hyperlink in
   a document that does not define that style uses Word's built-in look.
 - Documents: pictures and shapes marked hidden are no longer drawn.
+- Documents: a picture border set in Word (Picture Border) is drawn around
+  the picture, in its colour and width, for pictures in the text, floating
+  pictures and pictures floating in a table cell. Dashed and double borders
+  are drawn as a plain line for now.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.

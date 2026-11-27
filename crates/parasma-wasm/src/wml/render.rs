@@ -24,7 +24,7 @@ use crate::chart;
 use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
 use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::pt_to_px;
-use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
+use crate::wml::drawing::{is_layout_control, PictureStyle, TextBoxAnchor, TextBoxFrame};
 use crate::wml::content_walk::{flatten_blocks, FlatBlock};
 use crate::wml::linebreak::{measure_item_text, Item, PageFields, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::{resolve_numbering_marker, ListCounters, NumberingLevelDef};
@@ -165,6 +165,46 @@ fn substitute_item_text(line: &mut PagedLine, font_cache: &FontCache, text_of: i
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Paint one picture, inline or floating, into `(x, y, w, h)`: its image,
+/// then its outline over it.
+///
+/// The image is an EMF picture's raster, a chart, or a bitmap. An
+/// `image/x-emf` rel draws one image op under the synthetic `emf-pic:{rel}`
+/// key and logs the drawn footprint; the TS adapter rasterizes it off the hot
+/// path and registers the bitmap under that key (a miss draws the grey
+/// placeholder, as any image does before it decodes). A chart that can't be
+/// drawn shows the fallback picture its part carries (stored under the same
+/// key), else the placeholder.
+///
+/// Declared, not measured in Word: the outline is a solid line centred on the
+/// picture's edge (the `ctr` pen of §20.1.10.39; `a:ln@algn` is not read), so
+/// half of it lies outside the picture. It takes no space in the layout.
+pub(crate) fn paint_picture(
+    p: &dyn Painter,
+    key: &str,
+    (x, y, w, h): (f64, f64, f64, f64),
+    style: Option<&PictureStyle>,
+    charts: &HashMap<String, Vec<u8>>,
+) -> Result<(), JsValue> {
+    #[cfg(feature = "emf")]
+    let emf_key = crate::emf::is_active(key).then(|| {
+        crate::emf::note_request(key, w, h);
+        crate::emf::pic_key(key)
+    });
+    #[cfg(not(feature = "emf"))]
+    let emf_key: Option<String> = None;
+    let charted = emf_key.is_none() && charts.get(key).is_some_and(|xml| chart::render_chart(xml, p, x, y, w, h));
+    if !charted {
+        p.draw_image(emf_key.as_deref().unwrap_or(key), x, y, w, h)?;
+    }
+    if let Some(line) = style.and_then(|s| s.outline.as_ref()) {
+        p.set_stroke_style_str(&line.color);
+        p.set_line_width(line.width_px);
+        p.stroke_rect(x, y, w, h);
+    }
+    Ok(())
+}
 
 // Positional orchestrator args; struct-ification deferred to a dedicated pass.
 #[allow(clippy::too_many_arguments)]
@@ -514,41 +554,8 @@ pub(crate) fn render_line(
             // (box width minus the L/R padding), and lift it distB above the
             // baseline so distB of clear space sits below it (distT clears the
             // line above via the grown ascent).
-            let (img_x, top, img_w, _img_h) = img.painted_box(x, item.width, line.baseline_y);
-            // EMF dispatch: an `image/x-emf` rel no longer inlines the vector
-            // program (a ~5900-record file re-emitted 1000+ ops per paint /
-            // per recorded display list). It draws ONE image op under the
-            // synthetic `emf-pic:{rel}` key and logs the drawn footprint; the
-            // TS adapter rasterizes off the hot path and registers the bitmap
-            // under the same key (miss ⇒ the standard grey placeholder, the
-            // async-image first-paint behavior). `is_active` is false for
-            // every non-EMF rel, so the chart/bitmap fallback is unchanged.
-            // (Feature-off: this whole cfg branch is absent and the `not(emf)`
-            // block below is byte-identical to today.)
-            #[cfg(feature = "emf")]
-            {
-                if crate::emf::is_active(&img.rel_id) {
-                    crate::emf::note_request(&img.rel_id, img_w, img.height_px);
-                    p.draw_image(&crate::emf::pic_key(&img.rel_id), img_x, top, img_w, img.height_px)?;
-                } else if let Some(chart_bytes) = charts.get(&img.rel_id) {
-                    // A chart that can't be drawn shows the fallback picture
-                    // its part carries (stored under the same key), else the
-                    // placeholder.
-                    if !chart::render_chart(chart_bytes, p, img_x, top, img_w, img.height_px) {
-                        p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
-                    }
-                } else {
-                    p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
-                }
-            }
-            #[cfg(not(feature = "emf"))]
-            if let Some(chart_bytes) = charts.get(&img.rel_id) {
-                if !chart::render_chart(chart_bytes, p, img_x, top, img_w, img.height_px) {
-                    p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
-                }
-            } else {
-                p.draw_image(&img.rel_id, img_x, top, img_w, img.height_px)?;
-            }
+            let (img_x, top, img_w, img_h) = img.painted_box(x, item.width, line.baseline_y);
+            paint_picture(p, &img.rel_id, (img_x, top, img_w, img_h), img.style.as_deref(), charts)?;
         } else {
             let bg = item.style.highlight.as_ref().or(item.style.run_shading.as_ref());
             if let Some(bg_color) = bg {

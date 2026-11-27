@@ -2252,6 +2252,7 @@ mod tests {
             dist_t_px: 0.0,
             dist_r_px: 0.0,
             dist_b_px: 0.0,
+            style: None,
         });
         it
     }
@@ -2267,6 +2268,7 @@ mod tests {
             height_px: h,
             behind_text: behind,
             anchor_para: None,
+            style: None,
         });
         pg
     }
@@ -2490,6 +2492,7 @@ mod tests {
                 dist_l: 0.0,
                 dist_r: 0.0,
             },
+            style: None,
         }
     }
 
@@ -2583,6 +2586,7 @@ mod tests {
             height_px: 80.0,
             behind_text: false,
             anchor_para,
+            style: None,
         });
         page
     }

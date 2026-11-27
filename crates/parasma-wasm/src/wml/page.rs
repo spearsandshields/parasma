@@ -95,6 +95,7 @@ pub(crate) struct AnchoredImageLayout {
     /// `paint_selection_pass` to tint a float whose anchor paragraph falls
     /// inside the active text selection.
     pub(crate) anchor_para: Option<u32>,
+    pub(crate) style: Option<Box<crate::wml::drawing::PictureStyle>>,
 }
 
 impl PageLayout {

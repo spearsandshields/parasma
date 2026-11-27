@@ -4,12 +4,9 @@
 //! forbidden, enforced by the oracle snapshot tests (`oracle_tests.rs`) whose
 //! geometry hashes must not drift on a pure move.
 
-use std::collections::HashMap;
 use wasm_bindgen::JsValue;
-use web_sys::ImageBitmap;
 
 use crate::engine::paint::Painter;
-use crate::AnchoredImageLayout;
 
 /// Derive an image mime type from a media part's file extension. Lives in
 /// engine/ (always compiled, format-agnostic) so both the `sml` and `pml`
@@ -59,23 +56,4 @@ pub(crate) fn draw_image_placeholder(
     p.set_text_baseline("alphabetic");
     p.fill_text("[image]", x + 8.0, y + 18.0)?;
     Ok(())
-}
-
-pub(crate) fn render_anchored_image(
-    p: &dyn Painter,
-    ai: &AnchoredImageLayout,
-    _bitmaps: &HashMap<String, ImageBitmap>,
-) {
-    // EMF dispatch (mirrors the inline-image arm in wml/render.rs): an anchored
-    // `image/x-emf` rel draws under the synthetic `emf-pic:{rel}` raster key —
-    // previously it fell straight through to `draw_image(rel)` and painted a
-    // placeholder forever (anchored EMFs had NO emf dispatch at all). Feature-off
-    // this cfg block is absent: byte-identical.
-    #[cfg(feature = "emf")]
-    if crate::emf::is_active(&ai.rel_id) {
-        crate::emf::note_request(&ai.rel_id, ai.width_px, ai.height_px);
-        let _ = p.draw_image(&crate::emf::pic_key(&ai.rel_id), ai.x, ai.y, ai.width_px, ai.height_px);
-        return;
-    }
-    let _ = p.draw_image(&ai.rel_id, ai.x, ai.y, ai.width_px, ai.height_px);
 }

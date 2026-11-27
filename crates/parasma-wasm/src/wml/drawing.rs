@@ -12,6 +12,7 @@
 //! Purity is enforced by the oracle snapshot tests — their geometry hashes
 //! must not drift on a pure move.
 
+use crate::engine::border::{Edge, LineStyle};
 use crate::engine::color::{apply_color_transforms, css_color, dml_base_color, vml_color_to_css, DmlTransform, DML_COLOR_MODELS};
 use crate::engine::fonts::ThemeFonts;
 use crate::engine::units::{css_length_to_px, emu_to_px};
@@ -460,12 +461,6 @@ pub(crate) fn extract_drawing_text_box(
 ///   extent when it saves.
 fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame {
     let mut frame = TextBoxFrame::default();
-    fn child<'a>(parent: &'a ooxml_xml::RawXmlElement, name: &str) -> Option<&'a ooxml_xml::RawXmlElement> {
-        parent.children.iter().find_map(|c| match c {
-            ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == name => Some(e),
-            _ => None,
-        })
-    }
     let sp_pr = child(wsp, "spPr");
     let style = child(wsp, "style");
     let style_ref = |name: &str| -> Option<(u32, Option<String>)> {
@@ -494,23 +489,16 @@ fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame
             }
         }
 
-        // Outline: the shape's own `ln`, its colour falling back to the
-        // style's line reference, else the reference alone.
+        // Outline: the shape's own `ln`, its colour and width falling back to
+        // the style's line reference, else the reference alone.
         let ln_ref = style_ref("lnRef");
         match sp_pr.and_then(|sp| child(sp, "ln")) {
             Some(ln) => {
-                let width = vml_attr(ln, "w").and_then(|v| v.parse::<i64>().ok());
-                if child(ln, "noFill").is_some() {
-                    // No outline.
-                } else {
-                    let color = child(ln, "solidFill").and_then(|f| dml_color(f, theme))
-                        .or_else(|| child(ln, "gradFill").and_then(|f| fill_color(f, theme)))
-                        .or_else(|| ln_ref.as_ref().filter(|r| r.0 > 0).and_then(|r| r.1.clone()));
-                    if let Some(color) = color {
-                        let fallback = ln_ref.as_ref().map_or(12_700, |r| theme_line_width_emu(r.0));
-                        frame.border_width_px = emu_to_px(width.unwrap_or(fallback));
-                        frame.border_color = Some(color);
-                    }
+                let color = ln_ref.as_ref().filter(|r| r.0 > 0).and_then(|r| r.1.clone());
+                let width = ln_ref.as_ref().map_or(12_700, |r| theme_line_width_emu(r.0));
+                if let Some(line) = line_edge(ln, theme, color, width) {
+                    frame.border_width_px = line.width_px;
+                    frame.border_color = Some(line.color);
                 }
             }
             None => {
@@ -546,6 +534,63 @@ fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame
         };
     }
     frame
+}
+
+/// The first child element of `parent` named `name`.
+fn child<'a>(parent: &'a ooxml_xml::RawXmlElement, name: &str) -> Option<&'a ooxml_xml::RawXmlElement> {
+    parent.children.iter().find_map(|c| match c {
+        ooxml_xml::RawXmlNode::Element(e) if xml_local_name(&e.name) == name => Some(e),
+        _ => None,
+    })
+}
+
+/// The line a DrawingML outline draws (`a:ln`, §20.1.2.2.24): none for
+/// `noFill`; else the colour of its solid fill, or of a gradient's first
+/// stop, else `color`, and its width `@w` in EMU, else `width_emu`. A line
+/// with no colour draws nothing.
+///
+/// Deviations, declared: the spec reads an absent `@w` as 0; each caller
+/// names the width drawn instead. The dash, compound line, pen alignment,
+/// caps and joins are not read: every line is a solid single stroke.
+fn line_edge(ln: &ooxml_xml::RawXmlElement, theme: &ThemeFonts, color: Option<String>, width_emu: i64) -> Option<Edge> {
+    if child(ln, "noFill").is_some() {
+        return None;
+    }
+    let color = child(ln, "solidFill").and_then(|f| dml_color(f, theme))
+        .or_else(|| child(ln, "gradFill").and_then(|f| fill_color(f, theme)))
+        .or(color)?;
+    let width = vml_attr(ln, "w").and_then(|v| v.parse::<i64>().ok()).unwrap_or(width_emu);
+    Some(Edge { color, width_px: emu_to_px(width), dash: None, style: LineStyle::Single })
+}
+
+/// How a picture is drawn beyond its bitmap, read from its shape properties
+/// (`pic:spPr`, §20.2.2.6). One value, carried whole from the markup to the
+/// paint by every picture carrier, which holds `None` for a picture that
+/// sets none of it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PictureStyle {
+    /// The outline (`a:ln`, §20.1.2.2.24), drawn over the picture.
+    pub(crate) outline: Option<Edge>,
+}
+
+/// The style of the picture a drawing holds (`wp:inline` or `wp:anchor` →
+/// `a:graphic` → `a:graphicData` → `pic:pic`, §20.4.2.8, §20.4.2.3,
+/// §20.2.2.5), or `None` when it sets nothing drawn here.
+///
+/// Deviations, declared: a line without `@w` is drawn 9525 EMU (1px) wide,
+/// not measured in Word. A line of zero width draws nothing. A picture's
+/// style reference (`pic:style`) is not read, so a theme line alone draws no
+/// outline. Pictures inside a group or a shape take no style.
+pub(crate) fn picture_style(drawing: &ooxml_wml::types::CTDrawing, theme: &ThemeFonts) -> Option<Box<PictureStyle>> {
+    let frame = drawing.extra_children.iter().find_map(|c| match &c.node {
+        ooxml_xml::RawXmlNode::Element(e) if matches!(xml_local_name(&e.name), "inline" | "anchor") => Some(e),
+        _ => None,
+    })?;
+    let sp_pr = ["graphic", "graphicData", "pic", "spPr"].iter().try_fold(frame, |e, name| child(e, name))?;
+    let outline = child(sp_pr, "ln")
+        .and_then(|ln| line_edge(ln, theme, None, 9_525))
+        .filter(|line| line.width_px > 0.0);
+    outline.is_some().then(|| Box::new(PictureStyle { outline }))
 }
 
 /// The default Office theme's line widths, by `lnRef@idx` (its `lnStyleLst`):

@@ -115,7 +115,7 @@ use engine::fonts::{
     text_has_complex, text_has_east_asia, DEFAULT_COMPLEX_FAMILY, DEFAULT_EAST_ASIA_FAMILY,
     DEFAULT_FONT_FAMILY, DEFAULT_FONT_PT, FontCache, ThemeFonts,
 };
-use engine::images::{render_anchored_image, ImageBytes};
+use engine::images::ImageBytes;
 use engine::units::{pt_to_px, twips_to_px};
 use wml::border::BorderEdge;
 use wml::drawing::{WrapInfo, WrapMode};
@@ -140,11 +140,11 @@ pub(crate) use wml::linebreak::Item;
 use wml::numbering::{resolve_numbering_marker, NumberingLevelDef};
 // Re-export the page-model leaf types whose `crate::X` imports live in sibling
 // modules (canaries): `wml::table` → `CellBlock`; `wml::linebreak` →
-// `PagedLine`; `engine::images` → `AnchoredImageLayout`. lib.rs's own
-// page-assembly/render/dbg code uses the rest directly.
-pub(crate) use wml::page::{AnchoredImageLayout, CellBlock, PagedLine, PARA_SENTINEL};
+// `PagedLine`. lib.rs's own page-assembly/render/dbg code uses the rest
+// directly.
+pub(crate) use wml::page::{CellBlock, PagedLine, PARA_SENTINEL};
 use wml::page::{
-    BlockCache, PageElement, PageLayout, PagedTableCell, PagedTableRow,
+    AnchoredImageLayout, BlockCache, PageElement, PageLayout, PagedTableCell, PagedTableRow,
     PositionedTextBox,
 };
 // Re-export paragraph-cluster symbols at the crate root so the unedited
@@ -854,7 +854,7 @@ pub(crate) struct LayoutStats {
 /// Module-scoped (hoisted from `run_layout_impl`) so `PageCheckpoint` can own
 /// a clone of the pending queue; `Clone` exists solely for that capture.
 #[derive(Clone)]
-struct DeferredFloat { rel_id: String, fx: f64, width_px: f64, height_px: f64, wrap: WrapInfo, behind_text: bool, target: usize, id: FloatId, anchor_para: Option<u32> }
+struct DeferredFloat { rel_id: String, fx: f64, width_px: f64, height_px: f64, wrap: WrapInfo, behind_text: bool, target: usize, id: FloatId, anchor_para: Option<u32>, style: Option<Box<wml::drawing::PictureStyle>> }
 
 /// Which per-paragraph anchored-float Vec an id addresses.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -1313,7 +1313,7 @@ fn apply_pending_floats(pending: &mut Vec<DeferredFloat>, scope: &mut FloatScope
             current.anchored_images.push(AnchoredImageLayout {
                 rel_id: df.rel_id, x: df.fx, y: ct,
                 width_px: df.width_px, height_px: df.height_px, behind_text: df.behind_text,
-                anchor_para: df.anchor_para,
+                anchor_para: df.anchor_para, style: df.style,
             });
         } else { keep.push(df); }
     }
@@ -4577,6 +4577,7 @@ impl Viewer {
                                         target: section_page_idx + 1,
                                         id,
                                         anchor_para: cache.para_id,
+                                        style: ai.style.clone(),
                                     });
                                 } else {
                                     // First discovery — resolve, tier-select, and
@@ -4588,6 +4589,7 @@ impl Viewer {
                                         width_px: ai.width_px, height_px: ai.height_px,
                                         behind_text: ai.behind_text,
                                         anchor_para: cache.para_id,
+                                        style: ai.style.clone(),
                                     };
                                     if let Some(af) = build_active_float(
                                         &ai.wrap, fx, fy, ai.width_px, ai.height_px, dom_left, dom_right,
@@ -5118,6 +5120,7 @@ impl Viewer {
                                 height_px: ai.height_px,
                                 behind_text: ai.behind_text,
                                 anchor_para: cache.para_id,
+                                style: ai.style.clone(),
                             });
                         }
                         for tb in &cache.anchored_text_boxes {
@@ -5317,13 +5320,14 @@ impl Viewer {
                                 if let Some(fl) = &cell.float_layout {
                                     for d in &fl.draws {
                                         match d {
-                                            CellFloatDraw::Image { rel_id, x, y, width_px, height_px, behind_text, anchor_para } => {
+                                            CellFloatDraw::Image { rel_id, x, y, width_px, height_px, behind_text, anchor_para, style } => {
                                                 current.anchored_images.push(AnchoredImageLayout {
                                                     rel_id: rel_id.clone(),
                                                     x: cell_x + x, y: cell_y_origin + y,
                                                     width_px: *width_px, height_px: *height_px,
                                                     behind_text: *behind_text,
                                                     anchor_para: *anchor_para,
+                                                    style: style.clone(),
                                                 });
                                             }
                                             CellFloatDraw::TextBox {
@@ -6815,13 +6819,9 @@ impl Viewer {
             cull::keep(clip, tb.x, tb.y, tb.x + tb.width_px, tb.y + tb.height_px)
         };
 
-        // A floating chart draws through the chart painter; anything else is a
-        // picture.
-        let paint_anchored = |ai: &AnchoredImageLayout| match charts.get(&ai.rel_id) {
-            Some(xml) => {
-                let _ = crate::chart::render_chart(xml, p, ai.x, ai.y, ai.width_px, ai.height_px);
-            }
-            None => render_anchored_image(p, ai, &bitmaps),
+        let paint_anchored = |ai: &AnchoredImageLayout| {
+            let rect = (ai.x, ai.y, ai.width_px, ai.height_px);
+            let _ = crate::wml::render::paint_picture(p, &ai.rel_id, rect, ai.style.as_deref(), &charts);
         };
 
         // Render behind-text anchored images and text boxes

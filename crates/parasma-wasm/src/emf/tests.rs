@@ -538,6 +538,7 @@ fn image_line(rel: &str) -> crate::wml::page::PagedLine {
             dist_t_px: 0.0,
             dist_r_px: 0.0,
             dist_b_px: 0.0,
+            style: None,
         }),
         ..Item::default()
     };
@@ -607,9 +608,9 @@ fn dispatch_records_one_image_op_for_active_emf_rel() {
     assert!(!ops2.iter().any(|o| matches!(o, Op::DrawImage(k, ..) if k.starts_with("emf-pic:"))));
 }
 
-/// Anchored-image rider: an active EMF rel drawn through
-/// `render_anchored_image` maps to the same synthetic key (previously it drew
-/// the bare rel → permanent placeholder).
+/// Anchored-image rider: a floating picture's active EMF rel, drawn through
+/// `paint_picture`, maps to the same synthetic key (previously it drew the
+/// bare rel → permanent placeholder).
 #[test]
 fn anchored_image_dispatches_active_emf_rel() {
     use std::collections::HashMap;
@@ -620,17 +621,8 @@ fn anchored_image_dispatches_active_emf_rel() {
     active.insert("rIdA".to_string(), pic);
     super::set_active(&active);
 
-    let ai = crate::AnchoredImageLayout {
-        rel_id: "rIdA".to_string(),
-        x: 10.0,
-        y: 20.0,
-        width_px: 80.0,
-        height_px: 40.0,
-        behind_text: true,
-        anchor_para: None,
-    };
     let rec = RecordingPainter::default();
-    crate::engine::images::render_anchored_image(&rec, &ai, &HashMap::new());
+    crate::wml::render::paint_picture(&rec, "rIdA", (10.0, 20.0, 80.0, 40.0), None, &HashMap::new()).unwrap();
     let ops = rec.ops();
     assert!(
         ops.iter().any(|o| matches!(o, Op::DrawImage(k, x, y, w, h)

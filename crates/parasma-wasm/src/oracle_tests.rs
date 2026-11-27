@@ -12382,3 +12382,105 @@ fn a_row_exception_overrides_borders_and_margins() {
     assert!(a.border_top.is_some(), "the table's other borders stay");
     assert_px(a.lines[0].content_left - a.x, 600.0 * PX_PER_TWIP, "the exception's left padding");
 }
+
+// ── Picture outline (`pic:spPr/a:ln`, §20.1.2.2.24) ─────────────────────────
+
+const RED_LINE: &str = r#"<a:ln w="19050"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln>"#;
+
+/// A 100×50 px picture of `rId40` with `ln` in its `pic:spPr`: inline, or
+/// anchored at the column and paragraph origin with square wrap.
+fn picture_drawing(anchored: bool, ln: &str) -> String {
+    let ns = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture""#;
+    let graphic = format!(r#"<wp:extent cx="952500" cy="476250"/>{}<wp:docPr id="5" name="Picture 5"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="5" name="Picture 5"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId40"/></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/></a:xfrm><a:prstGeom prst="rect"/>{ln}</pic:spPr></pic:pic></a:graphicData></a:graphic>"#,
+        if anchored { r#"<wp:wrapSquare wrapText="bothSides"/>"# } else { "" });
+    if anchored {
+        format!(r#"<w:r><w:drawing><wp:anchor {ns} distT="0" distB="0" distL="114300" distR="114300" behindDoc="0" simplePos="0" relativeHeight="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>{graphic}</wp:anchor></w:drawing></w:r>"#)
+    } else {
+        format!(r#"<w:r><w:drawing><wp:inline {ns} distT="0" distB="0" distL="0" distR="0">{graphic}</wp:inline></w:drawing></w:r>"#)
+    }
+}
+
+/// A document of `body` that carries the picture part `rId40`.
+fn picture_docx(body: &str) -> Vec<u8> {
+    let docx = unzip_replace(numbering_docx("", "", body), "word/_rels/document.xml.rels", "</Relationships>",
+        r#"<Relationship Id="rId40" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/pic.png"/></Relationships>"#);
+    unzip_add(docx, "word/media/pic.png", "P")
+}
+
+/// A paragraph holding the picture, with text after it.
+fn picture_body(anchored: bool, ln: &str) -> String {
+    format!("<w:p>{}<w:r><w:t>Text beside the picture</w:t></w:r></w:p>", picture_drawing(anchored, ln))
+}
+
+/// A one-cell table whose paragraph holds the picture.
+fn picture_in_cell_body(ln: &str) -> String {
+    format!(r#"<w:tbl><w:tblPr><w:tblW w:w="6000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr>{}</w:tc></w:tr></w:tbl><w:p/>"#,
+        picture_body(true, ln))
+}
+
+/// What page 0 draws for the picture: its image rect, and each rectangle
+/// stroked after it with the stroke colour and width in force.
+fn picture_paint(body: &str) -> ((f64, f64, f64, f64), Vec<(String, f64, (f64, f64, f64, f64))>) {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    let v = layout(picture_docx(body));
+    let rec = RecordingPainter::new();
+    v.paint_wml_page(0, &rec, None).expect("paint page 0");
+    let (mut image, mut frames) = (None, Vec::new());
+    let (mut color, mut width) = (String::new(), 1.0);
+    for c in rec.take() {
+        match c {
+            DrawCmd::DrawImage { key, dx, dy, dw, dh } if key == "rId40" => image = Some((dx, dy, dw, dh)),
+            DrawCmd::SetStrokeStyle(s) => color = s,
+            DrawCmd::SetLineWidth(w) => width = w,
+            DrawCmd::StrokeRect { x, y, w, h } if image.is_some() => frames.push((color.clone(), width, (x, y, w, h))),
+            _ => {}
+        }
+    }
+    (image.expect("the picture is drawn"), frames)
+}
+
+/// A picture's `a:ln` draws a frame over the picture, centred on its edge:
+/// inline, floating, and floating in a table cell.
+#[test]
+fn a_picture_draws_its_outline() {
+    for (what, body) in [
+        ("inline", picture_body(false, RED_LINE)),
+        ("anchored", picture_body(true, RED_LINE)),
+        ("in a cell", picture_in_cell_body(RED_LINE)),
+    ] {
+        let (image, frames) = picture_paint(&body);
+        assert_px(image.2, 100.0, what);
+        assert_eq!(frames, [("#FF0000".to_owned(), 2.0, image)], "{what}: one red 1.5 pt frame on the picture's edge");
+    }
+    // `a:ln` without `w` is drawn one pixel wide.
+    let (image, frames) = picture_paint(&picture_body(false, r#"<a:ln><a:solidFill><a:srgbClr val="0000FF"/></a:solidFill></a:ln>"#));
+    assert_eq!(frames, [("#0000FF".to_owned(), 1.0, image)]);
+}
+
+/// A line with no fill, or no line at all, draws no frame.
+#[test]
+fn a_picture_without_a_line_draws_no_outline() {
+    let none = r#"<a:ln w="19050"><a:noFill/></a:ln>"#;
+    for anchored in [false, true] {
+        for ln in [none, ""] {
+            let (_, frames) = picture_paint(&picture_body(anchored, ln));
+            assert_eq!(frames, [], "anchored {anchored}, ln {ln:?}");
+        }
+    }
+    let (_, frames) = picture_paint(&picture_in_cell_body(none));
+    assert_eq!(frames, [], "in a cell");
+}
+
+/// An outline is drawn over the layout: the picture keeps its size and
+/// place, and every line and float stays where it was.
+#[test]
+fn a_picture_outline_moves_nothing() {
+    for (what, plain, lined) in [
+        ("inline", picture_body(false, ""), picture_body(false, RED_LINE)),
+        ("anchored", picture_body(true, ""), picture_body(true, RED_LINE)),
+        ("in a cell", picture_in_cell_body(""), picture_in_cell_body(RED_LINE)),
+    ] {
+        assert_eq!(geometry_dump(&layout(picture_docx(&lined))), geometry_dump(&layout(picture_docx(&plain))), "{what}");
+        assert_eq!(picture_paint(&lined).0, picture_paint(&plain).0, "{what}: the image rect");
+    }
+}

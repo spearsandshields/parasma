@@ -29,7 +29,8 @@ use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::bidi::bidi_reorder_line;
 use crate::wml::drawing::{
     extract_drawing_text_box, extract_pict_text_box, extract_vml_dimensions, inline_dist_px,
-    drawing_is_hidden, is_layout_control, parse_anchor_position, pict_is_hidden, TextBoxFrame, WrapInfo,
+    drawing_is_hidden, is_layout_control, parse_anchor_position, pict_is_hidden, picture_style, PictureStyle,
+    TextBoxFrame, WrapInfo,
 };
 use crate::wml::float::{AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
 use crate::wml::content_walk::{self, Revision, Visit};
@@ -75,6 +76,7 @@ pub(crate) struct AnchoredImageInfo {
     pub(crate) v_relative_from: AnchorVRelFrom,
     pub(crate) behind_text: bool,
     pub(crate) wrap: WrapInfo,
+    pub(crate) style: Option<Box<PictureStyle>>,
 }
 
 /// One run queued for the item-emit pass: the run plus its (field tag, hyperlink
@@ -698,6 +700,7 @@ pub(crate) fn collect_items(
                         v_relative_from: v_rel,
                         behind_text: behind,
                         wrap,
+                        style: None,
                     });
                 } else {
                     let (dist_l_px, dist_t_px, dist_r_px, dist_b_px) = inline_dist_px(drawing);
@@ -706,7 +709,7 @@ pub(crate) fn collect_items(
                         style: style.clone(),
                         width: box_width,
                         content_width: box_width,
-                        image: Some(ImageItem { rel_id: key, height_px: dh, dist_l_px, dist_t_px, dist_r_px, dist_b_px }),
+                        image: Some(ImageItem { rel_id: key, height_px: dh, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style: None }),
                         ..Default::default()
                     });
                 }
@@ -725,6 +728,7 @@ pub(crate) fn collect_items(
                 // vertical extent (added below in `push`). Default 0.
                 let (dist_l_px, dist_t_px, dist_r_px, dist_b_px) = inline_dist_px(drawing);
                 let box_width = width_px + dist_l_px + dist_r_px;
+                let picture = picture_style(drawing, theme_fonts);
                 for rel_id in inline_rel_ids {
                     items.push(Item {
                         style: style.clone(),
@@ -737,6 +741,7 @@ pub(crate) fn collect_items(
                             dist_t_px,
                             dist_r_px,
                             dist_b_px,
+                            style: picture.clone(),
                         }),
                         // Not born of paragraph text — sentinel.
                         ..Default::default()
@@ -765,6 +770,7 @@ pub(crate) fn collect_items(
                         v_relative_from: v_rel,
                         behind_text: behind,
                         wrap,
+                        style: None,
                     });
                     continue;
                 }
@@ -779,6 +785,7 @@ pub(crate) fn collect_items(
                         dist_t_px: 0.0,
                         dist_r_px: 0.0,
                         dist_b_px: 0.0,
+                        style: None,
                     }),
                     // Not born of paragraph text — sentinel.
                     ..Default::default()
@@ -792,6 +799,7 @@ pub(crate) fn collect_items(
                     None => (200.0, 150.0),
                 };
                 let (h_pos, v_pos, h_rel, v_rel, behind, wrap) = parse_anchor_position(drawing, aw, ah);
+                let picture = picture_style(drawing, theme_fonts);
                 for rel_id in anchor_rel_ids {
                     anchored_images.push(AnchoredImageInfo {
                         rel_id: rel_id.to_string(),
@@ -803,6 +811,7 @@ pub(crate) fn collect_items(
                         v_relative_from: v_rel,
                         behind_text: behind,
                         wrap: wrap.clone(),
+                        style: picture.clone(),
                     });
                 }
             }
@@ -1810,9 +1819,14 @@ impl Item {
         // crop rect, a text-box inset) cannot reach the painter while staying
         // invisible to this stream. Every field of both affects what is drawn.
         if let Some(ImageItem {
-            rel_id, height_px, dist_l_px, dist_t_px, dist_r_px, dist_b_px,
+            rel_id, height_px, dist_l_px, dist_t_px, dist_r_px, dist_b_px, style,
         }) = image {
             let _ = write!(out, " img{rel_id:?} h{height_px:.2} dist{dist_l_px:.2},{dist_t_px:.2},{dist_r_px:.2},{dist_b_px:.2}");
+            // Written only when set, so pictures without one dump as before.
+            let outline = style.as_deref().and_then(|PictureStyle { outline }| outline.as_ref());
+            if let Some(crate::engine::border::Edge { color, width_px, dash, style }) = outline {
+                let _ = write!(out, " ln{color}/{width_px:.2}/{style:?}/{dash:?}");
+            }
         }
         if let Some(f) = field {
             // The kind, then its format only when it names one, so a plain
@@ -2400,6 +2414,7 @@ pub(crate) struct ImageItem {
     pub(crate) dist_t_px: f64,
     pub(crate) dist_r_px: f64,
     pub(crate) dist_b_px: f64,
+    pub(crate) style: Option<Box<PictureStyle>>,
 }
 
 impl ImageItem {

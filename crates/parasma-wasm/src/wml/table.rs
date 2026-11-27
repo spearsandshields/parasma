@@ -132,7 +132,10 @@ pub(crate) struct CellFloatLayout {
 pub(crate) enum CellFloatDraw {
     // `anchor_para` — the hosting paragraph's document-order id (anchored-image
     // copy), forwarded verbatim onto the emitted `AnchoredImageLayout`.
-    Image { rel_id: String, x: f64, y: f64, width_px: f64, height_px: f64, behind_text: bool, anchor_para: Option<u32> },
+    Image {
+        rel_id: String, x: f64, y: f64, width_px: f64, height_px: f64, behind_text: bool, anchor_para: Option<u32>,
+        style: Option<Box<crate::wml::drawing::PictureStyle>>,
+    },
     TextBox {
         lines: Vec<PagedLine>, // box-local (untranslated), as PositionedTextBox expects
         x: f64, y: f64, width_px: f64, height_px: f64, behind_text: bool,
@@ -562,7 +565,7 @@ fn build_cell_float_layout(
             draws.push(CellFloatDraw::Image {
                 rel_id: ai.rel_id.clone(), x: fx, y: fy,
                 width_px: ai.width_px, height_px: ai.height_px, behind_text: ai.behind_text,
-                anchor_para: pc.para_id,
+                anchor_para: pc.para_id, style: ai.style.clone(),
             });
         }
         for tb in &pc.anchored_text_boxes {
