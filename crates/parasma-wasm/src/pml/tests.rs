@@ -1202,6 +1202,369 @@ fn a_window_over_a_turned_picture_draws_it() {
     assert_eq!(drawn.len(), 1, "the picture is drawn");
 }
 
+// ─── Turned shapes, connectors and frames (`a:xfrm`: `rot`, `flipH`, `flipV`, §20.1.7.6) ─
+
+/// The 200×50 px frame of [`turned_shape_deck`]'s shape.
+fn shape_frame() -> (f64, f64, f64, f64) {
+    (emu_to_px(952_500), emu_to_px(1_428_750), emu_to_px(1_905_000), emu_to_px(476_250))
+}
+
+/// A deck whose one slide holds one `prst` shape on [`shape_frame`], filled
+/// green and outlined blue, holding the text `Turned`, with `xfrm` on its
+/// `a:xfrm` and `body` on its `a:bodyPr`.
+fn turned_shape_deck(prst: &str, xfrm: &str, body: &str) -> Vec<u8> {
+    one_slide_deck(&format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
+    <p:sp>
+      <p:nvSpPr><p:cNvPr id="2" name="Box"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+      <p:spPr><a:xfrm {xfrm}><a:off x="952500" y="1428750"/><a:ext cx="1905000" cy="476250"/></a:xfrm><a:prstGeom prst="{prst}"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="0000FF"/></a:solidFill></a:ln></p:spPr>
+      <p:txBody><a:bodyPr {body}/><a:p><a:r><a:rPr lang="en-US" sz="1200"/><a:t>Turned</a:t></a:r></a:p></p:txBody>
+    </p:sp>
+  </p:spTree></p:cSld>
+</p:sld>"#
+    ))
+}
+
+/// What a slide draws for one shape, on the slide: where each point of its
+/// outline path lands, the canvas transform its fill and its stroke draw
+/// under, and each piece of its text with the transform it draws under and
+/// where its anchor lands.
+struct ShapeDrawn {
+    path: Vec<(f64, f64)>,
+    fill: crate::engine::displaylist::Matrix,
+    stroke: crate::engine::displaylist::Matrix,
+    text: Vec<(String, crate::engine::displaylist::Matrix, (f64, f64))>,
+}
+
+/// [`ShapeDrawn`] for the one shape the first slide of `deck` draws.
+fn shape_drawn(deck: Vec<u8>) -> ShapeDrawn {
+    use crate::engine::displaylist::{landed, transform_at_each_cmd, DrawCmd};
+    let cmds = slide_cmds(deck);
+    let mut drawn = ShapeDrawn { path: Vec::new(), fill: [0.0; 6], stroke: [0.0; 6], text: Vec::new() };
+    for (cmd, m) in transform_at_each_cmd(&cmds) {
+        match cmd {
+            DrawCmd::MoveTo { x, y } | DrawCmd::LineTo { x, y } => drawn.path.push(landed(&m, (*x, *y))),
+            DrawCmd::Fill => drawn.fill = m,
+            DrawCmd::Stroke => drawn.stroke = m,
+            DrawCmd::FillText { text, x, y } => drawn.text.push((text.clone(), m, landed(&m, (*x, *y)))),
+            _ => {}
+        }
+    }
+    assert!(!drawn.path.is_empty() && !drawn.text.is_empty(), "the shape draws its outline and its text");
+    drawn
+}
+
+/// `(x, y)` turned a quarter clockwise about the centre of `frame`.
+fn quarter_about((fx, fy, fw, fh): (f64, f64, f64, f64), (x, y): (f64, f64)) -> (f64, f64) {
+    let (cx, cy) = (fx + fw / 2.0, fy + fh / 2.0);
+    (cx - (y - cy), cy + (x - cx))
+}
+
+/// The rotate-and-mirror part `[a, b, c, d]` of the canvas transform `m`
+/// is `want`: a quarter turn clockwise is `[0, 1, -1, 0]`.
+fn assert_linear(m: crate::engine::displaylist::Matrix, want: [f64; 4], what: &str) {
+    let near = m[..4].iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-9);
+    assert!(near, "{what}: draws under {m:?}, want {want:?}");
+}
+
+const QUARTER_TURN: [f64; 4] = [0.0, 1.0, -1.0, 0.0];
+const UPRIGHT: [f64; 4] = [1.0, 0.0, 0.0, 1.0];
+
+fn assert_point(got: (f64, f64), want: (f64, f64), what: &str) {
+    assert!((got.0 - want.0).abs() < 1e-6 && (got.1 - want.1).abs() < 1e-6, "{what}: lands at {got:?}, want {want:?}");
+}
+
+/// Each of `got` is one of `want`, and each of `want` is reached.
+fn assert_same_points(got: &[(f64, f64)], want: &[(f64, f64)], what: &str) {
+    let near = |a: &(f64, f64), b: &(f64, f64)| (a.0 - b.0).abs() < 1e-6 && (a.1 - b.1).abs() < 1e-6;
+    assert!(got.iter().all(|g| want.iter().any(|w| near(g, w))), "{what}: {got:?} strays from {want:?}");
+    assert!(want.iter().all(|w| got.iter().any(|g| near(g, w))), "{what}: {got:?} misses one of {want:?}");
+}
+
+/// `rot="5400000"` turns the whole shape a quarter clockwise about its
+/// frame's centre: its outline path stands on end, its fill and stroke draw
+/// under the turn, and its text turns with it, each piece landing where its
+/// upright anchor turns to.
+#[test]
+fn a_quarter_turned_shape_draws_its_fill_outline_and_text_turned() {
+    let frame = shape_frame();
+    let upright = shape_drawn(turned_shape_deck("rect", "", ""));
+    let turned = shape_drawn(turned_shape_deck("rect", r#"rot="5400000""#, ""));
+    assert_same_points(&turned.path, &quarter_turned(frame), "the outline");
+    assert_linear(turned.fill, QUARTER_TURN, "the fill");
+    assert_linear(turned.stroke, QUARTER_TURN, "the stroke");
+    assert_eq!(turned.text.len(), upright.text.len(), "the same text");
+    for ((text, m, at), (was, _, at_upright)) in turned.text.iter().zip(&upright.text) {
+        assert_eq!(text, was);
+        assert_linear(*m, QUARTER_TURN, text);
+        assert_point(*at, quarter_about(frame, *at_upright), text);
+    }
+}
+
+/// `bodyPr upright="1"` keeps the text upright and where it was while the
+/// shape turns; `bodyPr rot` turns the text further, so a shape and text
+/// turned opposite ways leave the text upright (the spec's example).
+#[test]
+fn upright_text_stays_upright_in_a_turned_shape() {
+    let frame = shape_frame();
+    let upright = shape_drawn(turned_shape_deck("rect", "", ""));
+    for body in [r#"upright="1""#, r#"rot="-5400000""#] {
+        let turned = shape_drawn(turned_shape_deck("rect", r#"rot="5400000""#, body));
+        assert_same_points(&turned.path, &quarter_turned(frame), body);
+        for ((text, m, at), (_, _, at_upright)) in turned.text.iter().zip(&upright.text) {
+            assert_linear(*m, UPRIGHT, &format!("{body}: {text}"));
+            assert_point(*at, *at_upright, &format!("{body}: {text}"));
+        }
+    }
+    // The body's own turn adds to the shape's: a quarter more, upright shape.
+    let text_turned = shape_drawn(turned_shape_deck("rect", "", r#"rot="5400000""#));
+    assert_same_points(&text_turned.path, &upright.path, "an upright shape");
+    for ((text, m, at), (_, _, at_upright)) in text_turned.text.iter().zip(&upright.text) {
+        assert_linear(*m, QUARTER_TURN, text);
+        assert_point(*at, quarter_about(frame, *at_upright), text);
+    }
+}
+
+/// `flipH="1"` mirrors the geometry left to right in its frame, and leaves
+/// the text exactly as an unflipped shape draws it: never mirrored.
+/// `flipV="1"` mirrors the geometry top to bottom and turns the text half
+/// round. A right triangle shows the mirroring: its right angle moves.
+#[test]
+fn a_flipped_shape_mirrors_its_geometry_but_not_its_text() {
+    let (x, y, w, h) = shape_frame();
+    let upright = shape_drawn(turned_shape_deck("rtTriangle", "", ""));
+    let mirrored_h = shape_drawn(turned_shape_deck("rtTriangle", r#"flipH="1""#, ""));
+    let mirror_h: Vec<_> = upright.path.iter().map(|&(px, py)| (2.0 * x + w - px, py)).collect();
+    assert_same_points(&mirrored_h.path, &mirror_h, "flipH: the outline");
+    assert_linear(mirrored_h.fill, [-1.0, 0.0, 0.0, 1.0], "flipH: the fill");
+    assert_eq!(mirrored_h.text, upright.text, "flipH: the text is drawn as unflipped");
+
+    let mirrored_v = shape_drawn(turned_shape_deck("rtTriangle", r#"flipV="1""#, ""));
+    let mirror_v: Vec<_> = upright.path.iter().map(|&(px, py)| (px, 2.0 * y + h - py)).collect();
+    assert_same_points(&mirrored_v.path, &mirror_v, "flipV: the outline");
+    for ((text, m, at), (_, _, at_upright)) in mirrored_v.text.iter().zip(&upright.text) {
+        assert_linear(*m, [-1.0, 0.0, 0.0, -1.0], &format!("flipV: {text}"));
+        assert_point(*at, quarter_about((x, y, w, h), quarter_about((x, y, w, h), *at_upright)), text);
+    }
+}
+
+/// A shape that does not turn (`rot="0"`, a whole turn, flips set off, a
+/// body turned nowhere or held upright) records exactly what one without
+/// them records, and an upright shape neither rotates nor mirrors the canvas.
+#[test]
+fn an_upright_shape_records_what_it_did_before() {
+    use crate::engine::displaylist::DrawCmd;
+    let plain = slide_cmds(turned_shape_deck("rect", "", ""));
+    assert!(!plain.iter().any(|c| matches!(c, DrawCmd::Rotate { .. } | DrawCmd::Scale { .. })), "an upright shape");
+    for (xfrm, body) in [
+        (r#"rot="0""#, ""),
+        (r#"rot="21600000""#, ""),
+        (r#"flipH="0" flipV="0""#, ""),
+        ("", r#"rot="0""#),
+        ("", r#"upright="1""#),
+    ] {
+        assert_eq!(slide_cmds(turned_shape_deck("rect", xfrm, body)), plain, "xfrm {xfrm:?}, bodyPr {body:?}");
+    }
+}
+
+/// A windowed paint draws a turned shape whose turned box reaches into the
+/// window although its unturned frame does not: a 200×50 frame turned a
+/// quarter stands 75 px above and below it.
+#[test]
+fn a_window_over_a_turned_shape_draws_it() {
+    use crate::engine::displaylist::{DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let (x, y, w, _) = shape_frame();
+    let window = crate::cull::Rect { x0: x + w / 2.0 - 5.0, y0: y - 60.0, x1: x + w / 2.0 + 5.0, y1: y - 50.0 };
+    let drawn = |xfrm: &str| {
+        let renderer = PmlRenderer::from_pptx(turned_shape_deck("rect", xfrm, "")).expect("pptx loads");
+        let fc = FontCache::new();
+        let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+        let rec = RecordingPainter::new();
+        renderer
+            .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, Some(&window), None, None, None)
+            .expect("the slide paints");
+        rec.take().iter().any(|c| matches!(c, DrawCmd::Fill))
+    };
+    assert!(!drawn(""), "the upright shape lies outside the window");
+    assert!(drawn(r#"rot="5400000""#), "the turned shape reaches into it");
+}
+
+/// A click in a turned shape hits its text at the character the click lands
+/// on once the turn is undone: the same character a click on the upright
+/// text there hits. A click in a corner of the upright box the turned shape
+/// stands in, or of its unturned frame, both of which it leaves bare, misses.
+#[test]
+fn a_click_in_a_turned_shape_hits_its_text_where_it_lands() {
+    use crate::engine::fonts::FontCache;
+    use crate::pml::select::{hit_test, PmlTarget};
+    let fc = FontCache::new();
+    let page = |xfrm: &str| {
+        let deck = turned_shape_deck("rect", xfrm, r#"anchor="ctr""#);
+        PmlRenderer::from_pptx(deck).expect("pptx loads").build_pages_for_test(&fc).remove(0)
+    };
+    let (upright, turned) = (page(""), page(r#"rot="2700000""#));
+    let frame = shape_frame();
+    let (x, y, w, h) = frame;
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    let eighth = |(px, py): (f64, f64)| {
+        let (sin, cos) = std::f64::consts::FRAC_PI_4.sin_cos();
+        (cx + (px - cx) * cos - (py - cy) * sin, cy + (px - cx) * sin + (py - cy) * cos)
+    };
+    // Into the text's first run, and past its middle, on the centred line.
+    for on_text in [(x + 14.0, cy), (x + 30.0, cy)] {
+        let want = hit_test(&upright, 0, on_text.0, on_text.1, None, &fc).expect("the upright text is hit");
+        let (tx, ty) = eighth(on_text);
+        let got = hit_test(&turned, 0, tx, ty, None, &fc).expect("the turned text is hit");
+        assert_eq!((got.target, got.para, got.byte), (PmlTarget::Shape(0), want.para, want.byte), "{on_text:?}");
+    }
+    let half = (w + h) / 2f64.sqrt() / 2.0;
+    assert!(hit_test(&turned, 0, cx - half + 1.0, cy - half + 1.0, None, &fc).is_none(), "the box's corner");
+    assert!(hit_test(&turned, 0, x + 1.0, y + 1.0, None, &fc).is_none(), "the unturned frame's corner");
+}
+
+/// A text selection in a turned shape is highlighted under the shape's turn,
+/// over the turned text: each highlight is the upright one, turned a quarter
+/// about the frame's centre. The rects the viewer reports are the upright
+/// boxes those turned highlights cover.
+#[test]
+fn a_selection_in_a_turned_shape_is_highlighted_turned() {
+    use crate::engine::displaylist::{corners_of_each_rect, DrawCmd, RecordingPainter};
+    use crate::engine::fonts::FontCache;
+    use crate::pml::select::{selection_rects, PmlSelection, PmlTarget};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let fc = FontCache::new();
+    let sel = PmlSelection { slide: 0, target: PmlTarget::Shape(0), start_para: 0, start_byte: 1, end_para: 0, end_byte: 5 };
+    let render = |xfrm: &str| {
+        let renderer = PmlRenderer::from_pptx(turned_shape_deck("rect", xfrm, "")).expect("pptx loads");
+        let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+        let rec = RecordingPainter::new();
+        renderer
+            .render_page_clipped(0, &pages, &fc, &RefCell::new(HashMap::new()), &rec, None, None, Some(&sel), None)
+            .expect("the slide paints");
+        let reported = selection_rects(&pages.borrow()[0], &sel, &fc);
+        (rec.take(), reported)
+    };
+    let (_, highlights) = render("");
+    assert!(!highlights.is_empty(), "the selection is highlighted");
+    let (cmds, reported) = render(r#"rot="5400000""#);
+    let frame = shape_frame();
+    for (r, got) in highlights.iter().zip(&reported) {
+        let painted = corners_of_each_rect(&cmds)
+            .into_iter()
+            .find(|(c, _)| matches!(c, DrawCmd::FillRect { x, y, w, h } if (*x, *y, *w, *h) == (r.x, r.y, r.w, r.h)))
+            .unwrap_or_else(|| panic!("the highlight {r:?} is painted"));
+        let corners = [(r.x, r.y), (r.x + r.w, r.y), (r.x + r.w, r.y + r.h), (r.x, r.y + r.h)].map(|pt| quarter_about(frame, pt));
+        assert_corners(&painted.1, &corners, "the highlight");
+        let (tlx, tly) = corners[3];
+        let want = (tlx, tly, r.h, r.w);
+        assert_point((got.x, got.y), (want.0, want.1), "the reported rect");
+        assert_point((got.w, got.h), (want.2, want.3), "the reported rect's size");
+    }
+    assert_eq!(reported.len(), highlights.len());
+}
+
+/// A one-slide deck of one connector on a 100 px long, flat box at
+/// (100, 100) px, a triangle at its start, with `xfrm` on its `a:xfrm`.
+fn turned_connector_deck(xfrm: &str) -> Vec<u8> {
+    one_slide_deck(&format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld><p:spTree>
+    <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>
+    <p:cxnSp>
+      <p:nvCxnSpPr><p:cNvPr id="10" name="Connector"/><p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>
+      <p:spPr><a:xfrm {xfrm}><a:off x="952500" y="952500"/><a:ext cx="952500" cy="0"/></a:xfrm><a:prstGeom prst="straightConnector1"><a:avLst/></a:prstGeom><a:ln w="9525"><a:solidFill><a:srgbClr val="111111"/></a:solidFill><a:headEnd type="triangle"/></a:ln></p:spPr>
+    </p:cxnSp>
+  </p:spTree></p:cSld>
+</p:sld>"#
+    ))
+}
+
+/// Where the line a connector strokes starts and ends on the slide.
+fn connector_ends(deck: Vec<u8>) -> ((f64, f64), (f64, f64)) {
+    use crate::engine::displaylist::{landed, transform_at_each_cmd, DrawCmd};
+    let cmds = slide_cmds(deck);
+    let points: Vec<_> = transform_at_each_cmd(&cmds)
+        .into_iter()
+        .filter_map(|(c, m)| match *c {
+            DrawCmd::MoveTo { x, y } | DrawCmd::LineTo { x, y } => Some(landed(&m, (x, y))),
+            _ => None,
+        })
+        .collect();
+    // The line comes first, then the arrowhead's triangle.
+    (points[0], points[1])
+}
+
+/// PowerPoint draws a vertical connector as a flat box turned a quarter
+/// (`rot="5400000"`): it strokes from the top of the turned box down, and a
+/// `flipH` it carries as well swaps the ends first, so it starts at the
+/// bottom. Unturned, it is the flat line.
+#[test]
+fn a_quarter_turned_connector_draws_vertical() {
+    assert_eq!(connector_ends(turned_connector_deck("")), ((100.0, 100.0), (200.0, 100.0)), "flat");
+    let (start, end) = connector_ends(turned_connector_deck(r#"rot="5400000""#));
+    assert_point(start, (150.0, 50.0), "turned: the start");
+    assert_point(end, (150.0, 150.0), "turned: the end");
+    let (start, end) = connector_ends(turned_connector_deck(r#"rot="5400000" flipH="1""#));
+    assert_point(start, (150.0, 150.0), "flipped and turned: the start");
+    assert_point(end, (150.0, 50.0), "flipped and turned: the end");
+    assert_eq!(slide_cmds(turned_connector_deck(r#"rot="0""#)), slide_cmds(turned_connector_deck("")), "rot 0");
+}
+
+/// The chart deck with `xfrm` on its frame's `p:xfrm`, painted with its
+/// chart part loaded: what it records, and the frame.
+fn chart_cmds(xfrm: &str) -> (Vec<crate::engine::displaylist::DrawCmd>, (f64, f64, f64, f64)) {
+    use crate::engine::displaylist::RecordingPainter;
+    use crate::engine::fonts::FontCache;
+    use std::cell::RefCell;
+    let slide = CHART_SLIDE.replace("<p:xfrm>", &format!("<p:xfrm {xfrm}>"));
+    let pptx = build_pptx(&[
+        ("[Content_Types].xml", CONTENT_TYPES_CHART),
+        ("_rels/.rels", ROOT_RELS),
+        ("ppt/presentation.xml", PRESENTATION),
+        ("ppt/_rels/presentation.xml.rels", PRESENTATION_RELS),
+        ("ppt/slideMasters/slideMaster1.xml", SLIDE_MASTER),
+        ("ppt/slideMasters/_rels/slideMaster1.xml.rels", SLIDE_MASTER_RELS),
+        ("ppt/slideLayouts/slideLayout1.xml", SLIDE_LAYOUT),
+        ("ppt/slideLayouts/_rels/slideLayout1.xml.rels", SLIDE_LAYOUT_RELS),
+        ("ppt/slides/slide1.xml", &slide),
+        ("ppt/slides/_rels/slide1.xml.rels", CHART_SLIDE_RELS),
+        ("ppt/charts/chart1.xml", CHART_PART),
+    ]);
+    let mut renderer = PmlRenderer::from_pptx(pptx).expect("pptx loads");
+    let charts = RefCell::new(renderer.take_charts().into_iter().collect());
+    let fc = FontCache::new();
+    let pages = RefCell::new(renderer.build_pages_for_test(&fc));
+    let rec = RecordingPainter::new();
+    renderer.render_page_clipped(0, &pages, &fc, &charts, &rec, None, None, None, None).expect("the slide paints");
+    let frame = (emu_to_px(914_400), emu_to_px(914_400), emu_to_px(5_486_400), emu_to_px(3_200_400));
+    (rec.take(), frame)
+}
+
+/// A chart whose frame turns (`p:graphicFrame/p:xfrm@rot`) draws what it
+/// draws upright, turned a quarter about the frame's centre.
+#[test]
+fn a_turned_chart_frame_draws_its_chart_turned() {
+    use crate::engine::displaylist::corners_of_each_rect;
+    let (upright, frame) = chart_cmds("");
+    let (turned, _) = chart_cmds(r#"rot="5400000""#);
+    // The first rect is the slide's background, which does not turn.
+    let (upright, turned) = (&corners_of_each_rect(&upright)[1..], &corners_of_each_rect(&turned)[1..]);
+    assert!(!upright.is_empty(), "the chart draws rects");
+    assert_eq!(turned.len(), upright.len(), "the same rects");
+    for ((cmd, got), (was, corners)) in turned.iter().zip(upright) {
+        assert_eq!(cmd, was);
+        assert_corners(got, &corners.map(|pt| quarter_about(frame, pt)), &format!("{cmd:?}"));
+    }
+}
+
 // ─── Colour transparency (`a:alpha`, `a:alphaMod`, `a:alphaOff`, §20.1.2.3.1-3) ─
 
 /// A deck whose one slide holds one 1-inch rectangle with `sp_pr` (its fill

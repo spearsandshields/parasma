@@ -9,9 +9,11 @@
 //!
 //! All geometry flows through the SHARED `super::walk_paragraph_stack` (the same
 //! line walk the paint consumes), so hit-test / rects / extract can never drift
-//! from what is painted. These are all NEW READS + an ADDITIVE paint pass that
-//! fires ONLY when a selection is set, so a no-selection slide render stays
-//! byte-identical (the PML render pins hold).
+//! from what is painted. A turned shape's text is walked upright and turned
+//! like its paint: a point is turned back before it is resolved, and a
+//! highlight is drawn under the text's turn. These are all NEW READS + an
+//! ADDITIVE paint pass that fires ONLY when a selection is set, so a
+//! no-selection slide render stays byte-identical (the PML render pins hold).
 //!
 //! The text position is `PmlPos { slide, target, para, byte }` — `byte` indexes
 //! the target-paragraph's PAINTED logical text (the run-concatenation the walk
@@ -21,6 +23,7 @@
 //! text/html flavors are shared.
 
 use crate::engine::paint::Painter;
+use crate::engine::transform::{Transform, Xywh};
 
 use super::shape::{ParaAlign, SlidePage};
 use super::{
@@ -137,6 +140,15 @@ fn in_box(bx: (f64, f64, f64, f64), x: f64, y: f64) -> bool {
     x >= bx.0 && x < bx.0 + bx.2 && y >= bx.1 && y < bx.1 + bx.3
 }
 
+/// How a target's text turns on the slide, and the frame it turns in: a
+/// shape's text turn; a table cell's text does not turn.
+fn text_turn(page: &SlidePage, target: PmlTarget) -> (Transform, Xywh) {
+    match target {
+        PmlTarget::Shape(si) => page.shapes.get(si).map_or_else(Default::default, |sh| (sh.text_transform, sh.frame())),
+        PmlTarget::TableCell { .. } => Default::default(),
+    }
+}
+
 // ─── Byte ↔ x within a run ──────────────────────────────────────────────────
 
 /// Map a local x (from a sub-run's left edge) to a byte offset within the run's
@@ -231,13 +243,18 @@ pub(crate) fn hit_test(
         None => topmost_text_target(page, x, y)?,
     };
     let (walks, _, _) = target_walk(page, target, font_cache)?;
+    // The text is walked upright: resolve the point where it lies on the
+    // upright text.
+    let (turn, frame) = text_turn(page, target);
+    let (x, y) = turn.unmap(frame, (x, y));
     let (para, byte) = resolve_in_target(&walks, x, y, font_cache);
     Some(PmlPos { slide, target, para, byte })
 }
 
 /// The topmost text target under `(x, y)` in paint z-order (tables above shapes;
 /// each format reverse-scanned so a later-drawn overlapping item wins). A target
-/// qualifies only when its box contains the point AND it carries text.
+/// qualifies only when its box, turned as it is drawn, contains the point AND
+/// it carries text.
 fn topmost_text_target(page: &SlidePage, x: f64, y: f64) -> Option<PmlTarget> {
     for (ti, tbl) in page.tables.iter().enumerate().rev() {
         for (ci, cell) in tbl.cells.iter().enumerate() {
@@ -249,7 +266,7 @@ fn topmost_text_target(page: &SlidePage, x: f64, y: f64) -> Option<PmlTarget> {
         }
     }
     for (si, sh) in page.shapes.iter().enumerate().rev() {
-        if !sh.paragraphs.is_empty() && in_box((sh.x, sh.y, sh.w, sh.h), x, y) {
+        if !sh.paragraphs.is_empty() && sh.transform.contains(sh.frame(), x, y) {
             return Some(PmlTarget::Shape(si));
         }
     }
@@ -258,13 +275,32 @@ fn topmost_text_target(page: &SlidePage, x: f64, y: f64) -> Option<PmlTarget> {
 
 // ─── Selection rects ────────────────────────────────────────────────────────
 
-/// Per-line-merged highlight rects for a stored selection over its target
-/// (page-absolute px). The covered byte window per paragraph is intersected with
+/// The highlight rects of a stored selection on the slide (page-absolute px):
+/// each the upright box its highlight covers once the target's text turns,
+/// which is the highlight itself when the text does not turn.
+pub(crate) fn selection_rects(
+    page: &SlidePage,
+    sel: &PmlSelection,
+    font_cache: &FontCache,
+) -> Vec<SelRect> {
+    let (turn, frame) = text_turn(page, sel.target);
+    upright_selection_rects(page, sel, font_cache)
+        .into_iter()
+        .map(|r| {
+            let (x, y, w, h) = turn.bounds_in(frame, (r.x, r.y, r.w, r.h));
+            SelRect { x, y, w, h }
+        })
+        .collect()
+}
+
+/// Per-line-merged highlight rects for a stored selection over its target,
+/// on its text as walked upright (page-absolute px before the text turns).
+/// The covered byte window per paragraph is intersected with
 /// each sub-run's `[byte_start, byte_end)`; partial coverage slices via
 /// `run_width_to_byte`; rects sharing a visual line (same `top`) are merged so
 /// translucent fills never double-darken at seams. A collapsed selection yields
 /// no rects (byte-identical no-op).
-pub(crate) fn selection_rects(
+fn upright_selection_rects(
     page: &SlidePage,
     sel: &PmlSelection,
     font_cache: &FontCache,
@@ -464,10 +500,11 @@ const OBJECT_OUTLINE_COLOR: &str = "#3B82F6";
 const OBJECT_OUTLINE_WIDTH_PX: f64 = 2.0;
 
 /// The PML text selection highlight — a translucent blue fill over the covered
-/// glyphs, mirroring the WML/search additive pass. Fires ONLY when the selection
+/// glyphs, mirroring the WML/search additive pass, turned with the target's
+/// text. Fires ONLY when the selection
 /// belongs to THIS slide AND covers a range (collapsed ⇒ zero rects ⇒
-/// byte-identical no-op). Painted through the raw `ctx` (PML has no display-list
-/// export), consistent with the PML search highlight.
+/// byte-identical no-op). Painted through the `Painter`, like the PML search
+/// highlight.
 pub(crate) fn paint_selection_pass(
     p: &dyn Painter,
     page: &SlidePage,
@@ -479,16 +516,20 @@ pub(crate) fn paint_selection_pass(
     if sel.slide != slide {
         return;
     }
-    let rects = selection_rects(page, sel, font_cache);
+    let rects = upright_selection_rects(page, sel, font_cache);
     if rects.is_empty() {
         return;
     }
+    let (turn, frame) = text_turn(page, sel.target);
     p.save();
     p.set_global_alpha(SELECTION_FILL_ALPHA);
     p.set_fill_style_str(SELECTION_FILL_COLOR);
-    for r in &rects {
-        p.fill_rect(r.x, r.y, r.w, r.h);
-    }
+    let _ = turn.paint(p, frame, || {
+        for r in &rects {
+            p.fill_rect(r.x, r.y, r.w, r.h);
+        }
+        Ok(())
+    });
     p.restore();
 }
 

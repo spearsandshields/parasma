@@ -130,53 +130,60 @@ pub(crate) fn moves_the_canvas(cmds: &[DrawCmd]) -> bool {
     cmds.iter().any(|c| matches!(c, DrawCmd::Translate { .. } | DrawCmd::Rotate { .. } | DrawCmd::Scale { .. } | DrawCmd::SetTransform { .. }))
 }
 
-/// Each rectangle `cmds` draws (an image, a filled or a stroked rect), with
-/// where its four corners land on the page: its top-left, top-right,
-/// bottom-right and bottom-left taken through the canvas transform in force,
-/// which `Translate`, `Rotate`, `Scale` and `SetTransform` change and
-/// `Restore` returns to what it was at the matching `Save`, as on a canvas.
+/// A canvas transform `[a, b, c, d, e, f]`: a point (x, y) lands at
+/// (a·x + c·y + e, b·x + d·y + f).
 #[cfg(test)]
-pub(crate) fn corners_of_each_rect(cmds: &[DrawCmd]) -> Vec<(&DrawCmd, [(f64, f64); 4])> {
-    // `[a, b, c, d, e, f]`: a point (x, y) lands at (a·x + c·y + e, b·x + d·y + f).
-    let (mut m, mut saved, mut rects) = ([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], Vec::new(), Vec::new());
+pub(crate) type Matrix = [f64; 6];
+
+/// Where `(x, y)` lands under `m`.
+#[cfg(test)]
+pub(crate) fn landed(m: &Matrix, (x, y): (f64, f64)) -> (f64, f64) {
+    let [a, b, c, d, e, f] = *m;
+    (a * x + c * y + e, b * x + d * y + f)
+}
+
+/// Each command in `cmds`, with the canvas transform in force when it runs:
+/// `Translate`, `Rotate`, `Scale` and `SetTransform` change it and `Restore`
+/// returns it to what it was at the matching `Save`, as on a canvas.
+#[cfg(test)]
+pub(crate) fn transform_at_each_cmd(cmds: &[DrawCmd]) -> Vec<(&DrawCmd, Matrix)> {
+    let (mut m, mut saved, mut out): (Matrix, Vec<Matrix>, _) = ([1.0, 0.0, 0.0, 1.0, 0.0, 0.0], Vec::new(), Vec::new());
     for cmd in cmds {
+        out.push((cmd, m));
         let [a, b, c, d, e, f] = m;
-        let rect = match *cmd {
-            DrawCmd::Save => {
-                saved.push(m);
-                None
-            }
-            DrawCmd::Restore => {
-                m = saved.pop().unwrap_or(m);
-                None
-            }
-            DrawCmd::Translate { x, y } => {
-                m = [a, b, c, d, e + a * x + c * y, f + b * x + d * y];
-                None
-            }
+        match *cmd {
+            DrawCmd::Save => saved.push(m),
+            DrawCmd::Restore => m = saved.pop().unwrap_or(m),
+            DrawCmd::Translate { x, y } => m = [a, b, c, d, e + a * x + c * y, f + b * x + d * y],
             DrawCmd::Rotate { angle } => {
                 let (sin, cos) = angle.sin_cos();
                 m = [a * cos + c * sin, b * cos + d * sin, c * cos - a * sin, d * cos - b * sin, e, f];
-                None
             }
-            DrawCmd::Scale { x, y } => {
-                m = [a * x, b * x, c * y, d * y, e, f];
-                None
-            }
-            DrawCmd::SetTransform { a, b, c, d, e, f } => {
-                m = [a, b, c, d, e, f];
-                None
-            }
-            DrawCmd::DrawImage { dx, dy, dw, dh, .. } | DrawCmd::DrawImageCrop { dx, dy, dw, dh, .. } => Some((dx, dy, dw, dh)),
-            DrawCmd::FillRect { x, y, w, h } | DrawCmd::StrokeRect { x, y, w, h } => Some((x, y, w, h)),
-            _ => None,
-        };
-        if let Some((x, y, w, h)) = rect {
-            let at = |(px, py): (f64, f64)| (a * px + c * py + e, b * px + d * py + f);
-            rects.push((cmd, [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].map(at)));
+            DrawCmd::Scale { x, y } => m = [a * x, b * x, c * y, d * y, e, f],
+            DrawCmd::SetTransform { a, b, c, d, e, f } => m = [a, b, c, d, e, f],
+            _ => {}
         }
     }
-    rects
+    out
+}
+
+/// Each rectangle `cmds` draws (an image, a filled or a stroked rect), with
+/// where its four corners land on the page: its top-left, top-right,
+/// bottom-right and bottom-left taken through the canvas transform in force
+/// ([`transform_at_each_cmd`]).
+#[cfg(test)]
+pub(crate) fn corners_of_each_rect(cmds: &[DrawCmd]) -> Vec<(&DrawCmd, [(f64, f64); 4])> {
+    transform_at_each_cmd(cmds)
+        .into_iter()
+        .filter_map(|(cmd, m)| {
+            let (x, y, w, h) = match *cmd {
+                DrawCmd::DrawImage { dx, dy, dw, dh, .. } | DrawCmd::DrawImageCrop { dx, dy, dw, dh, .. } => (dx, dy, dw, dh),
+                DrawCmd::FillRect { x, y, w, h } | DrawCmd::StrokeRect { x, y, w, h } => (x, y, w, h),
+                _ => return None,
+            };
+            Some((cmd, [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].map(|pt| landed(&m, pt))))
+        })
+        .collect()
 }
 
 // ── Flat wire encoding (Rust encoder ↔ TS decoder CONTRACT) ─────────────────-

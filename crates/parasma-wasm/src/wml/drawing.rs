@@ -14,7 +14,8 @@
 
 use crate::engine::color::{apply_color_transforms, css_color, dml_base_color, vml_color_to_css, DmlTransform, DML_COLOR_MODELS};
 use crate::engine::fonts::ThemeFonts;
-use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect, Transform};
+use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
+use crate::engine::transform::Transform;
 use crate::engine::units::{css_length_to_px, emu_to_px};
 use crate::engine::vml::{vml_attr, vml_find_descendant, xml_local_name};
 use crate::wml::float::{AnchorAlign, AnchorHRelFrom, AnchorPos, AnchorVRelFrom};
@@ -376,9 +377,9 @@ impl Insets {
     }
 }
 
-/// How a text box is drawn around its content: fill, outline, inner margins
-/// and the content's vertical position. One value, carried whole from the
-/// markup to the paint.
+/// How a text box is drawn around its content: fill, outline, inner margins,
+/// the content's vertical position, and how the box and its text turn. One
+/// value, carried whole from the markup to the paint.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct TextBoxFrame {
     /// A CSS colour, or `None` for no fill.
@@ -392,6 +393,12 @@ pub(crate) struct TextBoxFrame {
     /// `fontRef` colour (§20.1.4.1.17), white on Word's coloured shapes.
     /// `None` keeps the document's default text colour.
     pub(crate) text_color: Option<String>,
+    /// How the box, its fill and outline, turns on its frame (`a:xfrm`,
+    /// §20.1.7.6).
+    pub(crate) transform: Transform,
+    /// How its text turns on the same frame: with the box, never mirrored
+    /// ([`Transform::text`]).
+    pub(crate) text_transform: Transform,
 }
 
 impl Default for TextBoxFrame {
@@ -403,6 +410,8 @@ impl Default for TextBoxFrame {
             insets: Insets::default_px(),
             anchor: TextBoxAnchor::Top,
             text_color: None,
+            transform: Transform::default(),
+            text_transform: Transform::default(),
         }
     }
 }
@@ -413,7 +422,7 @@ impl TextBoxFrame {
     /// destructure fails to compile when a field is added and not emitted.
     pub(crate) fn dump_into(&self, out: &mut String) {
         use std::fmt::Write;
-        let TextBoxFrame { fill_color, border_color, border_width_px, insets, anchor, text_color } = self;
+        let TextBoxFrame { fill_color, border_color, border_width_px, insets, anchor, text_color, transform, text_transform } = self;
         let Insets { left, top, right, bottom } = insets;
         let _ = write!(out, "fill{} border{}/{border_width_px:.2} ins{left:.2},{top:.2},{right:.2},{bottom:.2} anc{anchor:?}",
             fill_color.as_deref().unwrap_or("-"),
@@ -422,6 +431,11 @@ impl TextBoxFrame {
         if let Some(c) = text_color {
             let _ = write!(out, " text{c}");
         }
+        for (name, turn) in [("turn", transform), ("textturn", text_transform)] {
+            if *turn != Transform::default() {
+                let _ = write!(out, " {name}{}{}{}", turn.angle(), if turn.flip_h { "h" } else { "" }, if turn.flip_v { "v" } else { "" });
+            }
+        }
     }
 }
 
@@ -429,8 +443,8 @@ pub(crate) fn extract_drawing_text_box(
     drawing: &ooxml_wml::types::CTDrawing,
     theme: &ThemeFonts,
 ) -> Option<ExtractedTextBox> {
-    for child in &drawing.extra_children {
-        let ooxml_xml::RawXmlNode::Element(ref elem) = child.node else { continue };
+    for node in &drawing.extra_children {
+        let ooxml_xml::RawXmlNode::Element(ref elem) = node.node else { continue };
         let ln = xml_local_name(&elem.name);
         let is_anchored = ln == "anchor";
         if ln != "anchor" && ln != "inline" { continue; }
@@ -438,15 +452,24 @@ pub(crate) fn extract_drawing_text_box(
         // Find wsp element to get shape properties + text box content
         if let Some(wsp) = vml_find_descendant(elem, "wsp") {
             let content = find_txbx_content_in(wsp)?;
-            return Some(ExtractedTextBox { content, is_anchored, frame: wsp_frame(wsp, theme) });
+            // A shape in a group (`wpg:wgp`) lies in the group's space: it
+            // turns with its group, which is not drawn turned yet.
+            let grouped = !["graphic", "graphicData", "wsp"]
+                .iter()
+                .try_fold(elem, |e, name| child(e, name))
+                .is_some_and(|top| std::ptr::eq(top, wsp));
+            return Some(ExtractedTextBox { content, is_anchored, frame: wsp_frame(wsp, theme, grouped) });
         }
     }
     None
 }
 
 /// The frame of a Word 2010 shape (`wps:wsp`): fill and outline from its
-/// `spPr`, falling back to its `wps:style` references, and margins and
-/// vertical position from its `bodyPr`.
+/// `spPr`, falling back to its `wps:style` references, margins and vertical
+/// position from its `bodyPr`, and, unless it is `grouped`, how it turns: by
+/// the `spPr` transform (`a:xfrm`, §20.1.7.6), its text further by the
+/// `bodyPr` (`rot` and `upright`, §21.1.2.1.1), as [`Transform::text`] reads
+/// them.
 ///
 /// Deviations, declared:
 /// - A fill or outline that comes only from the theme's style matrix
@@ -461,9 +484,17 @@ pub(crate) fn extract_drawing_text_box(
 ///   rather than inside a wrong rectangle.
 /// - `bodyPr` autofit is not applied: Word stores the grown size in the
 ///   extent when it saves.
-fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts) -> TextBoxFrame {
+fn wsp_frame(wsp: &ooxml_xml::RawXmlElement, theme: &ThemeFonts, grouped: bool) -> TextBoxFrame {
     let mut frame = TextBoxFrame::default();
     let sp_pr = child(wsp, "spPr");
+    if !grouped {
+        let xfrm = sp_pr.and_then(|sp| child(sp, "xfrm"));
+        frame.transform = Transform::from_attrs(|name| xfrm.and_then(|x| vml_attr(x, name)));
+        let body = child(wsp, "bodyPr");
+        let body_rot = body.and_then(|b| vml_attr(b, "rot")).and_then(|v| v.trim().parse().ok());
+        let upright = body.and_then(|b| vml_attr(b, "upright")).is_some_and(|v| matches!(v.trim(), "1" | "true"));
+        frame.text_transform = frame.transform.text(body_rot, upright);
+    }
     let style = child(wsp, "style");
     let style_ref = |name: &str| -> Option<(u32, Option<String>)> {
         let r = child(style?, name)?;
@@ -698,6 +729,11 @@ pub(crate) fn extract_pict_text_box(pict: &ooxml_wml::types::CTPicture) -> Optio
                         _ => TextBoxAnchor::Top,
                     },
                     text_color: None,
+                    // Deviation, declared: the `rotation` and `flip` of the
+                    // shape's CSS `style` (Part 4 §19.1.2) are not read; the
+                    // box draws upright.
+                    transform: Transform::default(),
+                    text_transform: Transform::default(),
                 },
             });
         }
@@ -855,7 +891,7 @@ mod text_box_frame_tests {
     }
 
     fn wsp(inner: &str) -> TextBoxFrame {
-        wsp_frame(&raw(&format!("<wps:wsp>{inner}</wps:wsp>")), &theme())
+        wsp_frame(&raw(&format!("<wps:wsp>{inner}</wps:wsp>")), &theme(), false)
     }
 
     #[test]

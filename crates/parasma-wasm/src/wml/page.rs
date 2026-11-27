@@ -100,13 +100,13 @@ pub(crate) struct AnchoredImageLayout {
 
 impl AnchoredImageLayout {
     /// The picture's frame on the page, before it turns.
-    pub(crate) fn frame(&self) -> crate::engine::images::Xywh {
+    pub(crate) fn frame(&self) -> crate::engine::transform::Xywh {
         (self.x, self.y, self.width_px, self.height_px)
     }
 
     /// How the picture turns on its frame.
-    pub(crate) fn transform(&self) -> crate::engine::images::Transform {
-        crate::engine::images::Transform::of_style(self.style.as_deref())
+    pub(crate) fn transform(&self) -> crate::engine::transform::Transform {
+        crate::engine::transform::Transform::of_style(self.style.as_deref())
     }
 }
 

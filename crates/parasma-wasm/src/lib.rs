@@ -1269,7 +1269,7 @@ fn apply_pending_floats(pending: &mut Vec<DeferredFloat>, scope: &mut FloatScope
     for df in std::mem::take(pending) {
         if df.target <= section_page_idx {
             // The box the picture covers, turned or not, starts at the top.
-            let turn = engine::images::Transform::of_style(df.style.as_deref());
+            let turn = engine::transform::Transform::of_style(df.style.as_deref());
             let y = ct - turn.bounds((df.fx, 0.0, df.width_px, df.height_px)).1;
             let (bx, by, bw, bh) = turn.bounds((df.fx, y, df.width_px, df.height_px));
             if let Some(af) = build_active_float(&df.wrap, bx, by, bw, bh, col_ml, geo.width_px - col_mr) {
@@ -4673,9 +4673,11 @@ impl Viewer {
                                     behind_text: tb.behind_text,
                                     frame: tb.frame.clone(),
                                 };
-                                // First discovery — tier-select + FREEZE.
+                                // First discovery — tier-select + FREEZE. A
+                                // turned box wraps the upright box it covers.
+                                let (bx, by, bw, bh) = tb.wrap_box(tx, ty);
                                 if let Some(af) = build_active_float(
-                                    &tb.wrap, tx, ty, tb.width_px, tb.height_px, dom_left, dom_right,
+                                    &tb.wrap, bx, by, bw, bh, dom_left, dom_right,
                                 ) {
                                     if independent {
                                         // STRICT FREEZE: first resolution wins (see the
@@ -6731,7 +6733,7 @@ impl Viewer {
         // possibly rotated about that centre — cull by the upright box it then
         // covers.
         let watermark_visible = |bw: f64, bh: f64, rotation_deg: f64| -> bool {
-            let turn = engine::images::Transform { rot: rotation_deg.to_radians(), ..Default::default() };
+            let turn = engine::transform::Transform { rot: rotation_deg.to_radians(), ..Default::default() };
             let (x, y, bw, bh) = turn.bounds((w / 2.0 - bw / 2.0, h / 2.0 - bh / 2.0, bw, bh));
             cull::keep(clip, x, y, x + bw, y + bh)
         };
@@ -6800,8 +6802,8 @@ impl Viewer {
         // A line's band is [baseline - line_height, baseline + 0.3·line_height]
         // (descenders/underline sit below the baseline) × [content_left,
         // content_right]; a table row spans [y_top, y_top + height] across its
-        // cells; an anchored image is the upright box its frame covers once
-        // turned, a text box its own x/y/w/h box.
+        // cells; an anchored image or text box is the upright box its frame
+        // covers once turned (a text box's text turns on its own, so either).
         let keep_line = |l: &PagedLine| {
             cull::keep(
                 clip,
@@ -6824,7 +6826,10 @@ impl Viewer {
             cull::keep(clip, x, y, x + w, y + h)
         };
         let keep_tb = |tb: &PositionedTextBox| {
-            cull::keep(clip, tb.x, tb.y, tb.x + tb.width_px, tb.y + tb.height_px)
+            [tb.frame.transform, tb.frame.text_transform].iter().any(|turn| {
+                let (x, y, w, h) = turn.bounds((tb.x, tb.y, tb.width_px, tb.height_px));
+                cull::keep(clip, x, y, x + w, y + h)
+            })
         };
 
         let paint_anchored = |ai: &AnchoredImageLayout| {
@@ -7522,13 +7527,15 @@ impl Viewer {
         // Match each PARAGRAPH's logical text (its runs concatenated), NOT each
         // run alone — so a phrase spanning runs/formatting is found, and the count
         // matches the paint pass (which highlights per-paragraph logical text too).
+        // A turned shape's bbox is the upright box its turned text box covers.
         for sh in &page.shapes {
             let tx = sh.x + sh.insets.left;
             let ty = sh.y + sh.insets.top;
             let tw = (sh.w - sh.insets.left - sh.insets.right).max(0.0);
+            let (x, y, w, h) = sh.text_transform.bounds_in(sh.frame(), (tx, ty, tw, sh.h));
             for para in &sh.paragraphs {
                 let ptext: String = para.runs.iter().map(|r| r.text.as_str()).collect();
-                emit(tx, ty, tw, sh.h, &ptext);
+                emit(x, y, w, h, &ptext);
             }
         }
         // Tables: each cell already stores its inset text-box origin/width.
@@ -7657,6 +7664,17 @@ impl Viewer {
                 p = q;
             }
         };
+        // A match in a text box drawn in `frame`: its box-relative rects put on
+        // the page, each the upright box it covers once the box's text turns.
+        //
+        // Deviation, declared: a match in a turned box is highlighted as that
+        // upright box, not turned with the text.
+        let place_in_box = |m: &mut SearchMatch, frame: engine::transform::Xywh, turn: engine::transform::Transform| {
+            for r in &mut m.rects {
+                let (x, y, w, h) = turn.bounds_in(frame, (r.x + frame.0, r.y + frame.1, r.w, r.h));
+                *r = SearchRect { x, y, w, h };
+            }
+        };
         let search_lines = |lines: &[&PagedLine], out: &mut Vec<SearchMatch>| {
             // The slice's own paragraphs. A TableRow / cell boundary is a hard
             // paragraph break because we only ever pass one paragraph-source's
@@ -7678,10 +7696,7 @@ impl Viewer {
                             let before = out.len();
                             search_para_block(&tb_lines, out);
                             for m in out[before..].iter_mut() {
-                                for r in &mut m.rects {
-                                    r.x += x;
-                                    r.y += top;
-                                }
+                                place_in_box(m, tb.painted_frame(x, top), tb.frame.text_transform);
                             }
                         }
                         x += item.width;
@@ -7738,10 +7753,7 @@ impl Viewer {
             let before = matches.len();
             search_lines(&tb_lines, &mut matches);
             for m in matches[before..].iter_mut() {
-                for r in &mut m.rects {
-                    r.x += tb.x;
-                    r.y += tb.y;
-                }
+                place_in_box(m, (tb.x, tb.y, tb.width_px, tb.height_px), tb.frame.text_transform);
             }
         }
 

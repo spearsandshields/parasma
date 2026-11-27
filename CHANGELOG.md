@@ -70,6 +70,11 @@ are held stable regardless.
   drawn rotated or mirrored, with its border, where it used to be drawn
   upright. Clicking it, its selection highlight and, in documents, the text
   wrapping around it follow the rotated picture.
+- Presentations and documents: a rotated or flipped shape, connector, chart
+  or text box is drawn rotated or mirrored, with its text turned along with
+  it but never mirrored, where it used to be drawn upright. Clicking and
+  selecting text in a rotated slide shape follow the rotation, and in
+  documents the text wraps around a rotated text box as it is drawn.
 - Documents: text in a shape takes the font colour of the shape's style, such
   as white text on a coloured shape.
 - Documents: tracked deletions keep their line breaks.

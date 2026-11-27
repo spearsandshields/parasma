@@ -575,10 +575,12 @@ fn build_cell_float_layout(
                 tb.width_px, tb.height_px, &fctx,
             );
             if !matches!(tb.wrap.mode, WrapMode::None) {
-                if let Some(af) = build_active_float(&tb.wrap, tx, ty, tb.width_px, tb.height_px, dom_left, dom_right) {
+                // A turned box wraps the upright box it covers.
+                let (bx, by, bw, bh) = tb.wrap_box(tx, ty);
+                if let Some(af) = build_active_float(&tb.wrap, bx, by, bw, bh, dom_left, dom_right) {
                     floats.push(af);
                 }
-                float_bottom = float_bottom.max(ty + tb.height_px);
+                float_bottom = float_bottom.max(by + bh);
             }
             let tb_lines = layout_text_box(
                 &tb.raw, tb.width_px, tb.height_px, &tb.frame, font_cache, style_ctx, default_ppr,

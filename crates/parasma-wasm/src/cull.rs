@@ -229,7 +229,7 @@ mod tests {
         // from a far-corner tiny window.
         let (pw, ph) = (816.0_f64, 1056.0_f64);
         let (bw, bh) = (600.0_f64, 120.0_f64);
-        let turn = crate::engine::images::Transform { rot: 315f64.to_radians(), ..Default::default() };
+        let turn = crate::engine::transform::Transform { rot: 315f64.to_radians(), ..Default::default() };
         let (x, y, w, h) = turn.bounds((pw / 2.0 - bw / 2.0, ph / 2.0 - bh / 2.0, bw, bh));
         let (cx, cy) = (pw / 2.0, ph / 2.0);
 

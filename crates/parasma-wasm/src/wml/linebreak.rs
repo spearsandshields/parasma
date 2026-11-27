@@ -24,7 +24,8 @@ use crate::engine::fonts::{
     font_metrics, font_slot_class, resolve_font_slot, FaceCache, FontCache, FontSlot, ShapedRun,
     ThemeFonts, DEFAULT_FONT_PT,
 };
-use crate::engine::images::{PictureStyle, Transform, Xywh};
+use crate::engine::images::PictureStyle;
+use crate::engine::transform::{Transform, Xywh};
 use crate::engine::paint::{RunStyle, Underline, VertAlign};
 use crate::engine::units::{emu_to_px, pt_to_px};
 use crate::wml::bidi::bidi_reorder_line;
@@ -65,6 +66,29 @@ pub(crate) struct AnchoredTextBoxInfo {
     pub(crate) behind_text: bool,
     pub(crate) frame: TextBoxFrame,
     pub(crate) wrap: WrapInfo,
+}
+
+impl AnchoredTextBoxInfo {
+    /// The box this text box keeps text out of with its frame's top-left at
+    /// `(x, y)`, before its wrap distances: its frame, or the upright box its
+    /// frame covers once it turns, as for a picture
+    /// ([`AnchoredImageInfo::wrap_box`]).
+    pub(crate) fn wrap_box(&self, x: f64, y: f64) -> Xywh {
+        self.frame.transform.bounds((x, y, self.width_px, self.height_px))
+    }
+}
+
+/// `wrap`, for a float that turns by `turn`.
+///
+/// Deviation, declared: a turned float with tight or through wrapping
+/// (§20.4.2.19, §20.4.2.18) wraps the upright box it covers, as with square
+/// wrapping; its wrap polygon is not turned with it, as whether Word turns it
+/// is not measured.
+fn turned_wrap(mut wrap: WrapInfo, turn: Transform) -> WrapInfo {
+    if turn.rotates() && matches!(wrap.mode, WrapMode::Polygon { .. }) {
+        wrap.mode = WrapMode::Square;
+    }
+    wrap
 }
 
 pub(crate) struct AnchoredImageInfo {
@@ -819,15 +843,9 @@ pub(crate) fn collect_items(
                     Some((cx, cy)) => (emu_to_px(cx), emu_to_px(cy)),
                     None => (200.0, 150.0),
                 };
-                let (h_pos, v_pos, h_rel, v_rel, behind, mut wrap) = parse_anchor_position(drawing, aw, ah);
+                let (h_pos, v_pos, h_rel, v_rel, behind, wrap) = parse_anchor_position(drawing, aw, ah);
                 let picture = picture_style(drawing, theme_fonts);
-                // Deviation, declared: a turned picture with tight or through
-                // wrapping (§20.4.2.19, §20.4.2.18) wraps the upright box it
-                // covers, as with square wrapping; its wrap polygon is not
-                // turned with it, as whether Word turns it is not measured.
-                if Transform::of_style(picture.as_deref()).rotates() && matches!(wrap.mode, WrapMode::Polygon { .. }) {
-                    wrap.mode = WrapMode::Square;
-                }
+                let wrap = turned_wrap(wrap, Transform::of_style(picture.as_deref()));
                 for rel_id in anchor_rel_ids {
                     anchored_images.push(AnchoredImageInfo {
                         rel_id: rel_id.to_string(),
@@ -852,6 +870,7 @@ pub(crate) fn collect_items(
                 };
                 if etb.is_anchored {
                     let (h_pos, v_pos, h_rel, v_rel, behind, wrap) = parse_anchor_position(drawing, tw, th);
+                    let wrap = turned_wrap(wrap, etb.frame.transform);
                     anchored_text_boxes.push(AnchoredTextBoxInfo {
                         raw: etb.content,
                         width_px: tw,
@@ -865,17 +884,19 @@ pub(crate) fn collect_items(
                         wrap,
                     });
                 } else {
+                    let content = TextBoxContent {
+                        raw: Some(etb.content),
+                        lines: Vec::new(),
+                        width_px: tw,
+                        height_px: th,
+                        frame: etb.frame,
+                    };
+                    let (width, _) = content.extent();
                     items.push(Item {
                         style: style.clone(),
-                        width: tw,
-                        content_width: tw,
-                        text_box: Some(TextBoxContent {
-                            raw: Some(etb.content),
-                            lines: Vec::new(),
-                            width_px: tw,
-                            height_px: th,
-                            frame: etb.frame,
-                        }),
+                        width,
+                        content_width: width,
+                        text_box: Some(content),
                         // Not born of paragraph text — sentinel.
                         ..Default::default()
                     });
@@ -1582,8 +1603,10 @@ pub(crate) fn accumulate_item_metrics(
         *asc = asc.max(m.ascent);
         *desc = desc.max(m.descent);
     } else if let Some(ref tb) = item.text_box {
-        *asc = asc.max(tb.height_px);
-        *imgh = imgh.max(tb.height_px);
+        // Its frame's height, or the box a turned frame covers.
+        let (_, height) = tb.extent();
+        *asc = asc.max(height);
+        *imgh = imgh.max(height);
     } else if let Some(img) = &item.image {
         // §20.4.2.8: distT/distB pad the image vertically — the line's extent
         // must grow by distT+distB so the lines above/below keep their gap. The
@@ -1976,6 +1999,24 @@ pub(crate) struct TextBoxContent {
     pub(crate) width_px: f64,
     pub(crate) height_px: f64,
     pub(crate) frame: TextBoxFrame,
+}
+
+impl TextBoxContent {
+    /// The `(width, height)` an inline text box takes in its line: its frame,
+    /// or the upright box its frame covers once it turns, as for a picture
+    /// ([`ImageItem::extent`]).
+    pub(crate) fn extent(&self) -> (f64, f64) {
+        let (_, _, w, h) = self.frame.transform.bounds((0.0, 0.0, self.width_px, self.height_px));
+        (w, h)
+    }
+
+    /// The frame this inline text box draws in, its item's left edge at
+    /// `x_left` and its line's top at `top`: the [`extent`](Self::extent) box
+    /// there, or a turned box's frame centred in it.
+    pub(crate) fn painted_frame(&self, x_left: f64, top: f64) -> Xywh {
+        let (w, h) = self.extent();
+        self.frame.transform.frame_within((x_left, top, w, h), (self.width_px, self.height_px))
+    }
 }
 
 /// A field whose result depends on where the page falls (§17.16.5), with

@@ -19,7 +19,8 @@ use std::collections::HashMap;
 use crate::engine::counter;
 use crate::engine::fonts::{self, font_metrics, DEFAULT_FONT_FAMILY, FontCache};
 use crate::engine::geom::{preset_path, PathCmd};
-use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect, Transform, Xywh};
+use crate::engine::images::{ImageCrop, PictureStyle, RelativeRect};
+use crate::engine::transform::{Transform, Xywh};
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use ooxml_dml::ext::{TextParagraphExt, TextRunExt};
@@ -190,6 +191,15 @@ pub(crate) struct SlideChart {
     pub h: f64,
     /// Slide-namespaced chart-XML key (`chart::pml::{slideIdx}::{relId}`).
     pub chart_key: String,
+    /// How the frame, and the chart in it, turns.
+    pub transform: Transform,
+}
+
+impl SlideChart {
+    /// The chart's frame on the slide, before it turns.
+    pub(crate) fn frame(&self) -> Xywh {
+        (self.x, self.y, self.w, self.h)
+    }
 }
 
 /// One chart's raw geometry + chart-XML key, captured from the slide's
@@ -201,6 +211,8 @@ pub(crate) struct ChartItem {
     pub ext_cx: i64,
     pub ext_cy: i64,
     pub chart_key: String,
+    /// The frame's rotation (`p:graphicFrame/p:xfrm@rot`, §19.3.1.53).
+    pub transform: Transform,
 }
 
 /// One positioned picture on a slide (`p:pic`, §19.3.1.37). Carries the pixel
@@ -369,9 +381,19 @@ pub(crate) struct SlideShape {
     /// is `w - insets.left - insets.right`; the text origin is offset by
     /// `(insets.left, insets.top)`.
     pub insets: TextInsets,
+    /// How the shape, its geometry, fill and outline, turns on its frame.
+    pub transform: Transform,
+    /// How its text turns on the same frame: with the shape, never mirrored
+    /// ([`Transform::text`]).
+    pub text_transform: Transform,
 }
 
 impl SlideShape {
+    /// The shape's frame on the slide, before it turns.
+    pub(crate) fn frame(&self) -> Xywh {
+        (self.x, self.y, self.w, self.h)
+    }
+
     /// The solid fill hex when the fill is [`ShapeFill::Solid`] (`None` for a
     /// gradient/no fill) — the painter's fast path + the test pin surface.
     pub(crate) fn solid_fill_hex(&self) -> Option<&str> {
@@ -393,12 +415,18 @@ pub(crate) use crate::engine::border::Edge as ShapeOutline;
 /// connector line with its outline (colour + width + dash) and optional
 /// arrowhead triangles at each end. The painter strokes [`path`] then fills the
 /// head/tail arrowhead paths with the line colour. All geometry is SHAPE-LOCAL
-/// px at the connector box (`x`,`y`); the painter translates like a shape.
+/// px at the connector box (`x`,`y`); the painter translates like a shape,
+/// turned about the box's centre by [`transform`](Self::transform).
 #[derive(Debug, Clone)]
 pub(crate) struct SlideConnector {
-    /// Box top-left x/y in CSS px (the `a:xfrm` off, EMU → px).
+    /// Box top-left x/y and size in CSS px (the `a:xfrm` off and ext, EMU →
+    /// px). One side is 0 for a straight horizontal or vertical line.
     pub x: f64,
     pub y: f64,
+    pub w: f64,
+    pub h: f64,
+    /// The box's rotation (`a:xfrm@rot`). Its flips are already in `path`.
+    pub transform: Transform,
     /// The connector path (straight diagonal / elbow / curved), shape-local px.
     pub path: Vec<PathCmd>,
     /// The stroke colour + width + dash (same model as a shape outline). A
@@ -497,6 +525,11 @@ impl GroupTransform {
         tx: 0.0,
         ty: 0.0,
     };
+
+    /// Whether it maps nothing, as for a shape outside any group.
+    pub(crate) fn is_identity(&self) -> bool {
+        (self.sx, self.sy, self.tx, self.ty) == (1.0, 1.0, 0.0, 0.0)
+    }
 
     /// Map a child-space EMU box (off/ext) into this transform's parent space.
     /// The extent is scaled by `|scale|` (a box always has positive size); a
@@ -1141,10 +1174,31 @@ fn picture_style(pic: &ooxml_pml::types::Picture, theme: &SlideTheme) -> Option<
         }
         _ => None,
     };
-    let transform = pic.shape_properties.transform.as_deref().map_or_else(Transform::default, |t| {
-        Transform::of(t.rot.map(i64::from), t.flip_h.unwrap_or(false), t.flip_v.unwrap_or(false))
-    });
+    let transform = xfrm_transform(pic.shape_properties.transform.as_deref());
     PictureStyle::of(crop, alpha_mod_fix, color, ln.and_then(|l| l.width).map(i64::from), transform)
+}
+
+/// The transform of a parsed `a:xfrm` (§20.1.7.6): its rotation and flips,
+/// none when it is absent.
+pub(crate) fn xfrm_transform(xfrm: Option<&ooxml_dml::types::Transform2D>) -> Transform {
+    xfrm.map_or_else(Transform::default, |t| Transform::of(t.rot.map(i64::from), t.flip_h.unwrap_or(false), t.flip_v.unwrap_or(false)))
+}
+
+/// How a slide shape (`p:sp`, §19.3.1.43) turns, and how its text does: by
+/// its own `a:xfrm` (§20.1.7.6), and its text further by its body
+/// (`bodyPr@rot` and `@upright`, §21.1.2.1.1), read by [`Transform::text`].
+///
+/// A shape whose box a group transform maps (`grouped`) does not turn, nor
+/// does its text: its turn composes with its group's mapping, which can
+/// mirror it, and groups are not drawn turned yet.
+fn shape_turn(sp: &Shape, grouped: bool) -> (Transform, Transform) {
+    if grouped {
+        return (Transform::default(), Transform::default());
+    }
+    let turn = xfrm_transform(sp.shape_properties.transform.as_deref());
+    let body = sp.text_body.as_deref().map(|tb| &tb.body_pr);
+    let text = turn.text(body.and_then(|b| b.rot).map(i64::from), body.and_then(|b| b.upright).unwrap_or(false));
+    (turn, text)
 }
 
 /// The slide-namespaced image key for a picture's embed rel id. Rel ids restart
@@ -1209,6 +1263,7 @@ pub(crate) fn build_slide_page(
             w: emu_to_px(c.ext_cx),
             h: emu_to_px(c.ext_cy),
             chart_key: c.chart_key.clone(),
+            transform: c.transform,
         })
         .collect();
 
@@ -1263,6 +1318,7 @@ pub(crate) fn build_slide_page(
             continue;
         }
 
+        let (transform, text_transform) = shape_turn(sp, !xform.is_identity());
         out.push(SlideShape {
             x: emu_to_px(bx.off_x),
             y: emu_to_px(bx.off_y),
@@ -1277,6 +1333,8 @@ pub(crate) fn build_slide_page(
             anchor: text_anchor(sp),
             wrap: text_wrap(sp),
             insets: text_insets(sp),
+            transform,
+            text_transform,
         });
     }
 
@@ -1303,7 +1361,7 @@ pub(crate) fn build_slide_page(
 }
 
 /// Build one [`SlideConnector`] from a parsed `p:cxnSp` (§19.3.1.19). Reads
-/// the connector's `a:xfrm` box (off/ext/flipH/flipV), its `prstGeom` preset
+/// the connector's `a:xfrm` box (off/ext/rot/flipH/flipV), its `prstGeom` preset
 /// (`line`/`straightConnector1`/`bentConnector*`/`curvedConnector*`), its `a:ln`
 /// outline (colour → explicit solid → `<p:style>` lnRef, width, dash), and
 /// its `a:headEnd`/`a:tailEnd` arrowheads. Returns `None` when no line colour
@@ -1325,11 +1383,10 @@ fn build_slide_connector(
         return None;
     }
 
-    let (flip_h, flip_v) = spr
-        .transform
-        .as_deref()
-        .map(|t| (t.flip_h.unwrap_or(false), t.flip_v.unwrap_or(false)))
-        .unwrap_or((false, false));
+    // The flips go into the path, which swaps its ends and so its arrowheads;
+    // the rotation then turns the flipped path about the box's centre, as
+    // PowerPoint writes a vertical connector: a flat box turned a quarter.
+    let Transform { rot, flip_h, flip_v } = xfrm_transform(spr.transform.as_deref());
 
     let preset = match spr.geometry.as_deref() {
         Some(EGGeometry::PrstGeom(pg)) => pg.preset.to_string(),
@@ -1369,6 +1426,9 @@ fn build_slide_connector(
     Some(SlideConnector {
         x: emu_to_px(ox),
         y: emu_to_px(oy),
+        w: w_px,
+        h: h_px,
+        transform: Transform { rot, ..Transform::default() },
         path: geom.path,
         outline,
         head_arrow,

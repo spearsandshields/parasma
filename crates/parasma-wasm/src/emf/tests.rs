@@ -655,7 +655,7 @@ fn a_cropped_emf_picture_asks_for_its_whole_footprint() {
         outline: None,
         crop: Some(ImageCrop { src: RelativeRect { l: 0.25, t: 0.0, r: 0.25, b: 0.5 }, fill: RelativeRect::default() }),
         alpha: 1.0,
-        transform: crate::engine::images::Transform::default(),
+        transform: crate::engine::transform::Transform::default(),
     };
 
     let rec = RecordingPainter::default();

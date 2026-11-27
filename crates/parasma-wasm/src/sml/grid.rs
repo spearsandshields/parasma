@@ -14,7 +14,8 @@
 //!  - §18.3.1.73  row@ht in POINTS → px via `engine::units::pt_to_px`.
 //!  - §18.3.1.81  sheetFormatPr defaults.
 
-use crate::engine::images::{PictureStyle, Transform, Xywh};
+use crate::engine::images::PictureStyle;
+use crate::engine::transform::{Transform, Xywh};
 use crate::engine::units::{emu_to_px, pt_to_px};
 
 use super::drawings::SheetDrawing;
@@ -126,7 +127,7 @@ impl PageImage {
         };
         // The angle in whole 60000ths of a degree, so the range edges compare
         // exactly.
-        let rot = (Transform::of_style(d.style.as_deref()).rot.to_degrees() * 60_000.0).round() as i64;
+        let rot = Transform::of_style(d.style.as_deref()).angle();
         let on_end = (2_700_000..8_100_000).contains(&rot) || (13_500_000..18_900_000).contains(&rot);
         let (x, y, w, h) = if on_end { (x0 + (w - h) / 2.0, y0 + (h - w) / 2.0, h, w) } else { (x0, y0, w, h) };
         Some(PageImage { x, y, w, h, key: d.image_key.clone(), style: d.style.clone() })

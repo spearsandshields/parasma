@@ -63,6 +63,9 @@ pub(crate) mod paint;
 /// never CALL the pattern path, so docx pixels stay byte-identical). The
 /// mappers await a second caller (WML `w:shd` patterns / SML pattern fills).
 pub(crate) mod pattern;
+/// How a drawing turns on its frame (`a:xfrm`): pictures, shapes and their
+/// text, connectors, graphic frames and text boxes in all three formats.
+pub(crate) mod transform;
 pub(crate) mod units;
 pub(crate) mod vml;
 

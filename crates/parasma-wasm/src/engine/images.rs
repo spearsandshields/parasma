@@ -1,13 +1,14 @@
 //! Images, for every format: the media part types, the placeholder drawn for
 //! an image not yet decoded, and how a picture draws: its crop, opacity,
-//! outline and turn, the paint that draws them, and where a turned picture
-//! lands.
+//! outline and turn, and the paint that draws them. How the turn moves the
+//! picture is `engine::transform`'s.
 
 use wasm_bindgen::JsValue;
 
 use crate::engine::border::{Edge, LineStyle};
 use crate::engine::color::parse_dml_pct;
 use crate::engine::paint::Painter;
+use crate::engine::transform::{Transform, Xywh};
 use crate::engine::units::emu_to_px;
 
 /// Derive an image mime type from a media part's file extension. Lives in
@@ -95,129 +96,6 @@ pub(crate) struct ImageCrop {
     pub(crate) fill: RelativeRect,
 }
 
-/// A rectangle as `(x, y, width, height)`.
-pub(crate) type Xywh = (f64, f64, f64, f64);
-
-/// How a picture turns on its frame (`a:xfrm`, §20.1.7.6): mirrored left to
-/// right about the frame's centre when `flip_h`, top to bottom when `flip_v`,
-/// then rotated clockwise about the centre by `rot` radians. The frame is
-/// where the picture lies before it turns; the default turns nothing.
-///
-/// The flips come before the rotation, so a mirrored picture keeps its
-/// rotation: the spec names the three without ordering them, and this is
-/// the order the canvas transform in [`Transform::paint`] applies.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Transform {
-    pub(crate) rot: f64,
-    pub(crate) flip_h: bool,
-    pub(crate) flip_v: bool,
-}
-
-impl Transform {
-    /// The transform of an `a:xfrm` whose `@rot` is `rot` (`ST_Angle`,
-    /// §20.1.10.3: 60000ths of a degree, positive clockwise; absent is 0)
-    /// and whose `@flipH` and `@flipV` are the two flips. Whole turns are
-    /// dropped, so a picture turned 360° is upright.
-    pub(crate) fn of(rot: Option<i64>, flip_h: bool, flip_v: bool) -> Self {
-        let rot = rot.unwrap_or(0).rem_euclid(21_600_000);
-        Transform { rot: (rot as f64 / 60_000.0).to_radians(), flip_h, flip_v }
-    }
-
-    /// The transform of an `a:xfrm` whose attributes `attr` reads: [`of`](Self::of)
-    /// its `rot`, read as an integer, and its `flipH` and `flipV`, each on
-    /// when `1` or `true` (`xsd:boolean`). An absent or unreadable one is 0
-    /// or off.
-    pub(crate) fn from_attrs<'a>(attr: impl Fn(&str) -> Option<&'a str>) -> Self {
-        let flip = |name| attr(name).is_some_and(|v| matches!(v.trim(), "1" | "true"));
-        Self::of(attr("rot").and_then(|v| v.trim().parse().ok()), flip("flipH"), flip("flipV"))
-    }
-
-    /// The transform of a picture drawn with `style`.
-    pub(crate) fn of_style(style: Option<&PictureStyle>) -> Self {
-        style.map_or_else(Self::default, |s| s.transform)
-    }
-
-    /// Whether it rotates the frame: a flip alone leaves the frame where it is.
-    pub(crate) fn rotates(&self) -> bool {
-        self.rot != 0.0
-    }
-
-    /// `(x, y)` rotated by `angle` radians, clockwise on the page, about the
-    /// centre of `frame`.
-    fn rotate_about(frame: Xywh, (x, y): (f64, f64), angle: f64) -> (f64, f64) {
-        let (cx, cy) = (frame.0 + frame.2 / 2.0, frame.1 + frame.3 / 2.0);
-        let (sin, cos) = angle.sin_cos();
-        let (dx, dy) = (x - cx, y - cy);
-        (cx + dx * cos - dy * sin, cy + dx * sin + dy * cos)
-    }
-
-    /// Where the four corners of `frame` land once it turns. A flip only
-    /// swaps the corners among themselves, so the rotation alone places them.
-    pub(crate) fn corners(&self, frame: Xywh) -> [(f64, f64); 4] {
-        let (x, y, w, h) = frame;
-        [(x, y), (x + w, y), (x + w, y + h), (x, y + h)].map(|pt| Self::rotate_about(frame, pt, self.rot))
-    }
-
-    /// The upright box `frame` covers once it turns: `frame` itself when it
-    /// is not rotated.
-    pub(crate) fn bounds(&self, frame: Xywh) -> Xywh {
-        if !self.rotates() {
-            return frame;
-        }
-        let corners = self.corners(frame);
-        let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-        for (x, y) in corners {
-            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
-        }
-        (x0, y0, x1 - x0, y1 - y0)
-    }
-
-    /// The frame of size `(w, h)` whose turned box is `held`: centred in it,
-    /// as a frame turns about its centre. An unrotated frame is `held` itself.
-    pub(crate) fn frame_within(&self, held: Xywh, (w, h): (f64, f64)) -> Xywh {
-        if !self.rotates() {
-            return held;
-        }
-        let (cx, cy) = (held.0 + held.2 / 2.0, held.1 + held.3 / 2.0);
-        (cx - w / 2.0, cy - h / 2.0, w, h)
-    }
-
-    /// Whether `frame`, once it turns, covers `(x, y)`: the point turned back
-    /// about the frame's centre lies in the frame, its left and top edges in
-    /// and its right and bottom edges out.
-    pub(crate) fn contains(&self, frame: Xywh, x: f64, y: f64) -> bool {
-        let (x, y) = if self.rotates() { Self::rotate_about(frame, (x, y), -self.rot) } else { (x, y) };
-        let (fx, fy, w, h) = frame;
-        x >= fx && x < fx + w && y >= fy && y < fy + h
-    }
-
-    /// Run `draw`, which paints in page coordinates as if the picture in
-    /// `frame` were upright, with what it paints turned with the frame: under
-    /// a canvas transform that moves the frame's centre to the origin, mirrors
-    /// and rotates about it and moves it back, restored after. A transform
-    /// that turns nothing adds nothing to what `draw` paints.
-    ///
-    /// The first translate absorbs a windowed painter's offset and the rest
-    /// pass through it unchanged, so the frame turns about the same page
-    /// point in a window as on the whole page.
-    pub(crate) fn paint(&self, p: &dyn Painter, frame: Xywh, draw: impl FnOnce() -> Result<(), JsValue>) -> Result<(), JsValue> {
-        if *self == Self::default() {
-            return draw();
-        }
-        let (cx, cy) = (frame.0 + frame.2 / 2.0, frame.1 + frame.3 / 2.0);
-        let sign = |flip: bool| if flip { -1.0 } else { 1.0 };
-        p.save();
-        let drawn = p
-            .translate(cx, cy)
-            .and_then(|()| if self.rotates() { p.rotate(self.rot) } else { Ok(()) })
-            .and_then(|()| if self.flip_h || self.flip_v { p.scale(sign(self.flip_h), sign(self.flip_v)) } else { Ok(()) })
-            .and_then(|()| p.translate(-cx, -cy))
-            .and_then(|()| draw());
-        p.restore();
-        drawn
-    }
-}
-
 /// How a picture is drawn other than as its whole bitmap, opaque, upright and
 /// stretched over its frame: its crop and opacity, read from its fill
 /// (`a:blipFill`, §20.1.8.14), its outline, read from its shape properties,
@@ -235,6 +113,13 @@ pub(crate) struct PictureStyle {
     pub(crate) alpha: f64,
     /// How the picture, bitmap and outline together, turns on its frame.
     pub(crate) transform: Transform,
+}
+
+impl Transform {
+    /// The transform of a picture drawn with `style`.
+    pub(crate) fn of_style(style: Option<&PictureStyle>) -> Self {
+        style.map_or_else(Self::default, |s| s.transform)
+    }
 }
 
 impl PictureStyle {
@@ -369,6 +254,7 @@ fn crop_span(
 #[cfg(test)]
 mod tests {
     use super::{crop_draw, ImageCrop, PictureStyle, RelativeRect, Transform, Xywh};
+    use crate::engine::transform::tests::{assert_points, quarter_turned};
 
     const FRAME: Xywh = (10.0, 20.0, 200.0, 100.0);
 
@@ -395,66 +281,6 @@ mod tests {
     }
 
     // ── Turned pictures (`a:xfrm`, §20.1.7.6) ───────────────────────────────
-
-    const QUARTER: f64 = std::f64::consts::FRAC_PI_2;
-
-    fn assert_points(got: &[(f64, f64)], want: &[(f64, f64)], what: &str) {
-        assert_eq!(got.len(), want.len(), "{what}");
-        for (g, w) in got.iter().zip(want) {
-            assert!((g.0 - w.0).abs() < 1e-9 && (g.1 - w.1).abs() < 1e-9, "{what}: got {got:?}, want {want:?}");
-        }
-    }
-
-    /// Where the corners of `frame` (top-left, top-right, bottom-right,
-    /// bottom-left) land a quarter turn clockwise about its centre: the
-    /// top-left goes to the top-right of the box it then stands in.
-    fn quarter_turned((x, y, w, h): Xywh) -> [(f64, f64); 4] {
-        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
-        [(cx + h / 2.0, cy - w / 2.0), (cx + h / 2.0, cy + w / 2.0), (cx - h / 2.0, cy + w / 2.0), (cx - h / 2.0, cy - w / 2.0)]
-    }
-
-    /// `ST_Angle` (§20.1.10.3) is in 60000ths of a degree, positive clockwise;
-    /// a whole turn is upright.
-    #[test]
-    fn an_xfrm_angle_is_sixty_thousandths_of_a_degree() {
-        assert!((Transform::of(Some(5_400_000), false, false).rot - QUARTER).abs() < 1e-12);
-        assert!((Transform::of(Some(-5_400_000), false, false).rot - 3.0 * QUARTER).abs() < 1e-12);
-        for upright in [None, Some(0), Some(21_600_000), Some(-43_200_000)] {
-            assert_eq!(Transform::of(upright, false, false), Transform::default(), "{upright:?}");
-        }
-    }
-
-    /// A 200×50 frame turned a quarter stands 50 wide and 200 tall about the
-    /// same centre; an unturned frame is its own box, exactly.
-    #[test]
-    fn a_quarter_turn_stands_the_frame_on_end() {
-        let frame = (10.0, 20.0, 200.0, 50.0);
-        let turn = Transform::of(Some(5_400_000), false, false);
-        assert_points(&turn.corners(frame), &quarter_turned(frame), "corners");
-        let (x, y, w, h) = turn.bounds(frame);
-        assert_points(&[(x, y), (w, h)], &[(85.0, -55.0), (50.0, 200.0)], "bounds");
-        for upright in [Transform::default(), Transform::of(None, true, true)] {
-            assert_eq!(upright.bounds(frame), frame);
-        }
-    }
-
-    /// A frame turned 45° is a diamond in its box: a point it covers is in,
-    /// also outside the unturned frame, and a corner of its box it leaves
-    /// bare is out, also inside the unturned frame.
-    #[test]
-    fn a_turned_frame_covers_only_its_own_area() {
-        let frame = (0.0, 0.0, 100.0, 100.0);
-        let turn = Transform::of(Some(2_700_000), false, false);
-        let (bx, by, bw, bh) = turn.bounds(frame);
-        assert_points(&[(bx, by), (bw, bh)], &[(50.0 - 50.0 * 2f64.sqrt(), 50.0 - 50.0 * 2f64.sqrt()), (100.0 * 2f64.sqrt(), 100.0 * 2f64.sqrt())], "bounds");
-        assert!(turn.contains(frame, 50.0, 50.0), "the centre");
-        assert!(turn.contains(frame, -15.0, 50.0), "the left tip, outside the unturned frame");
-        assert!(!turn.contains(frame, 5.0, 5.0), "the unturned frame's corner, left bare");
-        assert!(!turn.contains(frame, bx + 1.0, by + 1.0), "the corner of the box");
-        // Unturned, the edges are as for any box: left and top in, right and bottom out.
-        let upright = Transform::default();
-        assert!(upright.contains(frame, 0.0, 0.0) && !upright.contains(frame, 100.0, 50.0) && !upright.contains(frame, 50.0, 100.0));
-    }
 
     /// The corners of each rect `draw_picture` records for a 1px-outlined
     /// picture turned by `turn`, on the page and in a window whose origin is

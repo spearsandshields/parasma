@@ -22,7 +22,8 @@ use ooxml_wml::types::CTTxbxContent;
 
 use crate::chart;
 use crate::engine::fonts::{FaceCache, FontCache, ThemeFonts};
-use crate::engine::images::{draw_picture, PictureStyle, Xywh};
+use crate::engine::images::{draw_picture, PictureStyle};
+use crate::engine::transform::Xywh;
 use crate::engine::paint::{Painter, Underline, VertAlign};
 use crate::engine::units::pt_to_px;
 use crate::wml::drawing::{is_layout_control, TextBoxAnchor, TextBoxFrame};
@@ -319,6 +320,10 @@ pub(crate) fn layout_text_box(
     result
 }
 
+/// Paint a text box: its fill, its content clipped to the box, then its
+/// outline. The fill and outline turn with the box, the clipped content with
+/// its text ([`TextBoxFrame::text_transform`](crate::wml::drawing::TextBoxFrame)),
+/// each about the frame's centre.
 pub(crate) fn render_text_box(
     p: &dyn Painter,
     tb: &PositionedTextBox,
@@ -326,53 +331,63 @@ pub(crate) fn render_text_box(
     charts: &HashMap<String, Vec<u8>>,
     ul_trail_space: bool,
 ) -> Result<(), JsValue> {
+    let frame = (tb.x, tb.y, tb.width_px, tb.height_px);
     p.save();
 
     // Fill
-    if let Some(ref color) = tb.frame.fill_color {
-        p.set_fill_style_str(color);
-        p.fill_rect(tb.x, tb.y, tb.width_px, tb.height_px);
-    }
+    tb.frame.transform.paint(p, frame, || {
+        if let Some(ref color) = tb.frame.fill_color {
+            p.set_fill_style_str(color);
+            p.fill_rect(tb.x, tb.y, tb.width_px, tb.height_px);
+        }
+        Ok(())
+    })?;
 
-    // Clip content to box bounds
-    p.save();
-    p.begin_path();
-    p.rect(tb.x, tb.y, tb.width_px, tb.height_px);
-    p.clip();
+    tb.frame.text_transform.paint(p, frame, || {
+        // Clip content to box bounds
+        p.save();
+        p.begin_path();
+        p.rect(tb.x, tb.y, tb.width_px, tb.height_px);
+        p.clip();
 
-    // Content
-    for line in &tb.lines {
-        let offset_line = PagedLine {
-            para: line.para, // clone-from-line preserves the source line's para.
-            segments: line.segments.iter().map(|s| LineSegment {
-                x_start: tb.x + s.x_start,
-                items: s.items.clone(),
-            }).collect(),
-            baseline_y: tb.y + line.baseline_y,
-            para_shading: line.para_shading.clone(),
-            line_height: line.line_height,
-            content_left: tb.x + line.content_left,
-            content_right: tb.x + line.content_right,
-            border_top: line.border_top.clone(),
-            border_bottom: line.border_bottom.clone(),
-            border_left: line.border_left.clone(),
-            border_right: line.border_right.clone(),
-            bar_tabs: line.bar_tabs.iter().map(|&x| tb.x + x).collect(),
-            is_first_line: line.is_first_line,
-            is_last_line: line.is_last_line,
-        };
-        render_line(p, &offset_line, bitmaps, charts, ul_trail_space)?;
-    }
-    p.restore(); // remove clip
+        // Content
+        for line in &tb.lines {
+            let offset_line = PagedLine {
+                para: line.para, // clone-from-line preserves the source line's para.
+                segments: line.segments.iter().map(|s| LineSegment {
+                    x_start: tb.x + s.x_start,
+                    items: s.items.clone(),
+                }).collect(),
+                baseline_y: tb.y + line.baseline_y,
+                para_shading: line.para_shading.clone(),
+                line_height: line.line_height,
+                content_left: tb.x + line.content_left,
+                content_right: tb.x + line.content_right,
+                border_top: line.border_top.clone(),
+                border_bottom: line.border_bottom.clone(),
+                border_left: line.border_left.clone(),
+                border_right: line.border_right.clone(),
+                bar_tabs: line.bar_tabs.iter().map(|&x| tb.x + x).collect(),
+                is_first_line: line.is_first_line,
+                is_last_line: line.is_last_line,
+            };
+            render_line(p, &offset_line, bitmaps, charts, ul_trail_space)?;
+        }
+        p.restore(); // remove clip
+        Ok(())
+    })?;
 
     // Border (drawn outside clip so it's crisp on the edge)
-    if let Some(ref color) = tb.frame.border_color {
-        if tb.frame.border_width_px > 0.0 {
-            p.set_stroke_style_str(color);
-            p.set_line_width(tb.frame.border_width_px);
-            p.stroke_rect(tb.x, tb.y, tb.width_px, tb.height_px);
+    tb.frame.transform.paint(p, frame, || {
+        if let Some(ref color) = tb.frame.border_color {
+            if tb.frame.border_width_px > 0.0 {
+                p.set_stroke_style_str(color);
+                p.set_line_width(tb.frame.border_width_px);
+                p.stroke_rect(tb.x, tb.y, tb.width_px, tb.height_px);
+            }
         }
-    }
+        Ok(())
+    })?;
 
     p.restore();
     Ok(())
@@ -535,13 +550,14 @@ pub(crate) fn render_line(
             continue;
         }
         if let Some(ref tb) = item.text_box {
-            let top = line.baseline_y - line.line_height;
+            // A turned box's frame is centred in the box it takes in the line.
+            let (box_x, box_y, width_px, height_px) = tb.painted_frame(x, line.baseline_y - line.line_height);
             let ptb = PositionedTextBox {
                 lines: tb.lines.clone(),
-                x,
-                y: top,
-                width_px: tb.width_px,
-                height_px: tb.height_px,
+                x: box_x,
+                y: box_y,
+                width_px,
+                height_px,
                 behind_text: false,
                 frame: tb.frame.clone(),
             };

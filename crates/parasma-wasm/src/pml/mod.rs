@@ -598,10 +598,11 @@ impl PmlRenderer {
     /// Shared slide paint, threaded by `clip` (the windowed paint). `None` = full slide
     /// (byte-identical to the original `render_page`); `Some(win)` = windowed —
     /// each positioned item (picture / shape / table cell / chart) is culled by
-    /// its box ∩ `win` (`crate::cull::keep`), so the item walk is O(visible).
-    /// The slide background fill is O(1) chrome → unconditional. `SlideConnector`
-    /// carries only `x,y` + a shape-local path (no `w/h`), so connectors paint
-    /// UNCONDITIONALLY for v1 (a path-bbox cull is a follow-on).
+    /// the upright box it covers, turned or not, ∩ `win` (`crate::cull::keep`),
+    /// so the item walk is O(visible). The slide background fill is O(1) chrome
+    /// → unconditional. A connector's stroke and arrowheads reach past its box,
+    /// so connectors paint UNCONDITIONALLY for v1 (a path-bbox cull is a
+    /// follow-on).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn render_page_clipped(
         &self,
@@ -699,126 +700,147 @@ impl PmlRenderer {
         let mut matched_so_far: usize = 0;
         for sh in &page.shapes {
             // Windowed cull: skip a shape whose box (and its text, which is inset
-            // INSIDE the box) misses the window. The culled shape's matches still
-            // advance the global counter (cull-blind numbering in search_pml_slide).
-            if !crate::cull::keep(clip, sh.x, sh.y, sh.x + sh.w, sh.y + sh.h) {
+            // INSIDE the box) misses the window, each as it lies once turned. The
+            // culled shape's matches still advance the global counter (cull-blind
+            // numbering in search_pml_slide).
+            let meets_window = [sh.transform, sh.text_transform].iter().any(|turn| {
+                let (x, y, w, h) = turn.bounds(sh.frame());
+                crate::cull::keep(clip, x, y, x + w, y + h)
+            });
+            if !meets_window {
                 matched_so_far += count_paragraph_matches(&sh.paragraphs, search);
                 continue;
             }
-            if let Some(cmds) = &sh.geometry {
-                // The preset-geometry path painter — ONE path, filled AND
-                // stroked (§20.1.9.18). Commands are shape-local px; save/
-                // translate puts them at the box (and makes future rot/flipH/
-                // flipV free). Holes (donut/frame) carry reversed-winding
-                // inner contours, so the default nonzero fill leaves them empty.
-                p.save();
-                let _ = p.translate(sh.x, sh.y);
-                // A 3-D preset (cube/can/bevel) with a SOLID base fill paints
-                // its per-face shaded regions (painter's order) instead of the
-                // single flat geometry fill — each face's base colour scaled by
-                // its shade multiplier. A gradient/none base fill has no single
-                // colour to shade, so we fall through to the flat silhouette fill.
-                // Declared: a translucent base (an `rgba()` fill) is not shaded;
-                // every face draws the base colour.
-                let painted_faces = match (&sh.faces, sh.solid_fill_hex()) {
-                    (Some(faces), Some(base)) if !faces.is_empty() => {
-                        for face in faces {
-                            p.begin_path();
-                            trace_path(p, &face.path);
-                            let hex = crate::engine::color::shade_hex(base, face.shade);
-                            p.set_fill_style_str(&hex);
-                            p.fill();
+            // The geometry, its fill and its outline turn with the shape
+            // (`a:xfrm`, §20.1.7.6): drawn upright under the shape's turn.
+            //
+            // Deviation, declared: a gradient or pattern fill turns with the
+            // shape whatever its `rotWithShape` (§20.1.8.33, §20.1.8.47).
+            sh.transform.paint(p, sh.frame(), || {
+                if let Some(cmds) = &sh.geometry {
+                    // The preset-geometry path painter — ONE path, filled AND
+                    // stroked (§20.1.9.18). Commands are shape-local px; save/
+                    // translate puts them at the box. Holes (donut/frame) carry
+                    // reversed-winding inner contours, so the default nonzero fill
+                    // leaves them empty.
+                    p.save();
+                    let _ = p.translate(sh.x, sh.y);
+                    // A 3-D preset (cube/can/bevel) with a SOLID base fill paints
+                    // its per-face shaded regions (painter's order) instead of the
+                    // single flat geometry fill — each face's base colour scaled by
+                    // its shade multiplier. A gradient/none base fill has no single
+                    // colour to shade, so we fall through to the flat silhouette fill.
+                    // Declared: a translucent base (an `rgba()` fill) is not shaded;
+                    // every face draws the base colour.
+                    let painted_faces = match (&sh.faces, sh.solid_fill_hex()) {
+                        (Some(faces), Some(base)) if !faces.is_empty() => {
+                            for face in faces {
+                                p.begin_path();
+                                trace_path(p, &face.path);
+                                let hex = crate::engine::color::shade_hex(base, face.shade);
+                                p.set_fill_style_str(&hex);
+                                p.fill();
+                            }
+                            true
                         }
-                        true
+                        _ => false,
+                    };
+                    p.begin_path();
+                    trace_path(p, cmds);
+                    // Solid → fillStyle string; gradient → a canvas linear
+                    // gradient spanning the SHAPE box (shape-local space after the
+                    // translate). Gradient-surface miss → first stop as a solid.
+                    if !painted_faces && set_shape_fill_style(p, &sh.fill, 0.0, 0.0, sh.w, sh.h) {
+                        p.fill();
                     }
-                    _ => false,
-                };
-                p.begin_path();
-                trace_path(p, cmds);
-                // Solid → fillStyle string; gradient → a canvas linear
-                // gradient spanning the SHAPE box (shape-local space after the
-                // translate). Gradient-surface miss → first stop as a solid.
-                if !painted_faces && set_shape_fill_style(p, &sh.fill, 0.0, 0.0, sh.w, sh.h) {
-                    p.fill();
+                    if let Some(out) = &sh.outline {
+                        p.set_stroke_style_str(&out.color);
+                        p.set_line_width(out.width_px);
+                        // Dashed stroke — scale the canonical line-width-multiple
+                        // array by the pen width, then clear it after so the next
+                        // shape strokes solid.
+                        apply_line_dash(p, out.dash.as_deref(), out.width_px);
+                        p.stroke();
+                        p.clear_line_dash();
+                    }
+                    p.restore();
+                } else {
+                    // Fallback: no prstGeom / unparseable custGeom / unknown
+                    // preset → the honest rectangle.
+                    #[cfg(feature = "debug-probe")]
+                    if let Some(name) = &sh.unknown_preset {
+                        crate::console_log(&format!(
+                            "pml geom: unknown preset '{name}' → rect fallback"
+                        ));
+                    }
+                    // Shape fill behind the text (solid or box-spanning
+                    // linear gradient).
+                    if set_shape_fill_style(p, &sh.fill, sh.x, sh.y, sh.w, sh.h) {
+                        p.fill_rect(sh.x, sh.y, sh.w, sh.h);
+                    }
+                    // Solid outline stroked on the box edge (§20.1.2.2.24). Inset by
+                    // half the stroke so the line sits on the box rather than
+                    // straddling it.
+                    if let Some(out) = &sh.outline {
+                        p.set_stroke_style_str(&out.color);
+                        p.set_line_width(out.width_px);
+                        apply_line_dash(p, out.dash.as_deref(), out.width_px);
+                        let half = out.width_px / 2.0;
+                        p.stroke_rect(
+                            sh.x + half,
+                            sh.y + half,
+                            sh.w - out.width_px,
+                            sh.h - out.width_px,
+                        );
+                        p.clear_line_dash();
+                    }
                 }
-                if let Some(out) = &sh.outline {
-                    p.set_stroke_style_str(&out.color);
-                    p.set_line_width(out.width_px);
-                    // Dashed stroke — scale the canonical line-width-multiple
-                    // array by the pen width, then clear it after so the next
-                    // shape strokes solid.
-                    apply_line_dash(p, out.dash.as_deref(), out.width_px);
-                    p.stroke();
-                    p.clear_line_dash();
-                }
-                p.restore();
-            } else {
-                // Fallback: no prstGeom / unparseable custGeom / unknown
-                // preset → the honest rectangle.
-                #[cfg(feature = "debug-probe")]
-                if let Some(name) = &sh.unknown_preset {
-                    crate::console_log(&format!(
-                        "pml geom: unknown preset '{name}' → rect fallback"
-                    ));
-                }
-                // Shape fill behind the text (solid or box-spanning
-                // linear gradient).
-                if set_shape_fill_style(p, &sh.fill, sh.x, sh.y, sh.w, sh.h) {
-                    p.fill_rect(sh.x, sh.y, sh.w, sh.h);
-                }
-                // Solid outline stroked on the box edge (§20.1.2.2.24). Inset by
-                // half the stroke so the line sits on the box rather than
-                // straddling it.
-                if let Some(out) = &sh.outline {
-                    p.set_stroke_style_str(&out.color);
-                    p.set_line_width(out.width_px);
-                    apply_line_dash(p, out.dash.as_deref(), out.width_px);
-                    let half = out.width_px / 2.0;
-                    p.stroke_rect(
-                        sh.x + half,
-                        sh.y + half,
-                        sh.w - out.width_px,
-                        sh.h - out.width_px,
-                    );
-                    p.clear_line_dash();
-                }
-            }
+                Ok(())
+            })?;
 
             // The inset text box (bodyPr@lIns/tIns/rIns/bIns): wrapping fills
             // `text_w`, the text origin sits inside the insets, and the vertical
             // anchor offsets the WRAP-AWARE block (bodyPr@anchor). The
             // formula is the shared `shape_text_box` so paint + the text
-            // selection reads use identical geometry.
+            // selection reads use identical geometry. It is laid out upright
+            // in the frame and drawn under the text's own turn.
+            //
+            // Deviation, declared: text turned by `bodyPr@rot`, or held upright
+            // in a turned shape, is laid out across the unturned frame, not
+            // re-wrapped to the box it then stands in; not measured.
             let (text_x, text_y, text_w) = shape_text_box(sh, font_cache);
-            matched_so_far += paint_paragraph_stack(
-                p, &sh.paragraphs, text_x, text_y, text_w, sh.wrap, font_cache, search,
-                matched_so_far,
-            )?;
+            matched_so_far += sh.text_transform.paint(p, sh.frame(), || {
+                paint_paragraph_stack(p, &sh.paragraphs, text_x, text_y, text_w, sh.wrap, font_cache, search, matched_so_far)
+            })?;
         }
 
         // Connectors (§19.3.1.19 `p:cxnSp`) paint after the shapes: stroke
         // the connector path (with its dash), then fill the head/tail
         // arrowhead triangles with the SAME line colour. Each is shape-local px
         // at the connector box, so save/translate like a shape (and clear the
-        // dash before filling the heads so the arrowheads stay solid).
+        // dash before filling the heads so the arrowheads stay solid), under
+        // the box's turn.
         for cn in &page.connectors {
-            p.save();
-            let _ = p.translate(cn.x, cn.y);
-            p.begin_path();
-            trace_path(p, &cn.path);
-            p.set_stroke_style_str(&cn.outline.color);
-            p.set_line_width(cn.outline.width_px);
-            apply_line_dash(p, cn.outline.dash.as_deref(), cn.outline.width_px);
-            p.stroke();
-            p.clear_line_dash();
-            // Arrowheads: filled triangles in the line colour.
-            p.set_fill_style_str(&cn.outline.color);
-            for head in [&cn.head_arrow, &cn.tail_arrow].into_iter().flatten() {
+            let _ = cn.transform.paint(p, (cn.x, cn.y, cn.w, cn.h), || {
+                p.save();
+                let _ = p.translate(cn.x, cn.y);
                 p.begin_path();
-                trace_path(p, head);
-                p.fill();
-            }
-            p.restore();
+                trace_path(p, &cn.path);
+                p.set_stroke_style_str(&cn.outline.color);
+                p.set_line_width(cn.outline.width_px);
+                apply_line_dash(p, cn.outline.dash.as_deref(), cn.outline.width_px);
+                p.stroke();
+                p.clear_line_dash();
+                // Arrowheads: filled triangles in the line colour.
+                p.set_fill_style_str(&cn.outline.color);
+                for head in [&cn.head_arrow, &cn.tail_arrow].into_iter().flatten() {
+                    p.begin_path();
+                    trace_path(p, head);
+                    p.fill();
+                }
+                p.restore();
+                Ok(())
+            });
         }
 
         // Tables paint after the placeholder shapes (the z-order floor). Each cell:
@@ -867,12 +889,16 @@ impl PmlRenderer {
         {
             let charts = chart_xml.borrow();
             for ch in &page.charts {
-                if !crate::cull::keep(clip, ch.x, ch.y, ch.x + ch.w, ch.y + ch.h) {
+                let (x, y, w, h) = ch.transform.bounds(ch.frame());
+                if !crate::cull::keep(clip, x, y, x + w, y + h) {
                     continue;
                 }
                 if let Some(bytes) = charts.get(&ch.chart_key) {
-                    crate::chart::with_scheme(self.chart_scheme(), || {
-                        crate::chart::render_chart(bytes, p, ch.x, ch.y, ch.w, ch.h)
+                    let _ = ch.transform.paint(p, ch.frame(), || {
+                        crate::chart::with_scheme(self.chart_scheme(), || {
+                            crate::chart::render_chart(bytes, p, ch.x, ch.y, ch.w, ch.h)
+                        });
+                        Ok(())
                     });
                 }
             }
@@ -1569,6 +1595,13 @@ fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::C
             .map(|e| (e.cx, e.cy))
             .unwrap_or((0, 0));
         let b = xf.apply_box(off_x, off_y, ext_cx, ext_cy);
+        // The frame turns by its own rotation, unless a group maps it: a
+        // turn composes with its group's mapping, and groups are not drawn
+        // turned yet.
+        //
+        // Deviation, declared: a frame's flips are not read, so a chart is
+        // never mirrored.
+        let rot = if xf.is_identity() { shape::xfrm_transform(Some(xfrm)).rot } else { 0.0 };
         for rel in rel_ids {
             out.push(shape::ChartItem {
                 off_x: b.off_x,
@@ -1576,6 +1609,7 @@ fn slide_chart_items(slide: &ooxml_pml::Slide, slide_idx: usize) -> Vec<shape::C
                 ext_cx: b.ext_cx,
                 ext_cy: b.ext_cy,
                 chart_key: shape::chart_key(slide_idx, &rel),
+                transform: crate::engine::transform::Transform { rot, ..Default::default() },
             });
         }
     }

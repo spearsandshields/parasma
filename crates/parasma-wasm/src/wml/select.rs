@@ -20,7 +20,7 @@ use crate::engine::fragment::{
     Block, DocFragment, FragBorder, FragCell, FragList, FragPara, FragRow, FragRun, FragTable,
     ImageRef, SelRect,
 };
-use crate::engine::images::{Transform, Xywh};
+use crate::engine::transform::{Transform, Xywh};
 use crate::engine::paint::{Painter, RunStyle, Underline, VertAlign};
 use crate::wml::linebreak::{Item, LineSegment, CHAR_START_SENTINEL};
 use crate::wml::numbering::NumberingMarker;

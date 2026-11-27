@@ -12925,3 +12925,154 @@ fn a_turned_picture_deferred_to_the_next_page_lands_by_its_box() {
         assert_px(got, want, "the box the turned picture covers");
     }
 }
+
+// ── Turned text boxes (`wps:spPr/a:xfrm`: `rot`, `flipH`, `flipV`, §20.1.7.6) ─
+
+/// A paragraph holding a `w`×`h` px text box filled green and outlined blue,
+/// saying `Boxed.`, with `xfrm` on its `a:xfrm` and `body` on its
+/// `wps:bodyPr`: inline, or floating with square wrap at `(x, y)` px from the
+/// column and the paragraph; then text enough to wrap well past it.
+fn text_box_body(anchored: bool, (w, h): (i64, i64), (x, y): (i64, i64), xfrm: &str, body: &str) -> String {
+    let ns = r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape""#;
+    let (cx, cy) = (w * 9525, h * 9525);
+    let graphic = format!(r#"<wp:extent cx="{cx}" cy="{cy}"/>{}<wp:docPr id="7" name="Text Box 7"/><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr><a:xfrm {xfrm}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="0000FF"/></a:solidFill></a:ln></wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>Boxed.</w:t></w:r></w:p></w:txbxContent></wps:txbx><wps:bodyPr {body}/></wps:wsp></a:graphicData></a:graphic>"#,
+        if anchored { r#"<wp:wrapSquare wrapText="bothSides"/>"# } else { "" });
+    let drawing = if anchored {
+        format!(r#"<w:r><w:drawing><wp:anchor {ns} distT="0" distB="0" distL="114300" distR="114300" behindDoc="0" simplePos="0" relativeHeight="1" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>{}</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>{}</wp:posOffset></wp:positionV>{graphic}</wp:anchor></w:drawing></w:r>"#, x * 9525, y * 9525)
+    } else {
+        format!(r#"<w:r><w:drawing><wp:inline {ns} distT="0" distB="0" distL="0" distR="0">{graphic}</wp:inline></w:drawing></w:r>"#)
+    };
+    let text = "Text beside the box ".repeat(60);
+    format!(r#"<w:p>{drawing}<w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, text.trim_end())
+}
+
+/// What page 0 of `body` draws for its 200×50 text box: the corners of its
+/// fill and of its outline, each as recorded and where they land, and each
+/// piece of its text with the canvas transform it draws under and where its
+/// anchor lands.
+struct TextBoxDrawn {
+    fill: ((f64, f64, f64, f64), [(f64, f64); 4]),
+    outline: ((f64, f64, f64, f64), [(f64, f64); 4]),
+    text: Vec<(String, crate::engine::displaylist::Matrix, (f64, f64))>,
+}
+
+fn text_box_drawn(body: &str) -> TextBoxDrawn {
+    use crate::engine::displaylist::{landed, transform_at_each_cmd, DrawCmd};
+    let cmds = page_cmds(body);
+    let of_box = |want: fn(&DrawCmd) -> bool| {
+        let rects = rects_where(&cmds, |c| want(c) && (recorded_rect(c).2, recorded_rect(c).3) == (200.0, 50.0));
+        assert_eq!(rects.len(), 1, "one on the box: {rects:?}");
+        rects[0]
+    };
+    let fill = of_box(|c| matches!(c, DrawCmd::FillRect { .. }));
+    let outline = of_box(|c| matches!(c, DrawCmd::StrokeRect { .. }));
+    let text = transform_at_each_cmd(&cmds)
+        .into_iter()
+        .filter_map(|(c, m)| match c {
+            // Word pages block ligatures with a zero-width non-joiner between letters.
+            DrawCmd::FillText { text, x, y } if text.replace('\u{200c}', "").contains("Boxed") => Some((text.clone(), m, landed(&m, (*x, *y)))),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(!text.is_empty(), "the box's text is drawn");
+    TextBoxDrawn { fill, outline, text }
+}
+
+/// `(x, y)` turned a quarter clockwise about the centre of `frame`.
+fn quarter_about((fx, fy, fw, fh): (f64, f64, f64, f64), (x, y): (f64, f64)) -> (f64, f64) {
+    let (cx, cy) = (fx + fw / 2.0, fy + fh / 2.0);
+    (cx - (y - cy), cy + (x - cx))
+}
+
+/// A text box turned a quarter (`rot="5400000"`) draws its fill, its
+/// outline and its text turned about its frame's centre, inline and
+/// floating: each piece of text lands where its upright anchor turns to.
+#[test]
+fn a_quarter_turned_text_box_draws_its_frame_and_text_turned() {
+    for anchored in [false, true] {
+        let what = if anchored { "anchored" } else { "inline" };
+        let upright = text_box_drawn(&text_box_body(anchored, (200, 50), (0, 0), "", ""));
+        let turned = text_box_drawn(&text_box_body(anchored, (200, 50), (0, 0), QUARTER_TURN, ""));
+        let frame = turned.fill.0;
+        for (rect, corners) in [turned.fill, turned.outline] {
+            assert_eq!(rect, frame, "{what}: the outline is on the frame");
+            assert_corners(&corners, &quarter_turned(frame), what);
+        }
+        if anchored {
+            assert_eq!(frame, upright.fill.0, "anchored: the frame stays");
+        }
+        let shift = (frame.0 - upright.fill.0 .0, frame.1 - upright.fill.0 .1);
+        assert_eq!(turned.text.len(), upright.text.len(), "{what}: the same text");
+        for ((text, m, at), (_, _, at_upright)) in turned.text.iter().zip(&upright.text) {
+            let near = m[..4].iter().zip([0.0, 1.0, -1.0, 0.0]).all(|(g, w)| (g - w).abs() < 1e-9);
+            assert!(near, "{what}: {text} draws under {m:?}");
+            let want = quarter_about(frame, (at_upright.0 + shift.0, at_upright.1 + shift.1));
+            assert!((at.0 - want.0).abs() < 1e-6 && (at.1 - want.1).abs() < 1e-6, "{what}: {text} lands at {at:?}, want {want:?}");
+        }
+    }
+}
+
+/// A flipped text box mirrors its frame but not its text: `flipH` draws the
+/// text exactly as unflipped, `flipV` turns it half round. `bodyPr
+/// upright="1"` keeps the text of a turned box upright and in place.
+#[test]
+fn a_flipped_or_upright_text_box_keeps_its_text_unmirrored() {
+    let upright = text_box_drawn(&text_box_body(true, (200, 50), (0, 0), "", ""));
+    let frame = upright.fill.0;
+    assert_eq!(text_box_drawn(&text_box_body(true, (200, 50), (0, 0), r#"flipH="1""#, "")).text, upright.text, "flipH");
+    assert_eq!(text_box_drawn(&text_box_body(true, (200, 50), (0, 0), QUARTER_TURN, r#"upright="1""#)).text, upright.text, "upright");
+    let flipped = text_box_drawn(&text_box_body(true, (200, 50), (0, 0), r#"flipV="1""#, ""));
+    for ((text, m, at), (_, _, at_upright)) in flipped.text.iter().zip(&upright.text) {
+        let near = m[..4].iter().zip([-1.0, 0.0, 0.0, -1.0]).all(|(g, w)| (g - w).abs() < 1e-9);
+        assert!(near, "flipV: {text} draws under {m:?}");
+        let want = quarter_about(frame, quarter_about(frame, *at_upright));
+        assert!((at.0 - want.0).abs() < 1e-6 && (at.1 - want.1).abs() < 1e-6, "flipV: {text} lands at {at:?}, want {want:?}");
+    }
+}
+
+/// The body text geometry of `body`'s pages, without floating pictures' and
+/// text boxes' own frames and lines.
+fn body_text_geometry(body: &str) -> String {
+    geometry_dump(&layout(picture_docx(body)))
+        .lines()
+        .filter(|l| !(l.starts_with("A ") || l.starts_with("B ") || l.starts_with("  BL")))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A turned floating text box keeps text out of the upright box its turned
+/// frame covers, exactly as a turned picture does: a 200×50 px box turned a
+/// quarter wraps text as an upright 50×200 px one standing where it lands
+/// (its frame at (0, 100), so the box it covers stands at (75, 25)), also in
+/// a table cell. A turned inline box takes that box in its line.
+#[test]
+fn a_turned_text_box_wraps_text_around_the_box_it_covers() {
+    let turned = text_box_body(true, (200, 50), (0, 100), QUARTER_TURN, "");
+    let standing = text_box_body(true, (50, 200), (75, 25), "", "");
+    let lying = text_box_body(true, (200, 50), (0, 100), "", "");
+    assert_ne!(body_text_geometry(&lying), body_text_geometry(&standing), "the turn matters");
+    assert_eq!(body_text_geometry(&turned), body_text_geometry(&standing), "floating");
+    assert_eq!(body_text_geometry(&in_one_cell(&turned)), body_text_geometry(&in_one_cell(&standing)), "in a cell");
+    // The inline box's line is as tall as the turned box.
+    let lines = body_lines(&layout(picture_docx(&text_box_body(false, (200, 50), (0, 0), QUARTER_TURN, ""))));
+    assert!(lines[0].line_height >= 200.0, "the box's line is {} tall", lines[0].line_height);
+}
+
+/// A text box that does not turn (`rot="0"`, a whole turn, flips set off, a
+/// body turned nowhere or held upright) records exactly what one without
+/// them records and lays out alike; an upright text box neither rotates nor
+/// mirrors the canvas. Inline and floating.
+#[test]
+fn an_upright_text_box_records_what_it_did_before() {
+    use crate::engine::displaylist::DrawCmd;
+    for anchored in [false, true] {
+        let plain = text_box_body(anchored, (200, 50), (0, 0), "", "");
+        let cmds = page_cmds(&plain);
+        assert!(!cmds.iter().any(|c| matches!(c, DrawCmd::Rotate { .. } | DrawCmd::Scale { .. })), "anchored {anchored}");
+        for (xfrm, body) in [(r#"rot="0""#, ""), (r#"rot="21600000""#, ""), (r#"flipH="0" flipV="false""#, ""), ("", r#"upright="1""#), ("", r#"rot="0""#)] {
+            let same = text_box_body(anchored, (200, 50), (0, 0), xfrm, body);
+            assert_eq!(page_cmds(&same), cmds, "anchored {anchored}, xfrm {xfrm:?}, bodyPr {body:?}");
+            assert_eq!(geometry_dump(&layout(picture_docx(&same))), geometry_dump(&layout(picture_docx(&plain))), "anchored {anchored}, {xfrm:?}");
+        }
+    }
+}

@@ -21,7 +21,8 @@ use std::collections::HashMap;
 
 use super::model::{ColorCtx, MAX_ADDRESSABLE_COL, MAX_ADDRESSABLE_ROW};
 use crate::engine::color::{css_color, resolve_dml_color_xml};
-use crate::engine::images::{ImageBytes, ImageCrop, PictureStyle, RelativeRect, Transform};
+use crate::engine::images::{ImageBytes, ImageCrop, PictureStyle, RelativeRect};
+use crate::engine::transform::Transform;
 use crate::engine::opc;
 
 /// One xdr anchor point (§20.5.2.15/.16/.32/.33): a 0-based column/row index
