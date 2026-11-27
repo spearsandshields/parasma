@@ -10,55 +10,60 @@
  * walks the f64 opcode stream with an index-based switch — no per-command object
  * allocation. The OPCODE NUMBERS + per-opcode arg order below MUST stay identical
  * to the Rust `OP_*` constants; they are the cross-language contract.
+ *
+ * `display-list-golden.test.ts` holds this file to that contract: it compares
+ * every exported `OP_*`/`TILE_*` constant with the table the Rust encoder writes
+ * to `display-list-golden.json`, then replays that file's stream. Export each new
+ * constant, or the test cannot see it.
  */
 
 // ── Opcode contract — MUST match engine/displaylist.rs OP_* constants ────────-
-const OP_SAVE = 0;
-const OP_RESTORE = 1;
-const OP_BEGIN_PATH = 2;
-const OP_CLOSE_PATH = 3;
-const OP_MOVE_TO = 4;
-const OP_LINE_TO = 5;
-const OP_RECT = 6;
-const OP_ARC = 7;
-const OP_ARC_ACW = 8;
-const OP_ELLIPSE = 9;
-const OP_QUAD_TO = 10;
-const OP_BEZIER_TO = 11;
-const OP_FILL = 12;
-const OP_STROKE = 13;
-const OP_CLIP = 14;
-const OP_FILL_RECT = 15;
-const OP_STROKE_RECT = 16;
-const OP_FILL_TEXT = 17;
-const OP_STROKE_TEXT = 18;
-const OP_SET_FONT = 19;
-const OP_SET_TEXT_ALIGN = 20;
-const OP_SET_TEXT_BASELINE = 21;
-const OP_SET_FILL_STYLE = 22;
-const OP_SET_STROKE_STYLE = 23;
-const OP_SET_LINE_WIDTH = 24;
-const OP_SET_GLOBAL_ALPHA = 25;
-const OP_SET_SHADOW_COLOR = 26;
-const OP_SET_SHADOW_OFFSET_X = 27;
-const OP_SET_SHADOW_OFFSET_Y = 28;
-const OP_SET_SHADOW_BLUR = 29;
-const OP_TRANSLATE = 30;
-const OP_ROTATE = 31;
-const OP_SCALE = 32;
-const OP_SET_TRANSFORM = 33;
-const OP_DRAW_IMAGE = 34;
+export const OP_SAVE = 0;
+export const OP_RESTORE = 1;
+export const OP_BEGIN_PATH = 2;
+export const OP_CLOSE_PATH = 3;
+export const OP_MOVE_TO = 4;
+export const OP_LINE_TO = 5;
+export const OP_RECT = 6;
+export const OP_ARC = 7;
+export const OP_ARC_ACW = 8;
+export const OP_ELLIPSE = 9;
+export const OP_QUAD_TO = 10;
+export const OP_BEZIER_TO = 11;
+export const OP_FILL = 12;
+export const OP_STROKE = 13;
+export const OP_CLIP = 14;
+export const OP_FILL_RECT = 15;
+export const OP_STROKE_RECT = 16;
+export const OP_FILL_TEXT = 17;
+export const OP_STROKE_TEXT = 18;
+export const OP_SET_FONT = 19;
+export const OP_SET_TEXT_ALIGN = 20;
+export const OP_SET_TEXT_BASELINE = 21;
+export const OP_SET_FILL_STYLE = 22;
+export const OP_SET_STROKE_STYLE = 23;
+export const OP_SET_LINE_WIDTH = 24;
+export const OP_SET_GLOBAL_ALPHA = 25;
+export const OP_SET_SHADOW_COLOR = 26;
+export const OP_SET_SHADOW_OFFSET_X = 27;
+export const OP_SET_SHADOW_OFFSET_Y = 28;
+export const OP_SET_SHADOW_BLUR = 29;
+export const OP_TRANSLATE = 30;
+export const OP_ROTATE = 31;
+export const OP_SCALE = 32;
+export const OP_SET_TRANSFORM = 33;
+export const OP_DRAW_IMAGE = 34;
 // PML style primitives — the FIRST variable-length, count-prefixed opcodes.
-const OP_SET_LINEAR_GRADIENT = 35;
-const OP_SET_RADIAL_GRADIENT = 36;
-const OP_SET_PATTERN_FILL = 37;
-const OP_SET_LINE_DASH = 38;
-const OP_CLEAR_LINE_DASH = 39;
+export const OP_SET_LINEAR_GRADIENT = 35;
+export const OP_SET_RADIAL_GRADIENT = 36;
+export const OP_SET_PATTERN_FILL = 37;
+export const OP_SET_LINE_DASH = 38;
+export const OP_CLEAR_LINE_DASH = 39;
 /** `fontKerning`: 1 = "normal", 0 = "none". */
-const OP_SET_FONT_KERNING = 40;
+export const OP_SET_FONT_KERNING = 40;
 // pattern-tile sub-tags (mirror engine/displaylist.rs TILE_LINE / TILE_DOT).
-const TILE_LINE = 0;
-const TILE_DOT = 1;
+export const TILE_LINE = 0;
+export const TILE_DOT = 1;
 
 /** One rasterisable pattern-tile primitive (mirrors the Rust `TilePrim`). */
 type TilePrim =

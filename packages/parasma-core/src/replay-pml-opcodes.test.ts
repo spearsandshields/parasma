@@ -13,17 +13,17 @@
  * condition (what a broken decoder would do).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { replayDisplayList } from "./replay";
-
-// ── Opcode + tile-tag mirror (engine/displaylist.rs contract) ────────────────-
-const OP_SET_LINEAR_GRADIENT = 35;
-const OP_SET_RADIAL_GRADIENT = 36;
-const OP_SET_PATTERN_FILL = 37;
-const OP_SET_LINE_DASH = 38;
-const OP_CLEAR_LINE_DASH = 39;
-const OP_SET_FONT_KERNING = 40;
-const TILE_LINE = 0;
-const TILE_DOT = 1;
+import {
+  OP_CLEAR_LINE_DASH,
+  OP_SET_FONT_KERNING,
+  OP_SET_LINE_DASH,
+  OP_SET_LINEAR_GRADIENT,
+  OP_SET_PATTERN_FILL,
+  OP_SET_RADIAL_GRADIENT,
+  replayDisplayList,
+  TILE_DOT,
+  TILE_LINE,
+} from "./replay";
 
 /** A recorded call: the method/property name + its args (or the assigned value). */
 type Call = { op: string; args: unknown[] };

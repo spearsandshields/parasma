@@ -776,4 +776,382 @@ mod tests {
         assert!(matches!(list[2], DrawCmd::StrokeText { .. }));
         assert_eq!(list.len(), 3);
     }
+
+    // ── Cross-language wire golden ───────────────────────────────────────────
+    //
+    // The round trips above prove the encoder agrees with the Rust reference
+    // decoder. Neither proves it agrees with the decoder that actually runs:
+    // `replayDisplayList` in packages/parasma-core/src/replay.ts, whose opcode
+    // numbers and argument order are a hand-kept copy of the ones in this file.
+    // A wrong arity there desyncs the rest of the stream without an error.
+    //
+    // So one checked-in file is shared by both languages. This test writes it:
+    // the opcode table, the encoded stream and string table of a list that holds
+    // every `DrawCmd` variant, and each command's arguments in wire order.
+    // `display-list-golden.test.ts` reads it, replays the stream into a logging
+    // context and checks every call against the decoded list.
+
+    /// The shared fixture. It sits in the TS package's `src/` so vitest imports
+    /// it directly; the package publishes only `dist/`, so it never ships.
+    const WIRE_GOLDEN: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../packages/parasma-core/src/display-list-golden.json");
+
+    /// Build the coverage list, and refuse to compile until every `DrawCmd`
+    /// variant has at least one sample. The generated `match` lists one arm
+    /// per pattern with no wildcard, so a new variant is a non-exhaustive-match
+    /// error here, not a gap in the golden.
+    macro_rules! every_variant {
+        ($($pat:pat => [$($sample:expr),+ $(,)?]),+ $(,)?) => {{
+            #[allow(dead_code)]
+            fn every_draw_cmd_variant_has_a_sample(cmd: &DrawCmd) {
+                match cmd {
+                    $($pat => {})+
+                }
+            }
+            let mut list: DisplayList = Vec::new();
+            $($(
+                let sample: DrawCmd = $sample;
+                assert!(matches!(sample, $pat), "sample {sample:?} is filed under the wrong variant");
+                list.push(sample);
+            )+)+
+            list
+        }};
+    }
+
+    /// Every variant, with values a swapped or dropped argument cannot hide in:
+    /// distinct per slot, negative and fractional, both bool values, and the
+    /// count-prefixed payloads at zero and non-zero length. `#1a1a1a` recurs as a
+    /// fill, a stroke, a gradient stop and a pattern foreground, so the string
+    /// table must dedup it. The two images are one bitmap hit and one miss in the
+    /// TS test (it supplies a bitmap for `rId7` only).
+    fn wire_coverage() -> DisplayList {
+        use std::f64::consts::{FRAC_PI_4, PI, TAU};
+        every_variant! {
+            DrawCmd::Save => [DrawCmd::Save],
+            DrawCmd::Restore => [DrawCmd::Restore],
+            DrawCmd::BeginPath => [DrawCmd::BeginPath],
+            DrawCmd::ClosePath => [DrawCmd::ClosePath],
+            DrawCmd::MoveTo { .. } => [DrawCmd::MoveTo { x: -1.5, y: 2.25 }],
+            DrawCmd::LineTo { .. } => [DrawCmd::LineTo { x: 100.125, y: -0.75 }],
+            DrawCmd::Rect { .. } => [DrawCmd::Rect { x: 3.0, y: -4.5, w: 50.25, h: 12.0 }],
+            DrawCmd::Arc { .. } => [DrawCmd::Arc { x: 5.5, y: 6.5, radius: 7.25, start: 0.4, end: PI }],
+            DrawCmd::ArcAnticlockwise { .. } => [
+                DrawCmd::ArcAnticlockwise { x: 1.0, y: -2.0, radius: 3.5, start: -0.5, end: TAU, anticlockwise: true },
+                DrawCmd::ArcAnticlockwise { x: 9.0, y: 8.0, radius: 0.25, start: 1.5, end: 2.5, anticlockwise: false },
+            ],
+            DrawCmd::Ellipse { .. } => [
+                DrawCmd::Ellipse { x: 10.0, y: 20.0, rx: 30.5, ry: 4.75, rotation: FRAC_PI_4, start: 0.0, end: PI, anticlockwise: false },
+                DrawCmd::Ellipse { x: -3.0, y: -6.0, rx: 1.0, ry: 2.0, rotation: -0.125, start: 0.5, end: 1.25, anticlockwise: true },
+            ],
+            DrawCmd::QuadraticCurveTo { .. } => [DrawCmd::QuadraticCurveTo { cpx: 1.25, cpy: -2.5, x: 3.75, y: 4.5 }],
+            DrawCmd::BezierCurveTo { .. } => [
+                DrawCmd::BezierCurveTo { cp1x: -1.0, cp1y: 2.0, cp2x: 3.5, cp2y: -4.5, x: 5.25, y: 6.75 },
+            ],
+            DrawCmd::Fill => [DrawCmd::Fill],
+            DrawCmd::Stroke => [DrawCmd::Stroke],
+            DrawCmd::Clip => [DrawCmd::Clip],
+            DrawCmd::FillRect { .. } => [DrawCmd::FillRect { x: 1.5, y: 2.5, w: 3.5, h: -4.5 }],
+            DrawCmd::StrokeRect { .. } => [DrawCmd::StrokeRect { x: -7.0, y: 8.25, w: 9.5, h: 10.75 }],
+            DrawCmd::FillText { .. } => [DrawCmd::FillText { text: "Région \"q\" ₂".into(), x: 12.5, y: -24.0 }],
+            DrawCmd::StrokeText { .. } => [DrawCmd::StrokeText { text: "Outline".into(), x: -0.5, y: 36.125 }],
+            DrawCmd::SetFont(_) => [DrawCmd::SetFont("bold 11px Calibri".into())],
+            DrawCmd::SetTextAlign(_) => [DrawCmd::SetTextAlign("right".into())],
+            DrawCmd::SetTextBaseline(_) => [DrawCmd::SetTextBaseline("middle".into())],
+            DrawCmd::SetFillStyle(_) => [DrawCmd::SetFillStyle("#1a1a1a".into())],
+            DrawCmd::SetStrokeStyle(_) => [DrawCmd::SetStrokeStyle("#1a1a1a".into())],
+            DrawCmd::SetLineWidth(_) => [DrawCmd::SetLineWidth(0.75)],
+            DrawCmd::SetGlobalAlpha(_) => [DrawCmd::SetGlobalAlpha(0.4)],
+            DrawCmd::SetShadowColor(_) => [DrawCmd::SetShadowColor("rgba(0, 0, 0, 0.5)".into())],
+            DrawCmd::SetShadowOffsetX(_) => [DrawCmd::SetShadowOffsetX(-2.5)],
+            DrawCmd::SetShadowOffsetY(_) => [DrawCmd::SetShadowOffsetY(3.25)],
+            DrawCmd::SetShadowBlur(_) => [DrawCmd::SetShadowBlur(4.5)],
+            DrawCmd::Translate { .. } => [DrawCmd::Translate { x: -10.0, y: 20.5 }],
+            DrawCmd::Rotate { .. } => [DrawCmd::Rotate { angle: -FRAC_PI_4 }],
+            DrawCmd::Scale { .. } => [DrawCmd::Scale { x: 1.5, y: -1.0 }],
+            DrawCmd::SetTransform { .. } => [
+                DrawCmd::SetTransform { a: 2.0, b: 0.125, c: -0.25, d: 1.75, e: -10.0, f: -20.5 },
+            ],
+            DrawCmd::DrawImage { .. } => [
+                DrawCmd::DrawImage { key: "rId7".into(), dx: 10.5, dy: -20.0, dw: 30.25, dh: 40.0 },
+                DrawCmd::DrawImage { key: "emf-pic:rId9".into(), dx: -1.0, dy: 2.0, dw: 64.5, dh: 48.25 },
+            ],
+            DrawCmd::SetLinearGradient { .. } => [
+                DrawCmd::SetLinearGradient {
+                    x0: -5.0, y0: 0.5, x1: 100.0, y1: 50.25,
+                    stops: vec![(0.0, "#ff0000".into()), (0.375, "#1a1a1a".into())],
+                },
+                DrawCmd::SetLinearGradient { x0: 1.0, y0: 2.0, x1: 3.0, y1: 4.0, stops: vec![] },
+            ],
+            DrawCmd::SetRadialGradient { .. } => [DrawCmd::SetRadialGradient {
+                x0: 10.0, y0: 11.0, r0: 0.5, x1: 12.0, y1: 13.0, r1: 40.25,
+                stops: vec![(0.0, "#ffffff".into()), (0.5, "#808080".into()), (1.0, "#000000".into())],
+            }],
+            DrawCmd::SetPatternFill { .. } => [DrawCmd::SetPatternFill {
+                key: "dkHorz|#1a1a1a|#fafafa".into(),
+                fg: "#1a1a1a".into(),
+                bg: "#fafafa".into(),
+                size: 8.0,
+                prims: vec![
+                    TilePrim::Line { x1: 0.0, y1: 4.5, x2: 8.0, y2: 3.5, lw: 1.25 },
+                    TilePrim::Dot { x: 2.0, y: 6.0, s: 1.5 },
+                ],
+            }],
+            DrawCmd::SetLineDash(_) => [
+                DrawCmd::SetLineDash(vec![4.0, 3.0, 1.5, 3.25]),
+                DrawCmd::SetLineDash(vec![]),
+            ],
+            DrawCmd::ClearLineDash => [DrawCmd::ClearLineDash],
+            DrawCmd::SetFontKerning(_) => [DrawCmd::SetFontKerning(true), DrawCmd::SetFontKerning(false)],
+        }
+    }
+
+    /// One argument as a decoder sees it: a number, a string-table entry
+    /// (resolved to its text), or a 0/1 flag.
+    #[derive(Debug)]
+    enum WireArg {
+        Num(f64),
+        Str(String),
+        Bool(bool),
+    }
+
+    /// The wire schema of one command: its opcode's name and number, and its
+    /// arguments in stream order, counts and tile tags included. Exhaustive with
+    /// no wildcard, so a new variant cannot compile without stating its frame.
+    /// `wire_golden_matches_the_fixture` checks every frame against what
+    /// `encode_display_list` actually emitted, so this cannot drift silently.
+    fn wire_frame(cmd: &DrawCmd) -> (&'static str, f64, Vec<WireArg>) {
+        use WireArg::{Bool as B, Num as N, Str as S};
+        let stops = |args: &mut Vec<WireArg>, stops: &[(f64, String)]| {
+            args.push(N(stops.len() as f64));
+            for (pos, color) in stops {
+                args.push(N(*pos));
+                args.push(S(color.clone()));
+            }
+        };
+        match cmd {
+            DrawCmd::Save => ("OP_SAVE", OP_SAVE, vec![]),
+            DrawCmd::Restore => ("OP_RESTORE", OP_RESTORE, vec![]),
+            DrawCmd::BeginPath => ("OP_BEGIN_PATH", OP_BEGIN_PATH, vec![]),
+            DrawCmd::ClosePath => ("OP_CLOSE_PATH", OP_CLOSE_PATH, vec![]),
+            DrawCmd::MoveTo { x, y } => ("OP_MOVE_TO", OP_MOVE_TO, vec![N(*x), N(*y)]),
+            DrawCmd::LineTo { x, y } => ("OP_LINE_TO", OP_LINE_TO, vec![N(*x), N(*y)]),
+            DrawCmd::Rect { x, y, w, h } => ("OP_RECT", OP_RECT, vec![N(*x), N(*y), N(*w), N(*h)]),
+            DrawCmd::Arc { x, y, radius, start, end } => {
+                ("OP_ARC", OP_ARC, vec![N(*x), N(*y), N(*radius), N(*start), N(*end)])
+            }
+            DrawCmd::ArcAnticlockwise { x, y, radius, start, end, anticlockwise } => (
+                "OP_ARC_ACW",
+                OP_ARC_ACW,
+                vec![N(*x), N(*y), N(*radius), N(*start), N(*end), B(*anticlockwise)],
+            ),
+            DrawCmd::Ellipse { x, y, rx, ry, rotation, start, end, anticlockwise } => (
+                "OP_ELLIPSE",
+                OP_ELLIPSE,
+                vec![N(*x), N(*y), N(*rx), N(*ry), N(*rotation), N(*start), N(*end), B(*anticlockwise)],
+            ),
+            DrawCmd::QuadraticCurveTo { cpx, cpy, x, y } => {
+                ("OP_QUAD_TO", OP_QUAD_TO, vec![N(*cpx), N(*cpy), N(*x), N(*y)])
+            }
+            DrawCmd::BezierCurveTo { cp1x, cp1y, cp2x, cp2y, x, y } => (
+                "OP_BEZIER_TO",
+                OP_BEZIER_TO,
+                vec![N(*cp1x), N(*cp1y), N(*cp2x), N(*cp2y), N(*x), N(*y)],
+            ),
+            DrawCmd::Fill => ("OP_FILL", OP_FILL, vec![]),
+            DrawCmd::Stroke => ("OP_STROKE", OP_STROKE, vec![]),
+            DrawCmd::Clip => ("OP_CLIP", OP_CLIP, vec![]),
+            DrawCmd::FillRect { x, y, w, h } => ("OP_FILL_RECT", OP_FILL_RECT, vec![N(*x), N(*y), N(*w), N(*h)]),
+            DrawCmd::StrokeRect { x, y, w, h } => {
+                ("OP_STROKE_RECT", OP_STROKE_RECT, vec![N(*x), N(*y), N(*w), N(*h)])
+            }
+            DrawCmd::FillText { text, x, y } => ("OP_FILL_TEXT", OP_FILL_TEXT, vec![S(text.clone()), N(*x), N(*y)]),
+            DrawCmd::StrokeText { text, x, y } => {
+                ("OP_STROKE_TEXT", OP_STROKE_TEXT, vec![S(text.clone()), N(*x), N(*y)])
+            }
+            DrawCmd::SetFont(v) => ("OP_SET_FONT", OP_SET_FONT, vec![S(v.clone())]),
+            DrawCmd::SetTextAlign(v) => ("OP_SET_TEXT_ALIGN", OP_SET_TEXT_ALIGN, vec![S(v.clone())]),
+            DrawCmd::SetTextBaseline(v) => ("OP_SET_TEXT_BASELINE", OP_SET_TEXT_BASELINE, vec![S(v.clone())]),
+            DrawCmd::SetFillStyle(v) => ("OP_SET_FILL_STYLE", OP_SET_FILL_STYLE, vec![S(v.clone())]),
+            DrawCmd::SetStrokeStyle(v) => ("OP_SET_STROKE_STYLE", OP_SET_STROKE_STYLE, vec![S(v.clone())]),
+            DrawCmd::SetLineWidth(v) => ("OP_SET_LINE_WIDTH", OP_SET_LINE_WIDTH, vec![N(*v)]),
+            DrawCmd::SetGlobalAlpha(v) => ("OP_SET_GLOBAL_ALPHA", OP_SET_GLOBAL_ALPHA, vec![N(*v)]),
+            DrawCmd::SetShadowColor(v) => ("OP_SET_SHADOW_COLOR", OP_SET_SHADOW_COLOR, vec![S(v.clone())]),
+            DrawCmd::SetShadowOffsetX(v) => ("OP_SET_SHADOW_OFFSET_X", OP_SET_SHADOW_OFFSET_X, vec![N(*v)]),
+            DrawCmd::SetShadowOffsetY(v) => ("OP_SET_SHADOW_OFFSET_Y", OP_SET_SHADOW_OFFSET_Y, vec![N(*v)]),
+            DrawCmd::SetShadowBlur(v) => ("OP_SET_SHADOW_BLUR", OP_SET_SHADOW_BLUR, vec![N(*v)]),
+            DrawCmd::Translate { x, y } => ("OP_TRANSLATE", OP_TRANSLATE, vec![N(*x), N(*y)]),
+            DrawCmd::Rotate { angle } => ("OP_ROTATE", OP_ROTATE, vec![N(*angle)]),
+            DrawCmd::Scale { x, y } => ("OP_SCALE", OP_SCALE, vec![N(*x), N(*y)]),
+            DrawCmd::SetTransform { a, b, c, d, e, f } => (
+                "OP_SET_TRANSFORM",
+                OP_SET_TRANSFORM,
+                vec![N(*a), N(*b), N(*c), N(*d), N(*e), N(*f)],
+            ),
+            DrawCmd::DrawImage { key, dx, dy, dw, dh } => (
+                "OP_DRAW_IMAGE",
+                OP_DRAW_IMAGE,
+                vec![S(key.clone()), N(*dx), N(*dy), N(*dw), N(*dh)],
+            ),
+            DrawCmd::SetLinearGradient { x0, y0, x1, y1, stops: s } => {
+                let mut args = vec![N(*x0), N(*y0), N(*x1), N(*y1)];
+                stops(&mut args, s);
+                ("OP_SET_LINEAR_GRADIENT", OP_SET_LINEAR_GRADIENT, args)
+            }
+            DrawCmd::SetRadialGradient { x0, y0, r0, x1, y1, r1, stops: s } => {
+                let mut args = vec![N(*x0), N(*y0), N(*r0), N(*x1), N(*y1), N(*r1)];
+                stops(&mut args, s);
+                ("OP_SET_RADIAL_GRADIENT", OP_SET_RADIAL_GRADIENT, args)
+            }
+            DrawCmd::SetPatternFill { key, fg, bg, size, prims } => {
+                let mut args = vec![S(key.clone()), S(fg.clone()), S(bg.clone()), N(*size), N(prims.len() as f64)];
+                for prim in prims {
+                    match *prim {
+                        TilePrim::Line { x1, y1, x2, y2, lw } => {
+                            args.extend([N(TILE_LINE), N(x1), N(y1), N(x2), N(y2), N(lw)])
+                        }
+                        TilePrim::Dot { x, y, s: side } => args.extend([N(TILE_DOT), N(x), N(y), N(side)]),
+                    }
+                }
+                ("OP_SET_PATTERN_FILL", OP_SET_PATTERN_FILL, args)
+            }
+            DrawCmd::SetLineDash(segs) => {
+                let mut args = vec![N(segs.len() as f64)];
+                args.extend(segs.iter().map(|v| N(*v)));
+                ("OP_SET_LINE_DASH", OP_SET_LINE_DASH, args)
+            }
+            DrawCmd::ClearLineDash => ("OP_CLEAR_LINE_DASH", OP_CLEAR_LINE_DASH, vec![]),
+            DrawCmd::SetFontKerning(on) => ("OP_SET_FONT_KERNING", OP_SET_FONT_KERNING, vec![B(*on)]),
+        }
+    }
+
+    /// A JSON number. Rust's `Display` for f64 is the shortest text that parses
+    /// back to the same value, which is also what `JSON.parse` reads. NaN, the
+    /// infinities and -0 have no faithful JSON form, so a sample may not use them.
+    fn json_num(v: f64) -> String {
+        assert!(v.is_finite() && !(v == 0.0 && v.is_sign_negative()), "{v} has no exact JSON form");
+        format!("{v}")
+    }
+
+    fn json_str(s: &str) -> String {
+        let mut out = String::with_capacity(s.len() + 2);
+        out.push('"');
+        for c in s.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+                c => out.push(c),
+            }
+        }
+        out.push('"');
+        out
+    }
+
+    fn json_arg(arg: &WireArg) -> String {
+        match arg {
+            WireArg::Num(v) => json_num(*v),
+            WireArg::Str(s) => json_str(s),
+            WireArg::Bool(b) => b.to_string(),
+        }
+    }
+
+    /// Render the fixture. One entry per line, and one stream frame per line, so
+    /// a drift shows in `git diff` as the commands that moved.
+    fn wire_golden_json(list: &DisplayList, ops: &[f64], strings: &[String]) -> String {
+        let frames: Vec<_> = list.iter().map(wire_frame).collect();
+        let mut table: Vec<(&str, f64)> = Vec::new();
+        for (name, op, _) in &frames {
+            if !table.iter().any(|(n, _)| n == name) {
+                table.push((name, *op));
+            }
+        }
+        table.sort_by(|a, b| a.1.total_cmp(&b.1));
+        for pair in table.windows(2) {
+            assert_ne!(pair[0].1, pair[1].1, "{} and {} share an opcode", pair[0].0, pair[1].0);
+        }
+        let lines = |items: Vec<String>| items.join(",\n    ");
+        let mut stream = Vec::new();
+        let mut at = 0usize;
+        for (_, _, args) in &frames {
+            let width = 1 + args.len();
+            stream.push(ops[at..at + width].iter().map(|v| json_num(*v)).collect::<Vec<_>>().join(", "));
+            at += width;
+        }
+        format!(
+            concat!(
+                "{{\n",
+                "  \"about\": \"Display-list wire golden shared by the Rust encoder and the TS replay. Generated; do not edit. Rewrite with: DISPLAY_LIST_BLESS=1 cargo test -p parasma-wasm --features sml,pml,emf wire_golden\",\n",
+                "  \"opcodes\": {{\n    {}\n  }},\n",
+                "  \"tileTags\": {{\n    {}\n  }},\n",
+                "  \"strings\": [\n    {}\n  ],\n",
+                "  \"stream\": [\n    {}\n  ],\n",
+                "  \"decoded\": [\n    {}\n  ]\n",
+                "}}\n",
+            ),
+            lines(table.iter().map(|(n, op)| format!("{}: {}", json_str(n), json_num(*op))).collect()),
+            lines(vec![
+                format!("\"TILE_LINE\": {}", json_num(TILE_LINE)),
+                format!("\"TILE_DOT\": {}", json_num(TILE_DOT)),
+            ]),
+            lines(strings.iter().map(|s| json_str(s)).collect()),
+            lines(stream),
+            lines(
+                frames
+                    .iter()
+                    .map(|(name, _, args)| {
+                        let args: Vec<_> = args.iter().map(json_arg).collect();
+                        format!("{{ \"op\": {}, \"args\": [{}] }}", json_str(name), args.join(", "))
+                    })
+                    .collect()
+            ),
+        )
+    }
+
+    #[test]
+    fn wire_golden_matches_the_fixture() {
+        let list = wire_coverage();
+        let (ops, strings) = encode_display_list(&list);
+        assert_eq!(decode_display_list(&ops, &strings), list, "encoder and reference decoder disagree");
+        assert_eq!(strings.iter().filter(|s| *s == "#1a1a1a").count(), 1, "the string table must dedup");
+
+        // The fixture's decoded list is `wire_frame`, so prove `wire_frame` is
+        // what the encoder emitted: walk the real stream frame by frame.
+        let mut at = 0usize;
+        for cmd in &list {
+            let (name, op, args) = wire_frame(cmd);
+            assert_eq!(ops[at], op, "{name}: opcode at {at}");
+            at += 1;
+            for arg in &args {
+                let got = ops[at];
+                match arg {
+                    WireArg::Num(v) => assert_eq!(got.to_bits(), v.to_bits(), "{name}: argument at {at}"),
+                    WireArg::Bool(b) => assert_eq!(got, if *b { 1.0 } else { 0.0 }, "{name}: flag at {at}"),
+                    WireArg::Str(s) => assert_eq!(&strings[got as usize], s, "{name}: string at {at}"),
+                }
+                at += 1;
+            }
+        }
+        assert_eq!(at, ops.len(), "the frames do not account for the whole stream");
+
+        let got = wire_golden_json(&list, &ops, &strings);
+        if std::env::var("DISPLAY_LIST_BLESS").as_deref() == Ok("1") {
+            std::fs::write(WIRE_GOLDEN, &got).expect("write the display-list wire golden");
+            return;
+        }
+        let want = std::fs::read_to_string(WIRE_GOLDEN).unwrap_or_else(|e| {
+            panic!("cannot read {WIRE_GOLDEN}: {e}. Write it with DISPLAY_LIST_BLESS=1")
+        });
+        if got == want {
+            return;
+        }
+        let line = got.lines().zip(want.lines()).position(|(a, b)| a != b).unwrap_or(0);
+        panic!(
+            "display-list wire golden drifted at line {}.\n  golden: {}\n  actual: {}\n\
+             The TS replay is tested against this file. If the encoding change is intended, \
+             rewrite it with DISPLAY_LIST_BLESS=1, update replay.ts to match, and review the git diff.",
+            line + 1,
+            want.lines().nth(line).unwrap_or("<end of file>"),
+            got.lines().nth(line).unwrap_or("<end of file>"),
+        );
+    }
 }
