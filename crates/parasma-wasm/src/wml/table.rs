@@ -886,7 +886,11 @@ pub(crate) fn layout_table(
         .or_else(|| style.tbl_prs().filter_map(|tp| tp.justification.as_deref()).last())
         .map_or(STJcTable::Start, |j| j.value);
 
-    let table_rows = table_rows(table);
+    // §17.4.20 hidden: a hidden row is not laid out. Declared: the row goes
+    // whether or not its text is hidden too.
+    let table_rows: Vec<&ooxml_wml::types::CTRow> = table_rows(table).into_iter()
+        .filter(|r| !r.row_properties.as_ref().and_then(|p| crate::check_toggle(&p.hidden)).unwrap_or(false))
+        .collect();
     let num_rows = table_rows.len();
     let regions = TableRegions::of(TableLook::read(props.tbl_look.as_deref()), &style, props, &table_rows);
 
@@ -897,6 +901,8 @@ pub(crate) fn layout_table(
     for (row_idx, row) in table_rows.iter().enumerate() {
         let mut cells = Vec::new();
         let mut row_direct = Vec::new();
+        // The cells that take no part in the row's height (hideMark).
+        let mut no_height: Vec<bool> = Vec::new();
         // §17.4.15 gridBefore: the grid columns the row leaves empty before
         // its first cell. A count that leaves no column for the cells is
         // ignored. The columns a row leaves empty after its last cell
@@ -1013,6 +1019,17 @@ pub(crate) fn layout_table(
                 extract_cell_borders(theme_fonts, cell, &table_border_edges, &cond_borders, row_idx, cell_idx, num_rows, num_cols);
             row_direct.push(direct_cell_edges(cell));
 
+            // §17.4.21 hideMark: only printing characters count toward the
+            // row's height, so a cell with none adds nothing but its margins.
+            let hide_mark = cell.properties()
+                .and_then(|p| crate::check_toggle(&p.hide_mark))
+                .or_else(|| sources.iter().find_map(|src| crate::check_toggle(&src.tc_pr?.hide_mark)))
+                .unwrap_or(false);
+            no_height.push(hide_mark && cell_blocks.iter().all(|b| match b {
+                CellBlock::Paragraph(pc) => pc.lines.iter().all(|l| l.items.is_empty()),
+                CellBlock::Table(_) => false,
+            }));
+
             // Pre-resolve a cell-hosted wrapping float (None = fast path). Built
             // before `cell_blocks` is moved into the cache.
             let float_layout = if v_merged_away {
@@ -1047,8 +1064,8 @@ pub(crate) fn layout_table(
             col_idx = end;
         }
 
-        let content_height = cells.iter()
-            .map(|c| c.content_height(c.mar_top + c.mar_bottom))
+        let content_height = cells.iter().zip(&no_height)
+            .map(|(c, empty)| if *empty { c.mar_top + c.mar_bottom } else { c.content_height(c.mar_top + c.mar_bottom) })
             .fold(0.0_f64, f64::max);
 
         let row_height = if let Some(ref trpr) = row.row_properties {

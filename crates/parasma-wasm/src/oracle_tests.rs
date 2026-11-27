@@ -12295,3 +12295,30 @@ fn a_balanced_table_keeps_cell_vertical_alignment() {
     let (top, bottom) = (row.cells[0].lines[0].baseline_y, row.cells[1].lines[0].baseline_y);
     assert!(bottom > top + 50.0, "the bottom-aligned cell's text sits lower: {top} vs {bottom}");
 }
+
+// ── Spacer and hidden rows (§17.4.21 hideMark, §17.4.20 hidden) ─────────────
+
+/// An empty cell with hideMark adds no line to its row's height, so a thin
+/// spacer row stays thin; a cell with text is unaffected.
+#[test]
+fn hide_mark_keeps_an_empty_row_thin() {
+    let empty = |tc_pr: &str| format!(r#"<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/>{tc_pr}</w:tcPr><w:p/></w:tc>"#);
+    let spacer = |tc_pr: &str| format!(r#"<w:trPr><w:trHeight w:val="60"/></w:trPr>{0}{0}"#, empty(tc_pr));
+    let height = |row: &str| table_rows_of(&layout(bordered_table_docx("", &[row], "")))[0].height_px;
+    assert!(height(&spacer("")) > 12.0, "the paragraph mark sets the height without hideMark");
+    assert_px(height(&spacer("<w:hideMark/>")), 60.0 * PX_PER_TWIP, "the row height alone with hideMark");
+    let with_text = format!("{}{}", bcell("<w:hideMark/>", "text"), empty("<w:hideMark/>"));
+    assert!(height(&with_text) > 12.0, "a cell with text still counts");
+}
+
+/// A hidden row is not laid out: the rows around it close up.
+#[test]
+fn a_hidden_row_takes_no_space() {
+    let row = format!("{}{}", bcell("", "a"), bcell("", "b"));
+    let hidden = format!("<w:trPr><w:hidden/></w:trPr>{row}");
+    let shown = table_rows_of(&layout(bordered_table_docx(GRID, &[&row, &row], "")));
+    let with_hidden = table_rows_of(&layout(bordered_table_docx(GRID, &[&row, &hidden, &row], "")));
+    assert_eq!(with_hidden.len(), 2);
+    assert_px(with_hidden[1].y_top, shown[1].y_top, "the row after the hidden one");
+    assert!(with_hidden[1].cells[0].border_bottom.is_some(), "which is the table's last row");
+}

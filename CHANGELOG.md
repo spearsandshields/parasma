@@ -297,6 +297,9 @@ are held stable regardless.
   splits across the break. A repeated header is display only: selecting and
   copying see the header once.
 - Tables: a table in balanced columns keeps its cells' vertical alignment.
+- Tables: thin spacer and rule rows in templates stay thin (empty cells set
+  to ignore their paragraph mark no longer force a full line of height),
+  and hidden rows take no space.
 
 ### Changed
 
